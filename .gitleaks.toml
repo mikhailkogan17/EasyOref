@@ -1,0 +1,29 @@
+title = "EasyOref gitleaks config"
+
+[extend]
+useDefault = true
+
+# ── Custom rules ──────────────────────────────────────────
+
+[[rules]]
+id = "telegram-bot-token"
+description = "Telegram Bot Token"
+regex = '''\b[0-9]{8,10}:[A-Za-z0-9_-]{35}\b'''
+keywords = ["bot", "token"]
+
+[[rules]]
+id = "logtail-token"
+description = "Logtail / BetterStack source token"
+regex = '''(?i)logtail[_\-]?(?:token|source)[=:\s]["']?[A-Za-z0-9]{10,}'''
+keywords = ["logtail"]
+
+# ── Allowlist ─────────────────────────────────────────────
+
+[allowlist]
+paths = [
+  '''\.gitleaks\.toml$''',
+  '''package-lock\.json$''',
+  '''node_modules/''',
+  '''dist/''',
+  '''\.yaml\.example$''',
+]

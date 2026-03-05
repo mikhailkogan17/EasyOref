@@ -2,38 +2,55 @@
  * Dangerfile — PR quality checks for EasyOref
  *
  * Checks:
- * - No secrets in diff
+ * - Gitleaks secret scanning
  * - Package.json changes have lockfile update
  * - PR description exists
  */
 
 import { danger, fail, warn } from "danger";
+import { execSync } from "node:child_process";
+import { readFileSync, unlinkSync } from "node:fs";
 
-// ── No secrets in diff ───────────────────────────────────
-const SECRET_PATTERNS = [
-  /BOT_TOKEN=[0-9]+:/,
-  /LOGTAIL_TOKEN=[a-zA-Z0-9]{10,}/,
-  /sk-[a-zA-Z0-9]{20,}/,
-  /ghp_[a-zA-Z0-9]{36}/,
-];
+// ── Gitleaks — secret detection ──────────────────────────
+interface GitleaksFinding {
+  Description: string;
+  File: string;
+  StartLine: number;
+  Secret: string;
+  RuleID: string;
+}
 
-const allFiles = [...danger.git.created_files, ...danger.git.modified_files];
+const REPORT_PATH = "/tmp/gitleaks-report.json";
 
-for (const file of allFiles) {
-  const diff = danger.git.diffForFile(file);
-  if (diff) {
-    diff.then((d) => {
-      if (!d) return;
-      for (const pattern of SECRET_PATTERNS) {
-        if (pattern.test(d.added)) {
-          fail(`🚨 Possible secret in \`${file}\`. Remove before merging.`);
-        }
-      }
-    });
+try {
+  execSync(
+    `gitleaks detect --source . --log-opts="origin/main..HEAD" --no-banner --report-format json --report-path ${REPORT_PATH}`,
+    { stdio: "pipe" },
+  );
+} catch {
+  // gitleaks exits 1 when secrets found
+  try {
+    const raw = readFileSync(REPORT_PATH, "utf-8");
+    const findings: GitleaksFinding[] = JSON.parse(raw);
+    for (const f of findings) {
+      fail(
+        `🚨 Secret detected by gitleaks in \`${f.File}\` (line ${f.StartLine}): **${f.RuleID}** — ${f.Description}`,
+      );
+    }
+  } catch {
+    fail("🚨 Gitleaks found secrets but failed to parse report.");
+  } finally {
+    try {
+      unlinkSync(REPORT_PATH);
+    } catch {
+      /* ignore */
+    }
   }
 }
 
 // ── PR description ───────────────────────────────────────
+const allFiles = [...danger.git.created_files, ...danger.git.modified_files];
+
 if (!danger.github.pr.body || danger.github.pr.body.length < 10) {
   warn("PR description is empty or too short. Please describe your changes.");
 }

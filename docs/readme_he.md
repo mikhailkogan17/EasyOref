@@ -105,16 +105,16 @@ npx easyoref
 
 רשימה מלאה: [`config.yaml.example`](../config.yaml.example).
 
-| מפתח | ברירת מחדל | תיאור |
-| --- | --- | --- |
-| `city_ids` | — | **חובה.** [מצאו ID עיר](https://github.com/eladnava/pikud-haoref-api/blob/master/cities.json) |
-| `telegram.bot_token` | — | **חובה.** טוקן מ-@BotFather |
-| `telegram.chat_id` | — | **חובה.** ID של הצ׳אט (מספר שלילי) |
-| `language` | `ru` | `ru` `en` `he` `ar` |
-| `alert_types` | הכל | `early` `siren` `incident_over` |
-| `gif_mode` | `none` | `funny_cats` `assertive` `none` |
-| `title_override.*` | — | כותרת מותאמת לכל סוג אזעקה |
-| `description_override.*` | — | תיאור מותאם לכל סוג אזעקה |
+| מפתח                     | ברירת מחדל | תיאור                                                                                         |
+| ------------------------ | ---------- | --------------------------------------------------------------------------------------------- |
+| `city_ids`               | —          | **חובה.** [מצאו ID עיר](https://github.com/eladnava/pikud-haoref-api/blob/master/cities.json) |
+| `telegram.bot_token`     | —          | **חובה.** טוקן מ-@BotFather                                                                   |
+| `telegram.chat_id`       | —          | **חובה.** ID של הצ׳אט (מספר שלילי)                                                            |
+| `language`               | `ru`       | `ru` `en` `he` `ar`                                                                           |
+| `alert_types`            | הכל        | `early` `siren` `incident_over`                                                               |
+| `gif_mode`               | `none`     | `funny_cats` `assertive` `none`                                                               |
+| `title_override.*`       | —          | כותרת מותאמת לכל סוג אזעקה                                                                    |
+| `description_override.*` | —          | תיאור מותאם לכל סוג אזעקה                                                                     |
 
 ---
 
