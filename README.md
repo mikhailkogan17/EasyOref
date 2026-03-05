@@ -3,6 +3,8 @@
 > **Peace-of-mind bot for families during wartime.**
 > Real-time Israeli Civil Defense alerts to Telegram, filtered by your location.
 
+> ⚠️ **Disclaimer:** EasyOref supplements but does not replace official Home Front Command (Pikud HaOref) alerts. Always follow official instructions.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-22+-339933?logo=node.js)](https://nodejs.org)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker)](Dockerfile)
