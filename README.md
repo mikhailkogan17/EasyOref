@@ -116,7 +116,7 @@ Full reference: [`config.yaml.example`](config.yaml.example).
 | `telegram.chat_id`       | —       | **required.** Chat ID (negative number)                                                             |
 | `language`               | `ru`    | `ru` `en` `he` `ar`                                                                                 |
 | `alert_types`            | all     | `early` `siren` `incident_over`                                                                     |
-| `gif_mode`               | `none`  | `funny_cats` `assertive` `none`                                                                     |
+| `gif_mode`               | `none`  | `funny_cats` `assertive` `pikud_haoref` `none`                                               |
 | `title_override.*`       | —       | Custom title per alert type                                                                         |
 | `description_override.*` | —       | Custom description per alert type                                                                   |
 

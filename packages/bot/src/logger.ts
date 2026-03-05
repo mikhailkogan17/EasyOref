@@ -1,13 +1,15 @@
 /**
  * EasyOref Logger
  *
- * Dual-output: console (always) + Better Stack Logtail (if LOGTAIL_TOKEN set).
+ * Dual-output: console (always) + Better Stack Logtail (if token set).
+ * Token source: config.yaml `observability.betterstack_token` or LOGTAIL_TOKEN env.
  * Live Tail: https://logs.betterstack.com → your source → "Live Tail"
  */
 
 import { Logtail } from "@logtail/node";
+import { config } from "./config.js";
 
-const token = process.env.LOGTAIL_TOKEN;
+const token = config.logtailToken;
 const logtail = token ? new Logtail(token) : null;
 
 const base = {
