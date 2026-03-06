@@ -34,46 +34,62 @@ jobs:
       - run: npm ci
 
       # If there are changesets → open/update "Version Packages" PR
-      # If that PR was just merged (no changesets left) → publish
+      # If that PR was just merged (no changesets left) → build + detect publish
       - uses: changesets/action@v1
         id: changesets
         with:
           title: "chore: version packages"
           commit: "chore: version packages"
           version: npm run version-bump
-          publish: npm run release
+          publish: npm run build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
+
+      # ── Check if we need to publish ──────────────────────
+      - name: Check unpublished version
+        id: check-publish
+        run: |
+          LOCAL_VER=$(node -p "require('./packages/bot/package.json').version")
+          NPM_VER=$(npm view easyoref version 2>/dev/null || echo "0.0.0")
+          if [ "$LOCAL_VER" != "$NPM_VER" ]; then
+            echo "should_publish=true" >> $GITHUB_OUTPUT
+            echo "version=$LOCAL_VER" >> $GITHUB_OUTPUT
+            echo "📦 Will publish easyoref@$LOCAL_VER (npm has $NPM_VER)"
+          else
+            echo "should_publish=false" >> $GITHUB_OUTPUT
+            echo "✅ easyoref@$LOCAL_VER already on npm"
+          fi
+
+      # ── NPM Publish (separate step, clean env for OIDC) ──
+      - name: Publish to NPM
+        if: steps.check-publish.outputs.should_publish == 'true'
+        run: npm publish -w packages/bot --access public --provenance
+
       - name: Create GitHub Release
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.check-publish.outputs.should_publish == 'true'
         uses: actions/github-script@v7
         with:
           script: |
-            const packages = JSON.parse('${{ steps.changesets.outputs.publishedPackages }}');
-            for (const pkg of packages) {
-              const tag = `v${pkg.version}`;
-              // Create git tag
-              await github.rest.git.createRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: `refs/tags/${tag}`,
-                sha: context.sha,
-              });
-              // Create GitHub Release from CHANGELOG
-              const { data: release } = await github.rest.repos.createRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                tag_name: tag,
-                name: `${pkg.name}@${pkg.version}`,
-                generate_release_notes: true,
-              });
-              core.info(`Created release: ${release.html_url}`);
-            }
+            const version = '${{ steps.check-publish.outputs.version }}';
+            const tag = `v${version}`;
+            await github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/tags/${tag}`,
+              sha: context.sha,
+            });
+            const { data: release } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              name: `easyoref@${version}`,
+              generate_release_notes: true,
+            });
+            core.info(`Created release: ${release.html_url}`);
 
       # ── Docker (only on publish) ─────────────────────────
       - name: Docker login
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.check-publish.outputs.should_publish == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -81,21 +97,21 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Docker meta
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.check-publish.outputs.should_publish == 'true'
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest
-            type=raw,value=${{ fromJson(steps.changesets.outputs.publishedPackages)[0].version }}
+            type=raw,value=${{ steps.check-publish.outputs.version }}
 
       - name: Set up Buildx
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.check-publish.outputs.should_publish == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Build & push Docker
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.check-publish.outputs.should_publish == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
