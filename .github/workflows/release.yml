@@ -61,10 +61,12 @@ jobs:
             echo "✅ easyoref@$LOCAL_VER already on npm"
           fi
 
-      # ── NPM Publish (separate step, clean env for OIDC) ──
+      # ── NPM Publish ──────────────────────────────────────
       - name: Publish to NPM
         if: steps.check-publish.outputs.should_publish == 'true'
         run: npm publish -w packages/bot --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
         if: steps.check-publish.outputs.should_publish == 'true'
