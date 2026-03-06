@@ -5,7 +5,7 @@
  * Default: ru (built for diaspora families)
  *
  * Message format:
- *   <b>🚀 Title</b>
+ *   <b>⚠️ Title</b>
  *   Description
  *   <blockquote>
  *   <b>Key:</b> Value
@@ -15,161 +15,147 @@
 
 export type Language = "ru" | "en" | "he" | "ar";
 
-export interface MessageTemplates {
-  earlyWarning: (areas: string, time: string) => string;
-  siren: (areas: string, time: string) => string;
-  resolved: (areas: string) => string;
+// ── Alert metadata types ─────────────────────────────────
+
+export type AlertKind = "early" | "siren" | "incident_over";
+
+export interface AlertMeta {
+  emoji: string;
+  title: string;
+  description: string;
+}
+
+export interface I18nLabels {
+  area: string;
+  timeToImpact: string;
+  time: string;
+  earlyEta: string;
+  sirenEta: string;
+}
+
+export interface LanguagePack {
+  alerts: Record<AlertKind, AlertMeta>;
+  labels: I18nLabels;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Message Templates — HTML with blockquote
+// Language Packs — structured alert metadata + labels
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const ru: MessageTemplates = {
-  earlyWarning: (areas, time) =>
-    [
-      "<b>🚀 Раннее предупреждение</b>",
-      "Зафиксированы запуски ракет. Находитесь рядом с защищённым помещением.",
-      "",
-      "<blockquote>",
-      `<b>Район:</b> ${areas}`,
-      `<b>Подлётное время:</b> ~5–12 мин`,
-      `<b>Время:</b> ${time}`,
-      "</blockquote>",
-    ].join("\n"),
-
-  siren: (areas, time) =>
-    [
-      "<b>🚨 Сирена</b>",
-      "Войдите в защищённое помещение.",
-      "",
-      "<blockquote>",
-      `<b>Район:</b> ${areas}`,
-      `<b>Подлётное время:</b> ~1.5 мин`,
-      `<b>Время:</b> ${time}`,
-      "</blockquote>",
-    ].join("\n"),
-
-  resolved: (areas) =>
-    [
-      "<b>😮‍💨 Инцидент завершён</b>",
-      "Можно покинуть защищённое помещение.",
-      "",
-      "<blockquote>",
-      `<b>Район:</b> ${areas}`,
-      "</blockquote>",
-    ].join("\n"),
+const ruPack: LanguagePack = {
+  alerts: {
+    early: {
+      emoji: "⚠️",
+      title: "Раннее предупреждение",
+      description: "Обнаружены запуски ракет по Израилю",
+    },
+    siren: {
+      emoji: "🚨",
+      title: "Цева Адом",
+      description: "",
+    },
+    incident_over: {
+      emoji: "😮‍💨",
+      title: "Инцидент завершён",
+      description: "Можно покинуть защищённое помещение.",
+    },
+  },
+  labels: {
+    area: "Район",
+    timeToImpact: "Подлётное время",
+    time: "Время",
+    earlyEta: "~5–12 мин",
+    sirenEta: "~1.5 мин",
+  },
 };
 
-const en: MessageTemplates = {
-  earlyWarning: (areas, time) =>
-    [
-      "<b>🚀 Early Warning</b>",
-      "Rocket launches detected. Stay near a protected space.",
-      "",
-      "<blockquote>",
-      `<b>Area:</b> ${areas}`,
-      `<b>Time to impact:</b> ~5–12 min`,
-      `<b>Time:</b> ${time}`,
-      "</blockquote>",
-    ].join("\n"),
-
-  siren: (areas, time) =>
-    [
-      "<b>🚨 Siren Alert</b>",
-      "Enter a protected space immediately.",
-      "",
-      "<blockquote>",
-      `<b>Area:</b> ${areas}`,
-      `<b>Time to impact:</b> ~1.5 min`,
-      `<b>Time:</b> ${time}`,
-      "</blockquote>",
-    ].join("\n"),
-
-  resolved: (areas) =>
-    [
-      "<b>😮‍💨 Incident Over</b>",
-      "You may leave the protected space.",
-      "",
-      "<blockquote>",
-      `<b>Area:</b> ${areas}`,
-      "</blockquote>",
-    ].join("\n"),
+const enPack: LanguagePack = {
+  alerts: {
+    early: {
+      emoji: "⚠️",
+      title: "Early Warning",
+      description: "Rocket launches detected. Stay near a protected space.",
+    },
+    siren: {
+      emoji: "🚨",
+      title: "Siren Alert",
+      description: "Enter a protected space immediately.",
+    },
+    incident_over: {
+      emoji: "😮‍💨",
+      title: "Incident Over",
+      description: "You may leave the protected space.",
+    },
+  },
+  labels: {
+    area: "Area",
+    timeToImpact: "Time to impact",
+    time: "Time",
+    earlyEta: "~5–12 min",
+    sirenEta: "~1.5 min",
+  },
 };
 
-const he: MessageTemplates = {
-  earlyWarning: (areas, time) =>
-    [
-      "<b>🚀 התרעה מוקדמת</b>",
-      "זוהו שיגורים. הישארו בקרבת מרחב מוגן.",
-      "",
-      "<blockquote>",
-      `<b>אזור:</b> ${areas}`,
-      `<b>זמן מעוף:</b> ~5–12 דקות`,
-      `<b>שעה:</b> ${time}`,
-      "</blockquote>",
-    ].join("\n"),
-
-  siren: (areas, time) =>
-    [
-      "<b>🚨 צבע אדום</b>",
-      "היכנסו למרחב מוגן.",
-      "",
-      "<blockquote>",
-      `<b>אזור:</b> ${areas}`,
-      `<b>זמן מעוף:</b> ~1.5 דקות`,
-      `<b>שעה:</b> ${time}`,
-      "</blockquote>",
-    ].join("\n"),
-
-  resolved: (areas) =>
-    [
-      "<b>😮‍💨 האירוע הסתיים</b>",
-      "ניתן לצאת מהמרחב המוגן.",
-      "",
-      "<blockquote>",
-      `<b>אזור:</b> ${areas}`,
-      "</blockquote>",
-    ].join("\n"),
+const hePack: LanguagePack = {
+  alerts: {
+    early: {
+      emoji: "⚠️",
+      title: "התרעה מוקדמת",
+      description: "זוהו שיגורים. הישארו בקרבת מרחב מוגן.",
+    },
+    siren: {
+      emoji: "🚨",
+      title: "צבע אדום",
+      description: "היכנסו למרחב מוגן.",
+    },
+    incident_over: {
+      emoji: "😮‍💨",
+      title: "האירוע הסתיים",
+      description: "ניתן לצאת מהמרחב המוגן.",
+    },
+  },
+  labels: {
+    area: "אזור",
+    timeToImpact: "זמן מעוף",
+    time: "שעה",
+    earlyEta: "~5–12 דקות",
+    sirenEta: "~1.5 דקות",
+  },
 };
 
-const ar: MessageTemplates = {
-  earlyWarning: (areas, time) =>
-    [
-      "<b>🚀 إنذار مبكر</b>",
-      "تم رصد إطلاق صواريخ. ابقوا بالقرب من الملجأ.",
-      "",
-      "<blockquote>",
-      `<b>المنطقة:</b> ${areas}`,
-      `<b>وقت الوصول:</b> ~5–12 دقيقة`,
-      `<b>الوقت:</b> ${time}`,
-      "</blockquote>",
-    ].join("\n"),
-
-  siren: (areas, time) =>
-    [
-      "<b>🚨 صفارة إنذار</b>",
-      "ادخلوا إلى الملجأ فوراً.",
-      "",
-      "<blockquote>",
-      `<b>المنطقة:</b> ${areas}`,
-      `<b>وقت الوصول:</b> ~1.5 دقيقة`,
-      `<b>الوقت:</b> ${time}`,
-      "</blockquote>",
-    ].join("\n"),
-
-  resolved: (areas) =>
-    [
-      "<b>😮‍💨 انتهى الحادث</b>",
-      "يمكنكم مغادرة الملجأ.",
-      "",
-      "<blockquote>",
-      `<b>المنطقة:</b> ${areas}`,
-      "</blockquote>",
-    ].join("\n"),
+const arPack: LanguagePack = {
+  alerts: {
+    early: {
+      emoji: "⚠️",
+      title: "إنذار مبكر",
+      description: "تم رصد إطلاق صواريخ. ابقوا بالقرب من الملجأ.",
+    },
+    siren: {
+      emoji: "🚨",
+      title: "صفارة إنذار",
+      description: "ادخلوا إلى الملجأ فوراً.",
+    },
+    incident_over: {
+      emoji: "😮‍💨",
+      title: "انتهى الحادث",
+      description: "يمكنكم مغادرة الملجأ.",
+    },
+  },
+  labels: {
+    area: "المنطقة",
+    timeToImpact: "وقت الوصول",
+    time: "الوقت",
+    earlyEta: "~5–12 دقيقة",
+    sirenEta: "~1.5 دقيقة",
+  },
 };
 
-const templates: Record<Language, MessageTemplates> = { ru, en, he, ar };
+const packs: Record<Language, LanguagePack> = {
+  ru: ruPack,
+  en: enPack,
+  he: hePack,
+  ar: arPack,
+};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Area Name Translation — loaded from pikud-haoref-api/cities.json
@@ -288,8 +274,8 @@ export function resolveCityIds(ids: number[]): string[] {
   return names;
 }
 
-export function getTemplates(lang: Language): MessageTemplates {
-  return templates[lang] ?? templates.ru;
+export function getLanguagePack(lang: Language): LanguagePack {
+  return packs[lang] ?? packs.ru;
 }
 
 export function isValidLanguage(s: string): s is Language {

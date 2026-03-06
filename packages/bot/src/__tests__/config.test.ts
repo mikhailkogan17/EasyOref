@@ -29,6 +29,7 @@ interface ConfigYaml {
   city_ids?: number[];
   language?: string;
   gif_mode?: string;
+  emoji_override?: Partial<Record<AlertTypeConfig, string>>;
   title_override?: Partial<Record<AlertTypeConfig, string>>;
   description_override?: Partial<Record<AlertTypeConfig, string>>;
   observability?: { betterstack_token?: string };
@@ -233,14 +234,17 @@ describe("resolveCityIds (logic)", () => {
   });
 });
 
-// ── Title/Description Overrides ──────────────────────────
+// ── Emoji/Title/Description Overrides ────────────────────
 
 describe("config overrides", () => {
   it("override fields can be partial", () => {
     const yml: ConfigYaml = {
+      emoji_override: { early: "🚀" },
       title_override: { siren: "CUSTOM SIREN" },
       // description_override not set
     };
+    expect(yml.emoji_override?.early).toBe("🚀");
+    expect(yml.emoji_override?.siren).toBeUndefined();
     expect(yml.title_override?.siren).toBe("CUSTOM SIREN");
     expect(yml.title_override?.early).toBeUndefined();
     expect(yml.description_override).toBeUndefined();
@@ -248,20 +252,33 @@ describe("config overrides", () => {
 
   it("YAML round-trips override objects correctly", () => {
     const overrides = {
+      emoji_override: {
+        early: "🚀",
+        siren: "🔴",
+      },
       title_override: {
-        early: "⚠️ Warning",
-        siren: "🚨 SIREN",
-        incident_over: "✅ Clear",
+        early: "Warning",
+        siren: "SIREN",
+        incident_over: "Clear",
       },
       description_override: {
-        siren: "Take cover now!",
+        siren: "",
+        incident_over: "You may leave the shelter.",
       },
     };
     const dumped = yaml.dump(overrides);
     const parsed = yaml.load(dumped) as ConfigYaml;
 
+    expect(parsed.emoji_override).toEqual(overrides.emoji_override);
     expect(parsed.title_override).toEqual(overrides.title_override);
     expect(parsed.description_override).toEqual(overrides.description_override);
+  });
+
+  it("empty description string round-trips as empty", () => {
+    const yml = { description_override: { siren: "" } };
+    const dumped = yaml.dump(yml);
+    const parsed = yaml.load(dumped) as ConfigYaml;
+    expect(parsed.description_override?.siren).toBe("");
   });
 });
 

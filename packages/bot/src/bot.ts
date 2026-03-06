@@ -18,14 +18,14 @@ import { createServer } from "node:http";
 import { config, type AlertTypeConfig } from "./config.js";
 import { initGifState, pickGif } from "./gif-state.js";
 import {
-  getTemplates,
+  getLanguagePack,
   initTranslations,
   resolveCityIds,
   translateAreas,
 } from "./i18n.js";
 import * as logger from "./logger.js";
 
-const templates = getTemplates(config.language);
+const langPack = getLanguagePack(config.language);
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Area Filter (configurable via AREAS env var)
@@ -339,34 +339,29 @@ function formatMessage(alertType: AlertType, areas: string): string {
   const time = nowHHMM();
   const localAreas = translateAreas(areas, config.language);
   const cfgKey = ALERT_TYPE_TO_CONFIG[alertType];
-  const titleOvr = config.titleOverride[cfgKey];
-  const descOvr = config.descriptionOverride[cfgKey];
 
-  // If user provided both title and description overrides → fully custom message
-  if (titleOvr && descOvr) {
-    return [
-      `<b>${titleOvr}</b>`,
-      descOvr,
-      "",
-      "<blockquote>",
-      `<b>${config.language === "he" ? "אזור" : config.language === "ar" ? "المنطقة" : config.language === "en" ? "Area" : "Район"}:</b> ${localAreas}`,
-      alertType !== "resolved"
-        ? `<b>${config.language === "he" ? "שעה" : config.language === "ar" ? "الوقت" : config.language === "en" ? "Time" : "Время"}:</b> ${time}`
-        : "",
-      "</blockquote>",
-    ]
-      .filter(Boolean)
-      .join("\n");
+  const defaults = langPack.alerts[cfgKey];
+  const labels = langPack.labels;
+
+  const emoji = config.emojiOverride[cfgKey] ?? defaults.emoji;
+  const title = config.titleOverride[cfgKey] ?? defaults.title;
+  const desc = config.descriptionOverride[cfgKey] ?? defaults.description;
+
+  const lines: string[] = [`<b>${emoji} ${title}</b>`];
+  if (desc) lines.push(desc);
+  lines.push("", "<blockquote>");
+  lines.push(`<b>${labels.area}:</b> ${localAreas}`);
+
+  if (alertType === "early_warning") {
+    lines.push(`<b>${labels.timeToImpact}:</b> ${labels.earlyEta}`);
+    lines.push(`<b>${labels.time}:</b> ${time}`);
+  } else if (alertType === "siren") {
+    lines.push(`<b>${labels.timeToImpact}:</b> ${labels.sirenEta}`);
+    lines.push(`<b>${labels.time}:</b> ${time}`);
   }
 
-  switch (alertType) {
-    case "early_warning":
-      return templates.earlyWarning(localAreas, time);
-    case "siren":
-      return templates.siren(localAreas, time);
-    case "resolved":
-      return templates.resolved(localAreas);
-  }
+  lines.push("</blockquote>");
+  return lines.join("\n");
 }
 
 async function sendTelegram(alertType: AlertType, text: string): Promise<void> {

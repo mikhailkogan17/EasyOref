@@ -33,16 +33,22 @@ language: ru
 gif_mode: none
 
 # ── Overrides (optional) ─────────────────────────
-# Override the default title/description per alert type.
+# Override the default emoji, title, or description per alert type.
+# Each field is independent — override any combination.
 # Leave commented out to use built-in i18n strings.
 #
+# emoji_override:
+#   early: "🚀"
+#   siren: "🛑"
+#   incident_over: "✅"
+#
 # title_override:
-#   siren: "🚀 ROCKET ALERT"
-#   early: "⚠️ Early warning"
-#   incident_over: "✅ All clear"
+#   siren: "Azaka"
+#   early: "Early warning"
+#   incident_over: "All clear"
 #
 # description_override:
-#   siren: "Take cover immediately!"
+#   siren: ""                          # empty string = no description line
 #   early: "Stay alert, follow instructions."
 #   incident_over: "You may leave the shelter."
 

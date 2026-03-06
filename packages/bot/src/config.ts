@@ -33,6 +33,7 @@ interface ConfigYaml {
   city_ids?: number[];
   language?: string;
   gif_mode?: string;
+  emoji_override?: Partial<Record<AlertTypeConfig, string>>;
   title_override?: Partial<Record<AlertTypeConfig, string>>;
   description_override?: Partial<Record<AlertTypeConfig, string>>;
   observability?: {
@@ -138,6 +139,9 @@ export const config = {
     const raw = (yml.language ?? process.env.LANGUAGE ?? "ru").toLowerCase();
     return isValidLanguage(raw) ? raw : "ru";
   })(),
+
+  /** Emoji overrides per alert type */
+  emojiOverride: yml.emoji_override ?? {},
 
   /** Title overrides per alert type */
   titleOverride: yml.title_override ?? {},
