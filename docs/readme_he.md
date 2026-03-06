@@ -103,7 +103,7 @@ npx easyoref
 | `telegram.bot_token`     | —          | **חובה.** טוקן מ-@BotFather                                                                   |
 | `telegram.chat_id`       | —          | **חובה.** ID של הצ׳אט (מספר שלילי)                                                            |
 | `language`               | `ru`       | `ru` `en` `he` `ar`                                                                           |
-| `alert_types`            | הכל        | `early` `siren` `incident_over`                                                               |
+| `alert_types`            | הכל        | `early` `siren` `resolved`                                                               |
 | `gif_mode`               | `none`     | `funny_cats` `assertive` `pikud_haoref` `none`                                                |
 | `title_override.*`       | —          | כותרת מותאמת לכל סוג אזעקה                                                                    |
 | `description_override.*` | —          | תיאור מותאם לכל סוג אזעקה                                                                     |

@@ -12,13 +12,13 @@ city_ids:
   # - 723  # Another area...
 
 # Which alert types to forward (omit = all three):
-#   early          — early warning (e.g. hostiles detected)
-#   siren          — red alert / rocket siren
-#   incident_over  — all-clear
+#   early     — early warning (e.g. hostiles detected)
+#   siren     — red alert / rocket siren
+#   resolved  — all-clear
 alert_types:
   - early
   - siren
-  - incident_over
+  - resolved
 
 # ── Telegram ──────────────────────────────────────
 telegram:
@@ -40,17 +40,17 @@ gif_mode: none
 # emoji_override:
 #   early: "🚀"
 #   siren: "🛑"
-#   incident_over: "✅"
+#   resolved: "✅"
 #
 # title_override:
 #   siren: "Azaka"
 #   early: "Early warning"
-#   incident_over: "All clear"
+#   resolved: "All clear"
 #
 # description_override:
 #   siren: ""                          # empty string = no description line
 #   early: "Stay alert, follow instructions."
-#   incident_over: "You may leave the shelter."
+#   resolved: "You may leave the shelter."
 
 # ── Observability (optional) ─────────────────────
 # observability:

@@ -15,7 +15,7 @@ import { isValidLanguage, type Language } from "./i18n.js";
 
 // ── Types ────────────────────────────────────────────────
 
-export type AlertTypeConfig = "early" | "siren" | "incident_over";
+export type AlertTypeConfig = "early" | "siren" | "resolved";
 export type GifMode = "funny_cats" | "assertive" | "pikud_haoref" | "none";
 
 const VALID_GIF_MODES: GifMode[] = [
@@ -25,7 +25,7 @@ const VALID_GIF_MODES: GifMode[] = [
   "none",
 ];
 
-const ALL_ALERT_TYPES: AlertTypeConfig[] = ["early", "siren", "incident_over"];
+const ALL_ALERT_TYPES: AlertTypeConfig[] = ["early", "siren", "resolved"];
 
 /** Raw YAML schema */
 interface ConfigYaml {

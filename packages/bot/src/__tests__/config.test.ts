@@ -13,10 +13,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 // We can't import config.ts directly (it evaluates at import time).
 // Instead we test the YAML parsing/validation logic in isolation.
 
-type AlertTypeConfig = "early" | "siren" | "incident_over";
+type AlertTypeConfig = "early" | "siren" | "resolved";
 type GifMode = "funny_cats" | "assertive" | "pikud_haoref" | "none";
 
-const ALL_ALERT_TYPES: AlertTypeConfig[] = ["early", "siren", "incident_over"];
+const ALL_ALERT_TYPES: AlertTypeConfig[] = ["early", "siren", "resolved"];
 const VALID_GIF_MODES: GifMode[] = [
   "funny_cats",
   "assertive",
@@ -152,7 +152,7 @@ describe("parseAlertTypes", () => {
   });
 
   it("keeps valid subset", () => {
-    expect(parseAlertTypes(["incident_over"])).toEqual(["incident_over"]);
+    expect(parseAlertTypes(["resolved"])).toEqual(["resolved"]);
   });
 
   it("returns all types when non-array passed", () => {
@@ -259,11 +259,11 @@ describe("config overrides", () => {
       title_override: {
         early: "Warning",
         siren: "SIREN",
-        incident_over: "Clear",
+        resolved: "Clear",
       },
       description_override: {
         siren: "",
-        incident_over: "You may leave the shelter.",
+        resolved: "You may leave the shelter.",
       },
     };
     const dumped = yaml.dump(overrides);

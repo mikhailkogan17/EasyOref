@@ -12,7 +12,7 @@
   - Arabic language support (ru/en/he/ar)
   - GIF modes: `funny_cats`, `assertive`, `pikud_haoref`, `none`
   - Persistent GIF rotation across container restarts
-  - Alert type filtering (`early`, `siren`, `incident_over`)
+  - Alert type filtering (`early`, `siren`, `resolved`)
   - City ID resolution via `cities.json` at startup
   - Per-alert title/description overrides in YAML config
 

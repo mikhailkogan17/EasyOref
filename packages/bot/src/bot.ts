@@ -63,7 +63,7 @@ type AlertType = "early_warning" | "siren" | "resolved";
 const ALERT_TYPE_TO_CONFIG: Record<AlertType, AlertTypeConfig> = {
   early_warning: "early",
   siren: "siren",
-  resolved: "incident_over",
+  resolved: "resolved",
 };
 
 function classifyAlertType(title: string): AlertType {

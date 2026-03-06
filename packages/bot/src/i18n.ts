@@ -17,7 +17,7 @@ export type Language = "ru" | "en" | "he" | "ar";
 
 // ── Alert metadata types ─────────────────────────────────
 
-export type AlertKind = "early" | "siren" | "incident_over";
+export type AlertKind = "early" | "siren" | "resolved";
 
 export interface AlertMeta {
   emoji: string;
@@ -54,7 +54,7 @@ const ruPack: LanguagePack = {
       title: "Цева Адом",
       description: "",
     },
-    incident_over: {
+    resolved: {
       emoji: "😮‍💨",
       title: "Инцидент завершён",
       description: "Можно покинуть защищённое помещение.",
@@ -81,7 +81,7 @@ const enPack: LanguagePack = {
       title: "Siren Alert",
       description: "Enter a protected space immediately.",
     },
-    incident_over: {
+    resolved: {
       emoji: "😮‍💨",
       title: "Incident Over",
       description: "You may leave the protected space.",
@@ -108,7 +108,7 @@ const hePack: LanguagePack = {
       title: "צבע אדום",
       description: "היכנסו למרחב מוגן.",
     },
-    incident_over: {
+    resolved: {
       emoji: "😮‍💨",
       title: "האירוע הסתיים",
       description: "ניתן לצאת מהמרחב המוגן.",
@@ -135,7 +135,7 @@ const arPack: LanguagePack = {
       title: "صفارة إنذار",
       description: "ادخلوا إلى الملجأ فوراً.",
     },
-    incident_over: {
+    resolved: {
       emoji: "😮‍💨",
       title: "انتهى الحادث",
       description: "يمكنكم مغادرة الملجأ.",

@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **4 languages** — Russian, English, Hebrew, Arabic
-- **3 alert types** — early warning, siren, all-clear (incident_over)
+- **3 alert types** — early warning, siren, all-clear (resolved)
 - **YAML config** — migrated from .env to config.yaml
 - **City ID filtering** — resolve numeric IDs to Hebrew area names via cities.json
 - **HTML blockquote messages** with emoji per alert type

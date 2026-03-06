@@ -21,7 +21,7 @@ No LLM, no external AI — purely deterministic matching with sub-second latency
 
 1. **City ID → area names** — on startup, `city_ids` from config are resolved to Hebrew area names via the bundled cities.json
 2. **Area match** — each alert's areas are compared against the resolved set; prefix matching handles sub-areas
-3. **Alert type filter** — `alert_types` config restricts which types are forwarded (early, siren, incident_over)
+3. **Alert type filter** — `alert_types` config restricts which types are forwarded (early, siren, resolved)
 4. **Cooldown** — 30-second dedup window per alert type prevents notification spam
 
 ## Message Format
