@@ -13,8 +13,8 @@ EasyOref (как и CyberMem) использует **npm OIDC Trusted Publishers
 
 1. `permissions: id-token: write` в workflow → GitHub генерирует OIDC JWT
 2. `actions/setup-node@v4` с `registry-url: "https://registry.npmjs.org"` → создаёт `.npmrc`
-3. `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` — **строка ОБЯЗАТЕЛЬНА** в workflow yaml, но secret `NPM_TOKEN` **НЕ существует** в repo settings и **НЕ должен** создаваться
-4. npm CLI (v9+) при `--provenance` / `publishConfig.provenance: true` → использует OIDC JWT для авторизации на npm registry
+3. `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` — **НЕ нужна** в changesets action env. Она ПЕРЕЗАПИСЫВАЕТ OIDC JWT пустым значением (secret не существует → пустая строка → ENEEDAUTH)
+4. `setup-node` с `registry-url` сам создаёт `.npmrc` и инжектит OIDC JWT через env
 5. Trusted Publisher настроен на **npmjs.com** (Settings пакета → Publishing access → Trusted Publishers)
 
 ### Чеклист для нового пакета
@@ -31,9 +31,9 @@ EasyOref (как и CyberMem) использует **npm OIDC Trusted Publishers
 
 ### ЗАПРЕЩЕНО
 
+- ❌ Добавлять `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` в env шага publish — это ПЕРЕЗАТИРАЕТ OIDC JWT пустой строкой
 - ❌ Предлагать "создай NPM_TOKEN на npmjs.com → скопируй → добавь в GitHub secrets"
 - ❌ Предлагать "npmjs.com → Access Tokens → Automation"
-- ❌ Удалять строку `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` из workflow (она нужна!)
 - ❌ Путать OIDC (динамический JWT) с классическим automation token (статический)
 
 ### Ссылки
