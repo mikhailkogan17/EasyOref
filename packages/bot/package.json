@@ -32,14 +32,24 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^7.0.0",
+    "@langchain/core": "^0.3.0",
+    "@langchain/langgraph": "^0.2.0",
+    "@langchain/openai": "^0.3.0",
     "@logtail/node": "^0.5.6",
+    "bullmq": "^5.0.0",
     "chalk": "^5.3.0",
     "grammy": "^1.35.0",
-    "js-yaml": "^4.1.1"
+    "input": "^1.0.1",
+    "ioredis": "^5.3.0",
+    "js-yaml": "^4.1.1",
+    "qrcode-terminal": "^0.12.0",
+    "telegram": "^2.26.0"
   },
   "devDependencies": {
+    "@types/ioredis": "^4.28.10",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
+    "@types/qrcode-terminal": "^0.12.2",
     "eslint": "^9.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"

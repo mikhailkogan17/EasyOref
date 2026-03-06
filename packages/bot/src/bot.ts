@@ -15,6 +15,11 @@
 
 import { Bot } from "grammy";
 import { createServer } from "node:http";
+import { startMonitor, stopMonitor } from "./agent/gramjs-monitor.js";
+import { enqueueEnrich } from "./agent/queue.js";
+import { closeRedis } from "./agent/redis.js";
+import { saveAlertMeta } from "./agent/store.js";
+import { startEnrichWorker, stopEnrichWorker } from "./agent/worker.js";
 import { config, type AlertTypeConfig } from "./config.js";
 import { initGifState, pickGif } from "./gif-state.js";
 import {
@@ -365,13 +370,17 @@ function formatMessage(alertType: AlertType, areas: string): string {
   return lines.join("\n");
 }
 
-async function sendTelegram(alertType: AlertType, text: string): Promise<void> {
+/** Send message and return {messageId, isCaption} for agent editing */
+async function sendTelegram(
+  alertType: AlertType,
+  text: string,
+): Promise<{ messageId: number; isCaption: boolean } | null> {
   if (!bot || !config.chatId) {
     logger.error("Telegram unavailable", {
       bot_exists: !!bot,
       chat_id: config.chatId,
     });
-    return;
+    return null;
   }
 
   const gifUrl = getGifUrl(alertType);
@@ -379,20 +388,23 @@ async function sendTelegram(alertType: AlertType, text: string): Promise<void> {
   // No GIF mode → send text only
   if (!gifUrl) {
     try {
-      await bot.api.sendMessage(config.chatId, text, { parse_mode: "HTML" });
+      const msg = await bot.api.sendMessage(config.chatId, text, {
+        parse_mode: "HTML",
+      });
       logger.info("Alert sent via Telegram (text)", { type: alertType });
+      return { messageId: msg.message_id, isCaption: false };
     } catch (err) {
       logger.error("Telegram send failed", {
         error: String(err),
         type: alertType,
       });
+      return null;
     }
-    return;
   }
 
   // GIF mode → try animation, fall back to text
   try {
-    await bot.api.sendAnimation(config.chatId, gifUrl, {
+    const msg = await bot.api.sendAnimation(config.chatId, gifUrl, {
       caption: text,
       parse_mode: "HTML",
     });
@@ -400,21 +412,26 @@ async function sendTelegram(alertType: AlertType, text: string): Promise<void> {
       type: alertType,
       gif_url: gifUrl,
     });
+    return { messageId: msg.message_id, isCaption: true };
   } catch (err) {
     logger.warn("GIF send failed, falling back to text", {
       error: String(err),
       gif_url: gifUrl,
     });
     try {
-      await bot.api.sendMessage(config.chatId, text, { parse_mode: "HTML" });
+      const msg = await bot.api.sendMessage(config.chatId, text, {
+        parse_mode: "HTML",
+      });
       logger.info("Alert sent via Telegram (text fallback)", {
         type: alertType,
       });
+      return { messageId: msg.message_id, isCaption: false };
     } catch (err2) {
       logger.error("Telegram send failed completely", {
         error: String(err2),
         type: alertType,
       });
+      return null;
     }
   }
 }
@@ -423,7 +440,7 @@ async function sendTelegram(alertType: AlertType, text: string): Promise<void> {
 // Alert Processing
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function processAlert(alert: OrefAlert): void {
+async function processAlert(alert: OrefAlert): Promise<void> {
   if (!isRelevantArea(alert.data)) {
     logger.info("Alert — not in our area", {
       alert_id: alert.id,
@@ -464,12 +481,36 @@ function processAlert(alert: OrefAlert): void {
   markSent(alertType);
 
   const message = formatMessage(alertType, areas);
-  sendTelegram(alertType, message).catch((err) =>
-    logger.error("Telegram send failed", {
+
+  // Only monitor early + siren alerts with the agent (not resolved)
+  const shouldEnrich =
+    config.agent.enabled &&
+    (alertType === "early_warning" || alertType === "siren");
+
+  try {
+    const sent = await sendTelegram(alertType, message);
+
+    // Store alert meta + enqueue enrichment job
+    if (sent && shouldEnrich && config.chatId) {
+      const alertTs = Date.now();
+      await saveAlertMeta({
+        alertId: alert.id,
+        messageId: sent.messageId,
+        chatId: config.chatId,
+        isCaption: sent.isCaption,
+        alertTs,
+        alertType,
+        alertAreas: alert.data,
+        currentText: message,
+      });
+      await enqueueEnrich(alert.id, alertTs);
+    }
+  } catch (err) {
+    logger.error("Alert send/store failed", {
       error: String(err),
       alert_id: alert.id,
-    }),
-  );
+    });
+  }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -540,6 +581,17 @@ async function main(): Promise<void> {
   bot = initBot();
   startHealthServer();
 
+  // Start agent subsystems if enabled
+  if (config.agent.enabled) {
+    startEnrichWorker();
+    await startMonitor();
+    logger.info("Agent subsystems started", {
+      model: config.agent.openaiModel,
+      channels: config.agent.channels.length,
+      enrich_delay_ms: config.agent.enrichDelayMs,
+    });
+  }
+
   // Poll loop
   setInterval(async () => {
     try {
@@ -547,7 +599,7 @@ async function main(): Promise<void> {
       for (const alert of alerts) {
         if (seenAlerts.has(alert.id)) continue;
         seenAlerts.add(alert.id);
-        processAlert(alert);
+        await processAlert(alert);
       }
     } catch (err) {
       logger.error("Poll error", { error: String(err) });
@@ -567,6 +619,9 @@ async function main(): Promise<void> {
   for (const sig of ["SIGINT", "SIGTERM"] as const) {
     process.on(sig, async () => {
       logger.info(`Shutting down (${sig})`);
+      await stopMonitor();
+      await stopEnrichWorker();
+      await closeRedis();
       await logger.flush();
       process.exit(0);
     });

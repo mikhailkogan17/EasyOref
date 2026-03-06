@@ -47,6 +47,25 @@ interface ConfigYaml {
   poll_interval_ms?: number;
   data_dir?: string;
   oref_api_url?: string;
+  agent?: {
+    enabled?: boolean;
+    openai_api_key?: string;
+    openai_model?: string;
+    redis_url?: string;
+    socks5_proxy?: string;
+    enrich_delay_ms?: number;
+    confidence_threshold?: number;
+    window_minutes?: number;
+    timeout_minutes?: number;
+    mtproto?: {
+      api_id?: number;
+      api_hash?: string;
+      session_string?: string;
+    };
+    channels?: string[];
+    /** Map monitored area prefix → human-readable region label */
+    area_labels?: Record<string, string>;
+  };
 }
 
 // ── YAML Loader ──────────────────────────────────────────
@@ -171,6 +190,28 @@ export const config = {
 
   /** Path for persistent data */
   dataDir: yml.data_dir ?? process.env.DATA_DIR ?? join(CONFIG_DIR, "data"),
+
+  /** Agentic enrichment config */
+  agent: {
+    enabled: yml.agent?.enabled ?? false,
+    openaiApiKey: yml.agent?.openai_api_key ?? process.env.OPENAI_API_KEY ?? "",
+    openaiModel: yml.agent?.openai_model ?? "gpt-4o-mini",
+    redisUrl:
+      yml.agent?.redis_url ?? process.env.REDIS_URL ?? "redis://localhost:6379",
+    socks5Proxy: yml.agent?.socks5_proxy ?? process.env.SOCKS5_PROXY ?? "",
+    enrichDelayMs: yml.agent?.enrich_delay_ms ?? 120_000,
+    confidenceThreshold: yml.agent?.confidence_threshold ?? 0.7,
+    windowMinutes: yml.agent?.window_minutes ?? 2,
+    timeoutMinutes: yml.agent?.timeout_minutes ?? 15,
+    mtproto: {
+      apiId: yml.agent?.mtproto?.api_id ?? Number(process.env.TG_API_ID ?? "0"),
+      apiHash: yml.agent?.mtproto?.api_hash ?? process.env.TG_API_HASH ?? "",
+      sessionString:
+        yml.agent?.mtproto?.session_string ?? process.env.TG_SESSION ?? "",
+    },
+    channels: yml.agent?.channels ?? [],
+    areaLabels: yml.agent?.area_labels ?? {},
+  },
 };
 
 /** Exported for testing */

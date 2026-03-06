@@ -1,10 +1,26 @@
 # EasyOref — Real-time Israeli Red Alert Filter Bot
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: easyoref-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy allkeys-lru
+    volumes:
+      - easyoref-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
   easyoref:
     image: ghcr.io/mikhailkogan17/easyoref:latest
     build: .
     container_name: easyoref
     restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
     ports:
       - "3100:3100"
     volumes:
@@ -26,3 +42,4 @@ services:
 
 volumes:
   easyoref-data:
+  easyoref-redis:
