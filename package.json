@@ -15,11 +15,16 @@
     "typecheck": "npm run typecheck --workspace=packages/bot",
     "test": "vitest run",
     "test:watch": "vitest",
+    "changeset": "changeset",
+    "version-bump": "changeset version",
+    "release": "npm run build && changeset publish",
     "prepare": "husky"
   },
   "author": "Mikhail Kogan <kogan.mikhail@gmail.com>",
   "license": "MIT",
   "devDependencies": {
+    "@changesets/changelog-github": "^0.6.0",
+    "@changesets/cli": "^2.30.0",
     "@types/node": "^22.0.0",
     "danger": "^13.0.5",
     "eslint": "^9.0.0",

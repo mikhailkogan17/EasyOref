@@ -13,8 +13,6 @@ Israeli civil defense alerts → your family's Telegram chat.
 > It **supplements** them — notifying your family abroad.
 > Always follow Home Front Command instructions!
 
----
-
 ## Why
 
 During a rocket attack, your family abroad sees "MISSILES HIT NETANYA" on the news.
@@ -28,15 +26,11 @@ They don't know:
 Alert apps with area filtering — for you in Israel.
 Cell Broadcast alerts — for you in Israel.
 
----
-
 ## Features
 
 - **4 languages** — Russian, English, Hebrew, Arabic
 - **3 alert types** — early warning, siren, all-clear
 - **Custom messages** — your own text and media per alert type
-
----
 
 ## Install
 
@@ -101,8 +95,6 @@ npx easyoref
 > The bot needs to run 24/7 — on a Raspberry Pi, server, or always-on computer.
 > Guides: [RPi](docs/rpi.md) · [Local](docs/local.md)
 
----
-
 ## Configuration
 
 Config file: `~/.easyoref/config.yaml`. Created by `npx easyoref init`.
@@ -119,8 +111,6 @@ Full reference: [`config.yaml.example`](config.yaml.example).
 | `gif_mode`               | `none`  | `funny_cats` `assertive` `pikud_haoref` `none`                                                      |
 | `title_override.*`       | —       | Custom title per alert type                                                                         |
 | `description_override.*` | —       | Custom description per alert type                                                                   |
-
----
 
 ## License
 
