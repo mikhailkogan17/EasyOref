@@ -1,0 +1,27 @@
+---
+"easyoref": minor
+---
+
+### Added
+- Interactive setup wizard (`npx easyoref init`) — generates `~/.easyoref/config.yaml`
+- `emoji_override` config field — override emoji independently from title
+- Gitleaks secret detection (CI + pre-commit + Danger)
+- Arabic language support (ru/en/he/ar)
+- GIF modes: `funny_cats`, `assertive`, `pikud_haoref`, `none`
+- Persistent GIF rotation across container restarts
+- Alert type filtering (`early`, `siren`, `incident_over`)
+- City ID resolution via `cities.json` at startup
+- Per-alert title/description overrides in YAML config
+
+### Changed
+- Refactored i18n: function templates → structured `LanguagePack`
+- Default early emoji: 🚀 → ⚠️ (all languages)
+- Default siren title (ru): Сирена → Цева Адом
+- Default siren description (ru): empty (was "Войдите в помещение")
+- `formatMessage` uses per-field overrides (emoji/title/description independently)
+- Replaced `.env` config with `config.yaml` (env vars still work as fallback)
+- Rewritten docs (architecture, local, rpi)
+
+### Fixed
+- Logger now reads `logtailToken` from config (was broken `process.env` direct read)
+- Upstream translation fix for "Тель-Авив — Южный район и Яффо"
