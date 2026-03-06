@@ -17,7 +17,7 @@
     "test:watch": "vitest",
     "changeset": "changeset",
     "version-bump": "changeset version",
-    "release": "npm run build && changeset publish",
+    "release": "npm run build && npm publish -w packages/bot --access public --provenance",
     "prepare": "husky"
   },
   "author": "Mikhail Kogan <kogan.mikhail@gmail.com>",
