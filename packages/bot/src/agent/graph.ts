@@ -169,10 +169,13 @@ Return ONLY valid JSON (no markdown, no explanation):
   "region_relevance": float,       // 0–1: does this message discuss the specified alert region?
   "source_trust": float,           // 0–1: factual reporting (1.0) vs unverified rumors/panic (0.0)
   "tone": "calm"|"neutral"|"alarmist",  // message tone — reject alarmist content
-  "country_origin": string|null,   // "Iran","Yemen","Lebanon","Gaza","Iraq" or null
-  "rocket_count": int|null,        // total rockets/missiles if mentioned
-  "is_cassette": bool|null,        // cluster/cassette munitions?
-  "hits_confirmed": int|null,      // confirmed hits/impacts
+  "country_origin": string|null,   // "Iran","Yemen","Lebanon","Gaza","Iraq","Syria" or null
+  "rocket_count": int|null,        // total rockets/missiles launched if mentioned
+  "is_cassette": bool|null,        // cluster/cassette munitions confirmed?
+  "intercepted": int|null,         // number intercepted by Iron Dome/air defense
+  "sea_impact": int|null,          // number fell in sea or open unpopulated area
+  "open_area_impact": int|null,    // number hit open/populated ground (not sea, not intercepted)
+  "hits_confirmed": int|null,      // confirmed hits on structures/buildings
   "eta_refined_minutes": int|null, // refined time-to-impact if mentioned
   "confidence": float              // 0–1: overall confidence in this extraction
 }
@@ -181,7 +184,9 @@ Rules:
 - If unrelated to the alert region, set region_relevance=0 and all data fields to null.
 - If message is speculative/unconfirmed rumor, set source_trust < 0.4.
 - If message uses excessive caps, exclamation marks, panic language → tone="alarmist".
-- Only extract concrete numbers from the text. Don't guess.`;
+- Only extract concrete numbers explicitly stated in the text. Never guess.
+- intercepted + sea_impact + open_area_impact should sum to rocket_count when all are known.
+- If partial breakdown known, set unknown sub-fields to null (not 0).`;
 
 async function extractAndValidate(
   state: AgentStateType,
@@ -201,6 +206,31 @@ async function extractAndValidate(
       ? state.alertAreas.join(", ")
       : Object.keys(config.agent.areaLabels).join(", ") || "Israel";
 
+  // Format alert time in Israel timezone
+  const alertTimeIL = new Date(state.alertTs).toLocaleTimeString("he-IL", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Jerusalem",
+  });
+  const nowIL = new Date().toLocaleTimeString("he-IL", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Jerusalem",
+  });
+  const alertTypeLabel =
+    state.alertType === "early_warning"
+      ? "early warning (radar detection)"
+      : state.alertType === "siren"
+      ? "siren (impact imminent)"
+      : state.alertType;
+
+  const contextHeader =
+    `Alert type: ${alertTypeLabel}\n` +
+    `Alert time: ${alertTimeIL} (Israel)\n` +
+    `Current time: ${nowIL} (Israel)\n` +
+    `Alert region: ${regionHint}\n` +
+    `UI language: ${config.language}\n`;
+
   const results = await Promise.all(
     posts.map(async (post): Promise<ValidatedExtraction> => {
       try {
@@ -208,7 +238,7 @@ async function extractAndValidate(
           { role: "system", content: SYSTEM_PROMPT },
           {
             role: "user",
-            content: `Alert region: ${regionHint}\nChannel: ${
+            content: `${contextHeader}Channel: ${
               post.channel
             }\n\nMessage:\n${post.text.slice(0, 800)}`,
           },
@@ -239,6 +269,9 @@ async function extractAndValidate(
           country_origin: null,
           rocket_count: null,
           is_cassette: null,
+          intercepted: null,
+          sea_impact: null,
+          open_area_impact: null,
           hits_confirmed: null,
           eta_refined_minutes: null,
           confidence: 0,
@@ -376,6 +409,32 @@ function vote(state: AgentStateType): Partial<AgentStateType> {
   const hits_confirmed =
     hitsVals.length > 0 ? hitsVals[Math.floor(hitsVals.length / 2)] : null;
 
+  // Intercepted: median across sources that reported it
+  const interceptedVals = indexed
+    .filter((e) => e.intercepted !== null)
+    .map((e) => e.intercepted as number)
+    .sort((a, b) => a - b);
+  const intercepted =
+    interceptedVals.length > 0
+      ? interceptedVals[Math.floor(interceptedVals.length / 2)]
+      : null;
+
+  // Sea impact: median
+  const seaVals = indexed
+    .filter((e) => e.sea_impact !== null)
+    .map((e) => e.sea_impact as number)
+    .sort((a, b) => a - b);
+  const sea_impact =
+    seaVals.length > 0 ? seaVals[Math.floor(seaVals.length / 2)] : null;
+
+  // Open area impact: median
+  const openVals = indexed
+    .filter((e) => e.open_area_impact !== null)
+    .map((e) => e.open_area_impact as number)
+    .sort((a, b) => a - b);
+  const open_area_impact =
+    openVals.length > 0 ? openVals[Math.floor(openVals.length / 2)] : null;
+
   // Weighted confidence: source_trust × confidence
   const totalWeight = indexed.reduce(
     (s, e) => s + e.source_trust * e.confidence,
@@ -395,8 +454,16 @@ function vote(state: AgentStateType): Partial<AgentStateType> {
     country_origins,
     rocket_count_min,
     rocket_count_max,
-    is_cassette,
     rocket_citations,
+    rocket_source_count: rocketSrcs.length,
+    is_cassette,
+    is_cassette_source_count: cassVals.length,
+    intercepted,
+    intercepted_source_count: interceptedVals.length,
+    sea_impact,
+    sea_source_count: seaVals.length,
+    open_area_impact,
+    open_area_source_count: openVals.length,
     hits_confirmed,
     hits_citations,
     confidence: Math.round(weightedConf * 100) / 100,
@@ -479,23 +546,49 @@ function buildEnrichedMessage(
     text = insertBeforeTimeLine(text, `\n<b>Откуда:</b> ${parts.join(" + ")}`);
   }
 
-  // Insert "Ракет" before time line (no inline citations — sources footer has them)
+  // Rocket count with breakdown and uncertainty markers
   if (r.rocket_count_min !== null && r.rocket_count_max !== null) {
+    const rocketUncertain = r.rocket_source_count === 1 ? " (?)" : "";
     const countStr =
       r.rocket_count_min === r.rocket_count_max
         ? `${r.rocket_count_min}`
-        : `~${r.rocket_count_min}-${r.rocket_count_max}`;
-    const cassette = r.is_cassette ? " (кассет.)" : "";
-    text = insertBeforeTimeLine(text, `<b>Ракет:</b> ${countStr}${cassette}`);
-  }
+        : `~${r.rocket_count_min}–${r.rocket_count_max}`;
 
-  // Insert "Попадания" before time line (only if > 0, with citation)
-  if (r.hits_confirmed !== null && r.hits_confirmed > 0) {
-    const areaLabel = Object.values(config.agent.areaLabels)[0] ?? "район";
-    const hitsCite = r.hits_citations.length > 0 ? sup(r.hits_citations) : "";
+    const bParts: string[] = [];
+    if (r.intercepted !== null) {
+      const u = r.intercepted_source_count === 1 ? " (?)" : "";
+      bParts.push(`[перехвачено — ${r.intercepted}${u}]`);
+    }
+    if (r.sea_impact !== null) {
+      const u = r.sea_source_count === 1 ? " (?)" : "";
+      bParts.push(`[упали в море — ${r.sea_impact}${u}]`);
+    }
+    if (r.open_area_impact !== null) {
+      const u = r.open_area_source_count === 1 ? " (?)" : "";
+      bParts.push(`[открытая местность — ${r.open_area_impact}${u}]`);
+    }
+
+    const breakdown =
+      bParts.length > 0 ? `, [из них: ${bParts.join(", ")}]` : "";
+    const cassetteU = r.is_cassette_source_count === 1 ? " (?)" : "";
+    const cassette = r.is_cassette ? `, [есть кассетные${cassetteU}]` : "";
+
     text = insertBeforeTimeLine(
       text,
-      `<b>Попадания (${areaLabel}):</b> ${r.hits_confirmed}${hitsCite}`,
+      `<b>Ракет:</b> ${countStr}${rocketUncertain}${breakdown}${cassette}`,
+    );
+  }
+
+  // Hits: [есть прямое попадание/-ия в <area>: N] — strict, with citation
+  if (r.hits_confirmed !== null && r.hits_confirmed > 0) {
+    const areaLabel = Object.values(config.agent.areaLabels)[0] ?? "район";
+    const hitWord = r.hits_confirmed === 1 ? "попадание" : "попадания";
+    const hitsCite = r.hits_citations.length > 0 ? sup(r.hits_citations) : "";
+    // Require 2+ sources for no uncertainty marker
+    const hitsU = r.hits_citations.length < 2 ? " (?)" : "";
+    text = insertBeforeTimeLine(
+      text,
+      `[есть прямое ${hitWord} в ${areaLabel}: ${r.hits_confirmed}${hitsCite}${hitsU}]`,
     );
   }
 
@@ -571,19 +664,47 @@ async function editMessage(
 ): Promise<Partial<AgentStateType>> {
   const { votedResult } = state;
 
-  if (
-    !votedResult ||
-    votedResult.confidence < config.agent.confidenceThreshold
-  ) {
-    logger.info("Agent: confidence below threshold — not editing", {
+  if (!config.botToken) return {};
+
+  const tgBot = new Bot(config.botToken);
+
+  // No valid sources found at all — append a "pending" note
+  if (!votedResult) {
+    logger.info("Agent: no voted result — marking message as pending", {
       alertId: state.alertId,
-      confidence: votedResult?.confidence ?? 0,
-      threshold: config.agent.confidenceThreshold,
     });
+    const pendingText =
+      state.currentText + "\n<i>Данные уточняются...</i>";
+    try {
+      if (state.isCaption) {
+        await tgBot.api.editMessageCaption(state.chatId, state.messageId, {
+          caption: pendingText,
+          parse_mode: "HTML",
+        });
+      } else {
+        await tgBot.api.editMessageText(
+          state.chatId,
+          state.messageId,
+          pendingText,
+          { parse_mode: "HTML" },
+        );
+      }
+    } catch (err) {
+      logger.warn("Agent: failed to edit message (pending)", {
+        error: String(err),
+      });
+    }
     return {};
   }
 
-  if (!config.botToken) return {};
+  // Low confidence: log but still show data with (?) markers
+  if (votedResult.confidence < config.agent.confidenceThreshold) {
+    logger.info("Agent: confidence below threshold — editing with (?) markers", {
+      alertId: state.alertId,
+      confidence: votedResult.confidence,
+      threshold: config.agent.confidenceThreshold,
+    });
+  }
 
   const newText = buildEnrichedMessage(
     state.currentText,
@@ -591,8 +712,6 @@ async function editMessage(
     state.alertTs,
     votedResult,
   );
-
-  const tgBot = new Bot(config.botToken);
 
   try {
     if (state.isCaption) {
