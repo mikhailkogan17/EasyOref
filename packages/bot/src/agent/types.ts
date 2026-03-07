@@ -24,6 +24,12 @@ export interface ExtractionResult {
   country_origin: string | null;
   rocket_count: number | null;
   is_cassette: boolean | null;
+  /** Rocket breakdown: intercepted by Iron Dome */
+  intercepted: number | null;
+  /** Rocket breakdown: fell in sea/empty area */
+  sea_impact: number | null;
+  /** Rocket breakdown: hit open/populated ground */
+  open_area_impact: number | null;
   hits_confirmed: number | null;
   eta_refined_minutes: number | null;
   /** V3: tone — "calm"|"neutral"|"alarmist" */
@@ -67,8 +73,22 @@ export interface VotedResult {
   rocket_count_min: number | null;
   rocket_count_max: number | null;
   rocket_citations: number[];
+  /** Number of sources that provided rocket count (for uncertainty marker) */
+  rocket_source_count: number;
 
   is_cassette: boolean | null;
+  /** Number of sources that confirmed cassette munitions */
+  is_cassette_source_count: number;
+
+  /** Rocket breakdown (median values; null if no sources reported) */
+  intercepted: number | null;
+  /** Number of sources reporting intercepted count */
+  intercepted_source_count: number;
+  sea_impact: number | null;
+  sea_source_count: number;
+  open_area_impact: number | null;
+  open_area_source_count: number;
+
   hits_confirmed: number | null;
   /** Citation indices that provided hits data */
   hits_citations: number[];
