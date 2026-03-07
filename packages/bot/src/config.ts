@@ -49,8 +49,8 @@ interface ConfigYaml {
   oref_api_url?: string;
   agent?: {
     enabled?: boolean;
-    openai_api_key?: string;
-    openai_model?: string;
+    google_api_key?: string;
+    google_model?: string;
     redis_url?: string;
     socks5_proxy?: string;
     enrich_delay_ms?: number;
@@ -194,8 +194,8 @@ export const config = {
   /** Agentic enrichment config */
   agent: {
     enabled: yml.agent?.enabled ?? false,
-    openaiApiKey: yml.agent?.openai_api_key ?? process.env.OPENAI_API_KEY ?? "",
-    openaiModel: yml.agent?.openai_model ?? "gpt-4o-mini",
+    googleApiKey: yml.agent?.google_api_key ?? process.env.GOOGLE_API_KEY ?? "",
+    googleModel: yml.agent?.google_model ?? "gemini-1.5-flash",
     redisUrl:
       yml.agent?.redis_url ?? process.env.REDIS_URL ?? "redis://localhost:6379",
     socks5Proxy: yml.agent?.socks5_proxy ?? process.env.SOCKS5_PROXY ?? "",

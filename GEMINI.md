@@ -41,3 +41,90 @@ EasyOref (как и CyberMem) использует **npm OIDC Trusted Publishers
 - [npm Trusted Publishing](https://docs.npmjs.com/generating-provenance-statements)
 - [GitHub OIDC](https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect)
 - CyberMem reference: `.github/OIDC_PUBLISHING.md`
+
+---
+
+## LangGraph Agent Enrichment Pipeline
+
+### Overview
+
+EasyOref v1.6.0+ includes a **LangGraph.js agentic enrichment pipeline** that monitors Hebrew-language Telegram news channels via GramJS (MTProto), correlates messages with Red Alert events, and enriches bot notifications with context — attack type, ETA, source citations.
+
+### Architecture
+
+```
+Red Alert API ──► grammY bot ──► sends initial alert ──► captures {messageId, isCaption}
+                                      │
+GramJS MTProto ──► monitors 5 news channels ──► BullMQ delayed job (90s)
+                                                       │
+                                                       ▼
+                                              LangGraph pipeline (5 tiers)
+                                                       │
+                                                       ▼
+                                              bot.editMessageText() with enrichment
+```
+
+### Files
+
+| File                          | Purpose                                                                                |
+| ----------------------------- | -------------------------------------------------------------------------------------- |
+| `src/agent/types.ts`          | Shared types: `AgentState`, `EnrichResult`, `ChannelMessage`                           |
+| `src/agent/redis.ts`          | ioredis singleton, lazy connect                                                        |
+| `src/agent/store.ts`          | Redis-backed store: alert metadata, channel messages, dedup                            |
+| `src/agent/queue.ts`          | BullMQ queue: `enrich-alert` jobs with 90s delay                                       |
+| `src/agent/worker.ts`         | BullMQ worker: pulls from queue → runs graph → edits message                           |
+| `src/agent/graph.ts`          | LangGraph StateGraph: 5-tier pipeline (pre-filter → vote → enrich → format → validate) |
+| `src/agent/gramjs-monitor.ts` | GramJS MTProto client: monitors channels, stores messages in Redis                     |
+| `src/agent/auth.ts`           | One-time QR login script to obtain `session_string`                                    |
+| `src/agent/dry-run.ts`        | Manual test script for the pipeline                                                    |
+
+### Model
+
+- **gpt-5-mini** (OpenAI, successor to gpt-4o-mini as of March 2026)
+- Configured in `config.yaml` under `agent.model`
+
+### Config Keys (config.yaml)
+
+```yaml
+agent:
+  openai_api_key: "sk-..."
+  session_string: "1AgAOMTQ5..."
+  model: "gpt-5-mini"
+  enrich_delay_ms: 90000
+  channels:
+    - "@newsflashhhj"
+    - "@yediotnews25"
+    - "@Trueisrael"
+    - "@israelsecurity"
+    - "@N12LIVE"
+  redis_url: "redis://redis:6379"   # Docker network hostname, NOT localhost
+```
+
+### Enrichment Format
+
+Unicode superscript citations (¹²³), absolute ETA (~HH:MM¹), inline key:value pairs, clickable source footer. No "Разведка" block — enrichment is appended inline to original alert text.
+
+### Docker
+
+- Redis: `redis:7-alpine` with `--appendonly yes --maxmemory 64mb`
+- `redis_url` must be `redis://redis:6379` inside Docker network (NOT `redis://localhost:6379`)
+- `depends_on: redis: condition: service_healthy`
+
+### GramJS Auth
+
+- Uses Telegram Desktop public `api_id: 2040` / `api_hash` (hardcoded, not secret)
+- QR-code login flow via `auth.ts` → produces `session_string`
+- `.gitleaks.toml` has allowlist entry for the public apiHash fingerprint (false positive)
+
+### Deployment
+
+- Standard CI/CD: PR → merge → changesets version PR → merge → release.yml builds Docker (linux/amd64 + arm64) → pushes to ghcr.io
+- ghcr.io package is **public** — RPi pulls without auth
+- RPi: `docker-compose pull easyoref && docker-compose up -d`
+
+### ЗАПРЕЩЕНО
+
+- ❌ Предлагать ручной деплой на RPi (только через CI/CD pipeline)
+- ❌ Создавать api_id/api_hash на my.telegram.org — используются публичные Telegram Desktop
+- ❌ Писать `redis://localhost:6379` в Docker — только `redis://redis:6379`
+- ❌ Удалять `.gitleaks.toml` allowlist — apiHash fingerprint нужен для прохождения CI

@@ -22,6 +22,28 @@ type AnyOpts = Record<string, any>;
 
 let _client: TelegramClient | null = null;
 
+// ── Monitored channels (hardcoded) ────────────────────
+
+const MONITORED_CHANNELS = [
+  // Original 5 channels
+  "@newsflashhhj",
+  "@yediotnews25",
+  "@Trueisrael",
+  "@israelsecurity",
+  "@N12LIVE",
+  // New channels added 2026-03-07
+  "@moriahdoron",
+  "@divuhim1234",
+  "@GLOBAL_Telegram_MOKED",
+  "@pkpoi",
+  "@lieldaphna",
+  "@News_cabinet_news",
+  "@yaronyanir1299",
+  "@ynetalerts",
+  "@idf_telegram",
+  // Note: private group @+6Jd-rxu0ZPo1ZmE0 may not work with MTProto
+];
+
 // ── Helpers ────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {
@@ -103,7 +125,7 @@ export async function startMonitor(): Promise<void> {
   }, new NewMessage({}));
 
   logger.info("GramJS: monitoring channels", {
-    channels: config.agent.channels,
+    channels: MONITORED_CHANNELS,
   });
 }
 
@@ -128,7 +150,7 @@ async function handleNewMessage(event: NewMessageEvent): Promise<void> {
 
   // Only care about configured channels
   const normalizedChannel = channel.toLowerCase();
-  const isMonitored = config.agent.channels.some(
+  const isMonitored = MONITORED_CHANNELS.some(
     (c) =>
       c.toLowerCase() === normalizedChannel ||
       c.toLowerCase().replace("@", "") === normalizedChannel.replace("@", ""),

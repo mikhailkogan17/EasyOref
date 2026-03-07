@@ -64,17 +64,19 @@ gif_mode: none
 
 # ── Agentic Enrichment (optional) ────────────────
 # Enriches bot messages with data scraped from Telegram news channels via
-# GramJS MTProto + LangGraph (GPT-4o-mini). Edits the sent message in-place.
+# GramJS MTProto + LangGraph (Gemini). Edits the sent message in-place.
+# Channels are hardcoded in src/agent/gramjs-monitor.ts
 #
 # agent:
 #   enabled: false
 #
-#   # OpenAI key (or set OPENAI_API_KEY env var). gpt-4o-mini ~$0.15/1M tokens.
-#   openai_api_key: ""
-#   openai_model: gpt-4o-mini
+#   # Google AI key — get free at aistudio.google.com/apikey
+#   # gemini-1.5-flash: 15 req/min free, no billing needed
+#   google_api_key: ""
+#   google_model: gemini-1.5-flash
 #
 #   # Redis (also used by BullMQ queue)
-#   redis_url: redis://localhost:6379
+#   redis_url: redis://redis:6379  # use redis://localhost:6379 outside Docker
 #
 #   # Residential SOCKS5 proxy for GramJS (optional)
 #   # socks5_proxy: socks5://user:pass@host:1080
@@ -88,25 +90,14 @@ gif_mode: none
 #   # Collect channel posts within ±N minutes of alert_ts. Default 2.
 #   window_minutes: 2
 #
-#   # Stop monitoring alert after N minutes (early/siren → resolved). Default 15.
+#   # Stop monitoring if no resolved after N minutes. Default 15.
 #   timeout_minutes: 15
 #
 #   # Burner Telegram account credentials (run `npx tsx src/agent/auth.ts` for QR login)
 #   mtproto:
-#     api_id: 0          # from my.telegram.org
-#     api_hash: ""
+#     api_id: 2040       # Telegram Desktop public app_id — not secret
+#     api_hash: "b18441a1ff607e10a989891a5462e627"
 #     session_string: "" # filled by auth.ts after first login
-#
-#   # Channels to monitor (public @usernames or t.me/... URLs)
-#   channels:
-#     - "@newsflashhhj"      # News Flash (EN)
-#     - "@yediotnews25"      # Yedioth Ahronoth
-#     - "@Trueisrael"        # True Israel News
-#     - "@israelsecurity"    # Israel Security
-#     - "@N12LIVE"           # N12 Live
-#     # -- add more below --
-#
-#   # Map monitored city prefix → friendly region label for enriched messages
 #   area_labels:
 #     "תל אביב": "Дан центр"
 #     "חיפה": "Север (Хайфа)"

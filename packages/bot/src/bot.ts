@@ -18,7 +18,7 @@ import { createServer } from "node:http";
 import { startMonitor, stopMonitor } from "./agent/gramjs-monitor.js";
 import { enqueueEnrich } from "./agent/queue.js";
 import { closeRedis } from "./agent/redis.js";
-import { saveAlertMeta } from "./agent/store.js";
+import { clearActiveAlert, saveAlertMeta } from "./agent/store.js";
 import { startEnrichWorker, stopEnrichWorker } from "./agent/worker.js";
 import { config, type AlertTypeConfig } from "./config.js";
 import { initGifState, pickGif } from "./gif-state.js";
@@ -490,6 +490,14 @@ async function processAlert(alert: OrefAlert): Promise<void> {
   try {
     const sent = await sendTelegram(alertType, message);
 
+    // Clear active alert on resolved (stop monitoring)
+    if (alertType === "resolved") {
+      await clearActiveAlert();
+      logger.info("Agent monitoring stopped (resolved alert)", {
+        alert_id: alert.id,
+      });
+    }
+
     // Store alert meta + enqueue enrichment job
     if (sent && shouldEnrich && config.chatId) {
       const alertTs = Date.now();
@@ -504,6 +512,22 @@ async function processAlert(alert: OrefAlert): Promise<void> {
         currentText: message,
       });
       await enqueueEnrich(alert.id, alertTs);
+
+      // Start timeout timer — clear active alert after 15min if not resolved
+      const timeoutMs = config.agent.timeoutMinutes * 60 * 1000;
+      setTimeout(async () => {
+        try {
+          await clearActiveAlert();
+          logger.info("Agent monitoring stopped (timeout)", {
+            alert_id: alert.id,
+            timeout_minutes: config.agent.timeoutMinutes,
+          });
+        } catch (err) {
+          logger.warn("Timeout clearActiveAlert failed", {
+            error: String(err),
+          });
+        }
+      }, timeoutMs);
     }
   } catch (err) {
     logger.error("Alert send/store failed", {
@@ -586,8 +610,8 @@ async function main(): Promise<void> {
     startEnrichWorker();
     await startMonitor();
     logger.info("Agent subsystems started", {
-      model: config.agent.openaiModel,
-      channels: config.agent.channels.length,
+      model: config.agent.googleModel,
+      channels: 14, // MONITORED_CHANNELS length (hardcoded)
       enrich_delay_ms: config.agent.enrichDelayMs,
     });
   }

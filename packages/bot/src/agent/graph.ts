@@ -30,8 +30,8 @@
  * Total LLM cost: 1 call × N posts (max 8). GPT-4o-mini ≈ $0.0001/post.
  */
 
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { Annotation, StateGraph } from "@langchain/langgraph";
-import { ChatOpenAI } from "@langchain/openai";
 import { Bot } from "grammy";
 import { config } from "../config.js";
 import * as logger from "../logger.js";
@@ -66,12 +66,12 @@ type AgentStateType = typeof AgentState.State;
 
 // ── LLM ───────────────────────────────────────────────
 
-function getLLM(): ChatOpenAI {
-  return new ChatOpenAI({
-    modelName: config.agent.openaiModel,
-    apiKey: config.agent.openaiApiKey,
+function getLLM(): ChatGoogleGenerativeAI {
+  return new ChatGoogleGenerativeAI({
+    model: config.agent.googleModel,
+    apiKey: config.agent.googleApiKey,
     temperature: 0,
-    maxTokens: 400,
+    maxOutputTokens: 400,
   });
 }
 
