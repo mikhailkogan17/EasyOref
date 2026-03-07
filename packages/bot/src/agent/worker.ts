@@ -10,8 +10,9 @@ import { Worker } from "bullmq";
 import { config } from "../config.js";
 import * as logger from "../logger.js";
 import { runEnrichment } from "./graph.js";
+import { enqueueEnrich } from "./queue.js";
 import type { EnrichJobData } from "./queue.js";
-import { getAlertMeta } from "./store.js";
+import { getActiveAlert, getAlertMeta } from "./store.js";
 
 let _worker: Worker | null = null;
 
@@ -48,6 +49,12 @@ export function startEnrichWorker(): void {
         isCaption: meta.isCaption,
         currentText: meta.currentText ?? "",
       });
+
+      // Re-enqueue if alert is still active (loop every enrichDelayMs)
+      const still = await getActiveAlert();
+      if (still && still.alertId === alertId) {
+        await enqueueEnrich(alertId, alertTs);
+      }
     },
     {
       connection,

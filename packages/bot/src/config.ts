@@ -199,7 +199,7 @@ export const config = {
     redisUrl:
       yml.agent?.redis_url ?? process.env.REDIS_URL ?? "redis://localhost:6379",
     socks5Proxy: yml.agent?.socks5_proxy ?? process.env.SOCKS5_PROXY ?? "",
-    enrichDelayMs: yml.agent?.enrich_delay_ms ?? 120_000,
+    enrichDelayMs: yml.agent?.enrich_delay_ms ?? 20_000,
     confidenceThreshold: yml.agent?.confidence_threshold ?? 0.7,
     windowMinutes: yml.agent?.window_minutes ?? 2,
     timeoutMinutes: yml.agent?.timeout_minutes ?? 15,
