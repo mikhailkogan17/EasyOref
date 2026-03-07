@@ -27,3 +27,7 @@ paths = [
   '''dist/''',
   '''\.yaml\.example$''',
 ]
+# Telegram Desktop public apiHash — not a secret, same for all TDesktop users
+# https://core.telegram.org/api/obtaining_api_id
+regexTarget = "match"
+regexes = ['''b18441a1ff607e10a989891a5462e627''']
