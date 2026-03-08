@@ -18,7 +18,14 @@ import { createServer } from "node:http";
 import { startMonitor, stopMonitor } from "./agent/gramjs-monitor.js";
 import { enqueueEnrich } from "./agent/queue.js";
 import { closeRedis } from "./agent/redis.js";
-import { clearActiveAlert, saveAlertMeta } from "./agent/store.js";
+import {
+  clearSession,
+  getActiveSession,
+  PHASE_ENRICH_DELAY_MS,
+  saveAlertMeta,
+  setActiveSession,
+  type ActiveSession,
+} from "./agent/store.js";
 import { startEnrichWorker, stopEnrichWorker } from "./agent/worker.js";
 import { config, type AlertTypeConfig } from "./config.js";
 import { initGifState, pickGif } from "./gif-state.js";
@@ -476,25 +483,15 @@ async function processAlert(alert: OrefAlert): Promise<void> {
 
   const message = formatMessage(alertType, areas);
 
-  // Only monitor early + siren alerts with the agent (not resolved)
-  const shouldEnrich =
-    config.agent.enabled &&
-    (alertType === "early_warning" || alertType === "siren");
-
   try {
     const sent = await sendTelegram(alertType, message);
 
-    // Clear active alert on resolved (stop monitoring)
-    if (alertType === "resolved") {
-      await clearActiveAlert();
-      logger.info("Agent monitoring stopped (resolved alert)", {
-        alert_id: alert.id,
-      });
-    }
-
-    // Store alert meta + enqueue enrichment job
-    if (sent && shouldEnrich && config.chatId) {
+    // ── Session-based enrichment lifecycle ──
+    if (sent && config.agent.enabled && config.chatId) {
       const alertTs = Date.now();
+      const existingSession = await getActiveSession();
+
+      // Save meta for this alert (always)
       await saveAlertMeta({
         alertId: alert.id,
         messageId: sent.messageId,
@@ -505,23 +502,82 @@ async function processAlert(alert: OrefAlert): Promise<void> {
         alertAreas: alert.data,
         currentText: message,
       });
-      await enqueueEnrich(alert.id, alertTs);
 
-      // Start timeout timer — clear active alert after 15min if not resolved
-      const timeoutMs = config.agent.timeoutMinutes * 60 * 1000;
-      setTimeout(async () => {
-        try {
-          await clearActiveAlert();
-          logger.info("Agent monitoring stopped (timeout)", {
-            alert_id: alert.id,
-            timeout_minutes: config.agent.timeoutMinutes,
+      if (alertType === "resolved") {
+        // ── Resolved: switch existing session to resolved phase ──
+        if (existingSession) {
+          const updated: ActiveSession = {
+            ...existingSession,
+            phase: "resolved",
+            phaseStartTs: Date.now(),
+            latestAlertId: alert.id,
+            latestMessageId: sent.messageId,
+            latestAlertTs: alertTs,
+            isCaption: sent.isCaption,
+            currentText: message,
+          };
+          await setActiveSession(updated);
+          const delay = PHASE_ENRICH_DELAY_MS.resolved;
+          await enqueueEnrich(alert.id, alertTs, delay);
+          logger.info("Session: entered resolved phase", {
+            sessionId: existingSession.sessionId,
+            alertId: alert.id,
           });
-        } catch (err) {
-          logger.warn("Timeout clearActiveAlert failed", {
-            error: String(err),
+        } else {
+          logger.info("Resolved alert without active session — no enrichment", {
+            alert_id: alert.id,
           });
         }
-      }, timeoutMs);
+      } else {
+        // ── Early warning / Siren ──
+        if (existingSession && existingSession.phase !== "resolved") {
+          // Upgrade session phase (early → siren, or same-type refresh)
+          const updated: ActiveSession = {
+            ...existingSession,
+            phase: alertType,
+            phaseStartTs: Date.now(),
+            latestAlertId: alert.id,
+            latestMessageId: sent.messageId,
+            latestAlertTs: alertTs,
+            isCaption: sent.isCaption,
+            currentText: message,
+            alertAreas: alert.data,
+          };
+          await setActiveSession(updated);
+          logger.info("Session: upgraded phase", {
+            sessionId: existingSession.sessionId,
+            from: existingSession.phase,
+            to: alertType,
+            alertId: alert.id,
+          });
+        } else {
+          // New session (or previous one was in resolved — start fresh)
+          if (existingSession) {
+            await clearSession();
+          }
+          const session: ActiveSession = {
+            sessionId: alert.id,
+            sessionStartTs: alertTs,
+            phase: alertType,
+            phaseStartTs: alertTs,
+            latestAlertId: alert.id,
+            latestMessageId: sent.messageId,
+            latestAlertTs: alertTs,
+            chatId: config.chatId,
+            isCaption: sent.isCaption,
+            currentText: message,
+            alertAreas: alert.data,
+          };
+          await setActiveSession(session);
+          logger.info("Session: started", {
+            sessionId: alert.id,
+            phase: alertType,
+          });
+        }
+
+        const delay = PHASE_ENRICH_DELAY_MS[alertType];
+        await enqueueEnrich(alert.id, alertTs, delay);
+      }
     }
   } catch (err) {
     logger.error("Alert send/store failed", {

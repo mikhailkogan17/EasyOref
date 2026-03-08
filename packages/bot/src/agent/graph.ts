@@ -136,20 +136,17 @@ function buildRegionKeywords(): string[] {
 async function collectAndPreFilter(
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> {
+  // Session-scoped: all posts belong to the current session already
   const posts = await getChannelPosts(state.alertId);
-  const windowMs = config.agent.windowMinutes * 60 * 1000;
-  const inWindow = posts.filter(
-    (p) => Math.abs(p.ts - state.alertTs) <= windowMs,
-  );
 
-  if (inWindow.length === 0) {
-    logger.info("Agent: no posts in window", { alertId: state.alertId });
-    return { channelPosts: inWindow, filteredPosts: [] };
+  if (posts.length === 0) {
+    logger.info("Agent: no posts in session", { alertId: state.alertId });
+    return { channelPosts: posts, filteredPosts: [] };
   }
 
   const keywords = buildRegionKeywords();
 
-  const filtered = inWindow.filter((post) => {
+  const filtered = posts.filter((post) => {
     const text = post.text.toLowerCase();
     // Must contain at least 1 region/attack keyword
     return keywords.some((kw) => text.includes(kw));
@@ -158,11 +155,10 @@ async function collectAndPreFilter(
   logger.info("Agent: pre-filter", {
     alertId: state.alertId,
     total: posts.length,
-    in_window: inWindow.length,
     after_keyword_filter: filtered.length,
   });
 
-  return { channelPosts: inWindow, filteredPosts: filtered };
+  return { channelPosts: posts, filteredPosts: filtered };
 }
 
 // ─────────────────────────────────────────────────────────

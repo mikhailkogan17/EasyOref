@@ -1,9 +1,13 @@
 /**
  * BullMQ worker — processes "enrich-alert" jobs.
  *
- * Started alongside the bot when agent.enabled=true.
- * Picks up jobs from the queue after the enrichDelayMs delay,
- * fetches alert meta from Redis, runs LangGraph enrichment.
+ * Session-aware scheduling:
+ *   early_warning → every 20s, up to 30 min
+ *   siren         → every 20s, up to 15 min
+ *   resolved      → every 60s, up to 10 min (tail — detailed intel)
+ *
+ * After each job, checks the session phase and re-enqueues
+ * with the appropriate delay. Stops when phase expires.
  */
 
 import { Worker } from "bullmq";
@@ -12,7 +16,12 @@ import * as logger from "../logger.js";
 import { runEnrichment } from "./graph.js";
 import { enqueueEnrich } from "./queue.js";
 import type { EnrichJobData } from "./queue.js";
-import { getActiveAlert, getAlertMeta } from "./store.js";
+import {
+  clearSession,
+  getActiveSession,
+  isPhaseExpired,
+  PHASE_ENRICH_DELAY_MS,
+} from "./store.js";
 
 let _worker: Worker | null = null;
 
@@ -28,33 +37,52 @@ export function startEnrichWorker(): void {
   _worker = new Worker<EnrichJobData>(
     "enrich-alert",
     async (job) => {
-      const { alertId, alertTs } = job.data;
+      const { alertId } = job.data;
       logger.info("Enrich worker: processing job", { alertId, jobId: job.id });
 
-      const meta = await getAlertMeta(alertId);
-      if (!meta) {
-        logger.warn("Enrich worker: alert meta not found — skipping", {
-          alertId,
-        });
+      const session = await getActiveSession();
+      if (!session) {
+        logger.info("Enrich worker: no active session — skipping", { alertId });
         return;
       }
 
+      // Phase expired → end session
+      if (isPhaseExpired(session)) {
+        logger.info("Enrich worker: phase expired — ending session", {
+          alertId: session.latestAlertId,
+          phase: session.phase,
+        });
+        await clearSession();
+        return;
+      }
+
+      // Run enrichment using latest alert's message as edit target
       await runEnrichment({
-        alertId,
-        alertTs,
-        alertType: meta.alertType,
-        alertAreas: meta.alertAreas ?? [],
-        chatId: meta.chatId,
-        messageId: meta.messageId,
-        isCaption: meta.isCaption,
-        currentText: meta.currentText ?? "",
+        alertId: session.latestAlertId,
+        alertTs: session.latestAlertTs,
+        alertType: session.phase,
+        alertAreas: session.alertAreas,
+        chatId: session.chatId,
+        messageId: session.latestMessageId,
+        isCaption: session.isCaption,
+        currentText: session.currentText,
       });
 
-      // Re-enqueue if alert is still active (loop every enrichDelayMs)
-      const still = await getActiveAlert();
-      if (still && still.alertId === alertId) {
-        await enqueueEnrich(alertId, alertTs);
+      // Re-check session after enrichment (may have changed phase)
+      const after = await getActiveSession();
+      if (!after) return;
+
+      if (isPhaseExpired(after)) {
+        logger.info("Enrich worker: phase expired post-enrich — ending session", {
+          phase: after.phase,
+        });
+        await clearSession();
+        return;
       }
+
+      // Re-enqueue with phase-appropriate delay
+      const delay = PHASE_ENRICH_DELAY_MS[after.phase];
+      await enqueueEnrich(after.latestAlertId, after.latestAlertTs, delay);
     },
     {
       connection,
