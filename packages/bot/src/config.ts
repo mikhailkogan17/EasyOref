@@ -201,13 +201,8 @@ export const config = {
     const ai = yml.ai ?? yml.agent;
     return {
       enabled: ai?.enabled ?? false,
-      apiKey:
-        ai?.openrouter_api_key ??
-        process.env.OPENROUTER_API_KEY ??
-        "",
-      model:
-        ai?.openrouter_model ??
-        "google/gemini-3-flash-preview",
+      apiKey: ai?.openrouter_api_key ?? process.env.OPENROUTER_API_KEY ?? "",
+      model: ai?.openrouter_model ?? "google/gemini-3-flash-preview",
       redisUrl:
         ai?.redis_url ?? process.env.REDIS_URL ?? "redis://localhost:6379",
       socks5Proxy: ai?.socks5_proxy ?? process.env.SOCKS5_PROXY ?? "",
