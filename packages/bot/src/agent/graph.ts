@@ -265,10 +265,15 @@ async function extractAndValidate(
           },
         ]);
 
-        const text =
+        const raw =
           typeof response.content === "string"
             ? response.content
             : JSON.stringify(response.content);
+
+        // Strip markdown code fences (```json ... ```) that some models wrap around JSON
+        const text = raw
+          .replace(/^```(?:json)?\s*\n?/i, "")
+          .replace(/\n?```\s*$/i, "");
 
         const parsed = JSON.parse(text.trim()) as ExtractionResult;
         return {
