@@ -1,5 +1,11 @@
 # easyoref
 
+## 1.10.0
+
+### Minor Changes
+
+- [#31](https://github.com/mikhailkogan17/easyoref/pull/31) [`439f579`](https://github.com/mikhailkogan17/easyoref/commit/439f5792b7acfbf039c4a7d992dac9d61bdbfa76) Thanks [@mikhailkogan17](https://github.com/mikhailkogan17)! - feat: qualitative breakdown descriptors ("все перехвачены", ">5 упали в море", etc.) when channels report without exact numbers; confidence-gated ("нет" only at >95%); no inference from absence
+
 ## 1.9.0
 
 ### Minor Changes
