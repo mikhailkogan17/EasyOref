@@ -1,5 +1,17 @@
 # easyoref
 
+## 1.11.7
+
+### Patch Changes
+
+- Strip markdown code fences from LLM JSON responses to fix extraction SyntaxError
+
+## 1.11.6
+
+### Patch Changes
+
+- Strip markdown code fences from LLM JSON responses to fix extraction SyntaxError
+
 ## 1.11.5
 
 ### Patch Changes
