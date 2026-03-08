@@ -62,18 +62,17 @@ gif_mode: none
 # data_dir: ./data
 # oref_api_url: https://www.oref.org.il/WarningMessages/alert/alerts.json
 
-# ── Agentic Enrichment (optional) ────────────────
+# ── AI Enrichment (optional) ─────────────────────
 # Enriches bot messages with data scraped from Telegram news channels via
-# GramJS MTProto + LangGraph (Gemini). Edits the sent message in-place.
+# GramJS MTProto + LangGraph. Edits the sent message in-place.
 # Channels are hardcoded in src/agent/gramjs-monitor.ts
 #
-# agent:
+# ai:
 #   enabled: false
 #
-#   # Google AI key — get free at aistudio.google.com/apikey
-#   # gemini-1.5-flash: 15 req/min free, no billing needed
-#   google_api_key: ""
-#   google_model: gemini-1.5-flash
+#   # OpenRouter API key — get at openrouter.ai/settings/keys
+#   openrouter_api_key: "sk-or-v1-..."
+#   openrouter_model: google/gemini-3-flash-preview  # any OpenRouter model slug
 #
 #   # Redis (also used by BullMQ queue)
 #   redis_url: redis://redis:6379  # use redis://localhost:6379 outside Docker

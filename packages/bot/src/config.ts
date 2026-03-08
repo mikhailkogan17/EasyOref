@@ -47,25 +47,29 @@ interface ConfigYaml {
   poll_interval_ms?: number;
   data_dir?: string;
   oref_api_url?: string;
-  agent?: {
-    enabled?: boolean;
-    google_api_key?: string;
-    google_model?: string;
-    redis_url?: string;
-    socks5_proxy?: string;
-    enrich_delay_ms?: number;
-    confidence_threshold?: number;
-    window_minutes?: number;
-    timeout_minutes?: number;
-    mtproto?: {
-      api_id?: number;
-      api_hash?: string;
-      session_string?: string;
-    };
-    channels?: string[];
-    /** Map monitored area prefix → human-readable region label */
-    area_labels?: Record<string, string>;
+  /** @deprecated Use `ai` instead */
+  agent?: ConfigYamlAi;
+  ai?: ConfigYamlAi;
+}
+
+interface ConfigYamlAi {
+  enabled?: boolean;
+  openrouter_api_key?: string;
+  openrouter_model?: string;
+  redis_url?: string;
+  socks5_proxy?: string;
+  enrich_delay_ms?: number;
+  confidence_threshold?: number;
+  window_minutes?: number;
+  timeout_minutes?: number;
+  mtproto?: {
+    api_id?: number;
+    api_hash?: string;
+    session_string?: string;
   };
+  channels?: string[];
+  /** Map monitored area prefix → human-readable region label */
+  area_labels?: Record<string, string>;
 }
 
 // ── YAML Loader ──────────────────────────────────────────
@@ -191,27 +195,36 @@ export const config = {
   /** Path for persistent data */
   dataDir: yml.data_dir ?? process.env.DATA_DIR ?? join(CONFIG_DIR, "data"),
 
-  /** Agentic enrichment config */
-  agent: {
-    enabled: yml.agent?.enabled ?? false,
-    googleApiKey: yml.agent?.google_api_key ?? process.env.GOOGLE_API_KEY ?? "",
-    googleModel: yml.agent?.google_model ?? "gemini-3-flash-preview",
-    redisUrl:
-      yml.agent?.redis_url ?? process.env.REDIS_URL ?? "redis://localhost:6379",
-    socks5Proxy: yml.agent?.socks5_proxy ?? process.env.SOCKS5_PROXY ?? "",
-    enrichDelayMs: yml.agent?.enrich_delay_ms ?? 20_000,
-    confidenceThreshold: yml.agent?.confidence_threshold ?? 0.7,
-    windowMinutes: yml.agent?.window_minutes ?? 2,
-    timeoutMinutes: yml.agent?.timeout_minutes ?? 15,
-    mtproto: {
-      apiId: yml.agent?.mtproto?.api_id ?? Number(process.env.TG_API_ID ?? "0"),
-      apiHash: yml.agent?.mtproto?.api_hash ?? process.env.TG_API_HASH ?? "",
-      sessionString:
-        yml.agent?.mtproto?.session_string ?? process.env.TG_SESSION ?? "",
-    },
-    channels: yml.agent?.channels ?? [],
-    areaLabels: yml.agent?.area_labels ?? {},
-  },
+  /** AI enrichment config (YAML key: `ai`, legacy: `agent`) */
+  agent: (() => {
+    // Support both `ai:` (new) and `agent:` (legacy) YAML keys
+    const ai = yml.ai ?? yml.agent;
+    return {
+      enabled: ai?.enabled ?? false,
+      apiKey:
+        ai?.openrouter_api_key ??
+        process.env.OPENROUTER_API_KEY ??
+        "",
+      model:
+        ai?.openrouter_model ??
+        "google/gemini-3-flash-preview",
+      redisUrl:
+        ai?.redis_url ?? process.env.REDIS_URL ?? "redis://localhost:6379",
+      socks5Proxy: ai?.socks5_proxy ?? process.env.SOCKS5_PROXY ?? "",
+      enrichDelayMs: ai?.enrich_delay_ms ?? 20_000,
+      confidenceThreshold: ai?.confidence_threshold ?? 0.7,
+      windowMinutes: ai?.window_minutes ?? 2,
+      timeoutMinutes: ai?.timeout_minutes ?? 15,
+      mtproto: {
+        apiId: ai?.mtproto?.api_id ?? Number(process.env.TG_API_ID ?? "0"),
+        apiHash: ai?.mtproto?.api_hash ?? process.env.TG_API_HASH ?? "",
+        sessionString:
+          ai?.mtproto?.session_string ?? process.env.TG_SESSION ?? "",
+      },
+      channels: ai?.channels ?? [],
+      areaLabels: ai?.area_labels ?? {},
+    };
+  })(),
 };
 
 /** Exported for testing */

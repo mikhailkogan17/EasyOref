@@ -83,7 +83,8 @@ function classifyAlertType(title: string): AlertType {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const COOLDOWN_EARLY_MS = 2 * 60 * 1000; // 2 min (Oref sends multiple IDs per wave)
-const COOLDOWN_SIREN_MS = 90 * 1000; // 1.5 min
+const COOLDOWN_SIREN_MS = 90 * 1000; // 1.5 min (no prior early warning)
+const COOLDOWN_SIREN_AFTER_EARLY_MS = 3 * 60 * 1000; // 3 min (early warning already sent)
 const COOLDOWN_RESOLVED_MS = 5 * 60 * 1000; // 5 min
 
 const lastSent: Record<AlertType, number> = {
@@ -99,8 +100,14 @@ function shouldSend(type: AlertType): boolean {
       return elapsed >= COOLDOWN_EARLY_MS;
     case "resolved":
       return elapsed >= COOLDOWN_RESOLVED_MS;
-    case "siren":
-      return elapsed >= COOLDOWN_SIREN_MS;
+    case "siren": {
+      // If early warning was already sent this cycle → longer cooldown (user already informed)
+      const sirenCd =
+        lastSent.early_warning > 0
+          ? COOLDOWN_SIREN_AFTER_EARLY_MS
+          : COOLDOWN_SIREN_MS;
+      return elapsed >= sirenCd;
+    }
   }
 }
 
@@ -610,7 +617,8 @@ async function main(): Promise<void> {
     startEnrichWorker();
     await startMonitor();
     logger.info("Agent subsystems started", {
-      model: config.agent.googleModel,
+      model: config.agent.model,
+      provider: "openrouter.ai",
       channels: 14, // MONITORED_CHANNELS length (hardcoded)
       enrich_delay_ms: config.agent.enrichDelayMs,
     });
