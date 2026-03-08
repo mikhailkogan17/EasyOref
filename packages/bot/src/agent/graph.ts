@@ -41,6 +41,7 @@ import type {
   AlertType,
   CitedSource,
   ExtractionResult,
+  QualCount,
   ValidatedExtraction,
   VotedResult,
 } from "./types.js";
@@ -161,6 +162,8 @@ async function collectAndPreFilter(
 // Tier 1: Extract + validate (1 LLM call per post)
 // ─────────────────────────────────────────────────────────
 
+const QUAL_VALUES = '"all"|"most"|"many"|"few"|"exists"|"none"|"more_than"|"less_than"';
+
 const SYSTEM_PROMPT = `You analyze Telegram channel messages about a missile/rocket attack on Israel.
 Your job: extract factual data AND assess message quality. Be concise.
 
@@ -172,9 +175,15 @@ Return ONLY valid JSON (no markdown, no explanation):
   "country_origin": string|null,   // "Iran","Yemen","Lebanon","Gaza","Iraq","Syria" or null
   "rocket_count": int|null,        // total rockets/missiles launched if mentioned
   "is_cassette": bool|null,        // cluster/cassette munitions confirmed?
-  "intercepted": int|null,         // number intercepted by Iron Dome/air defense
-  "sea_impact": int|null,          // number fell in sea or open unpopulated area
-  "open_area_impact": int|null,    // number hit open/populated ground (not sea, not intercepted)
+  "intercepted": int|null,         // exact number intercepted by Iron Dome/air defense
+  "intercepted_qual": ${QUAL_VALUES}|null, // qualitative if no exact number; null if exact number given
+  "intercepted_qual_num": int|null, // reference number for more_than/less_than (e.g. 5 if "more than 5")
+  "sea_impact": int|null,          // exact number fell in sea/unpopulated area
+  "sea_impact_qual": ${QUAL_VALUES}|null,
+  "sea_impact_qual_num": int|null,
+  "open_area_impact": int|null,    // exact number hit open/populated ground
+  "open_area_impact_qual": ${QUAL_VALUES}|null,
+  "open_area_impact_qual_num": int|null,
   "hits_confirmed": int|null,      // confirmed hits on structures/buildings
   "eta_refined_minutes": int|null, // refined time-to-impact if mentioned
   "confidence": float              // 0–1: overall confidence in this extraction
@@ -185,8 +194,12 @@ Rules:
 - If message is speculative/unconfirmed rumor, set source_trust < 0.4.
 - If message uses excessive caps, exclamation marks, panic language → tone="alarmist".
 - Only extract concrete numbers explicitly stated in the text. Never guess.
-- intercepted + sea_impact + open_area_impact should sum to rocket_count when all are known.
-- If partial breakdown known, set unknown sub-fields to null (not 0).`;
+- intercpted + sea_impact + open_area_impact should sum to rocket_count when all are known.
+- If partial breakdown known, set unknown sub-fields to null (not 0).
+- *_qual fields: use ONLY when the message explicitly states a qualitative descriptor WITHOUT an exact count.
+  If an exact number is given, set *_qual to null. Do NOT infer from absence.
+- NEVER extract qualitative descriptors for casualties or injuries — hits_confirmed handles structural hits only.
+- "none" qual is only valid if explicitly stated in the message (e.g., "все перехвачены", "не упало в море").`;
 
 async function extractAndValidate(
   state: AgentStateType,
@@ -270,8 +283,14 @@ async function extractAndValidate(
           rocket_count: null,
           is_cassette: null,
           intercepted: null,
+          intercepted_qual: null,
+          intercepted_qual_num: null,
           sea_impact: null,
+          sea_impact_qual: null,
+          sea_impact_qual_num: null,
           open_area_impact: null,
+          open_area_impact_qual: null,
+          open_area_impact_qual_num: null,
           hits_confirmed: null,
           eta_refined_minutes: null,
           confidence: 0,
@@ -392,61 +411,109 @@ function vote(state: AgentStateType): Partial<AgentStateType> {
     rocketVals.length > 0 ? Math.max(...rocketVals) : null;
   const rocket_citations = rocketSrcs.map((e) => e.idx);
 
+  // Helper: avg weighted confidence for a set of sources
+  function fieldConf(
+    srcs: Array<{ source_trust: number; confidence: number }>,
+  ): number {
+    if (srcs.length === 0) return 0;
+    return (
+      srcs.reduce((s, e) => s + e.source_trust * e.confidence, 0) / srcs.length
+    );
+  }
+
   // Cassette: majority
-  const cassVals = indexed
-    .filter((e) => e.is_cassette !== null)
-    .map((e) => e.is_cassette as boolean);
+  const cassSrcs = indexed.filter((e) => e.is_cassette !== null);
+  const cassVals = cassSrcs.map((e) => e.is_cassette as boolean);
   const is_cassette =
     cassVals.length > 0
       ? cassVals.filter(Boolean).length > cassVals.length / 2
       : null;
+  const is_cassette_confidence = fieldConf(cassSrcs);
 
   // Hits: median
+  const hitsSrcs = indexed.filter(
+    (e) => e.hits_confirmed !== null && e.hits_confirmed > 0,
+  );
   const hitsVals = indexed
     .filter((e) => e.hits_confirmed !== null)
     .map((e) => e.hits_confirmed as number)
     .sort((a, b) => a - b);
   const hits_confirmed =
     hitsVals.length > 0 ? hitsVals[Math.floor(hitsVals.length / 2)] : null;
+  const hits_citations = hitsSrcs.map((e) => e.idx);
+  const hits_confidence = fieldConf(hitsSrcs);
 
-  // Intercepted: median across sources that reported it
-  const interceptedVals = indexed
-    .filter((e) => e.intercepted !== null)
+  // Helper: mode (most frequent non-null value) for QualCount aggregation
+  function modeQual(
+    srcs: Array<{ [k: string]: unknown }>,
+    key: string,
+  ): QualCount | null {
+    const vals = srcs
+      .map((e) => e[key] as QualCount | null)
+      .filter((v): v is QualCount => v !== null);
+    if (vals.length === 0) return null;
+    const freq = new Map<QualCount, number>();
+    for (const v of vals) freq.set(v, (freq.get(v) ?? 0) + 1);
+    return [...freq.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+  }
+  function medianQualNum(
+    srcs: Array<{ [k: string]: unknown }>,
+    key: string,
+  ): number | null {
+    const vals = srcs
+      .map((e) => e[key] as number | null)
+      .filter((v): v is number => v !== null)
+      .sort((a, b) => a - b);
+    return vals.length > 0 ? vals[Math.floor(vals.length / 2)] : null;
+  }
+
+  // Intercepted: median across sources that reported exact number; mode for qual
+  const interceptedSrcs = indexed.filter((e) => e.intercepted !== null);
+  const interceptedQualSrcs = indexed.filter((e) => e.intercepted_qual !== null);
+  const interceptedVals = interceptedSrcs
     .map((e) => e.intercepted as number)
     .sort((a, b) => a - b);
   const intercepted =
     interceptedVals.length > 0
       ? interceptedVals[Math.floor(interceptedVals.length / 2)]
       : null;
+  const intercepted_qual = intercepted === null ? modeQual(interceptedQualSrcs, "intercepted_qual") : null;
+  const intercepted_qual_num = intercepted_qual !== null ? medianQualNum(interceptedQualSrcs, "intercepted_qual_num") : null;
+  const intercepted_confidence = fieldConf(interceptedSrcs.length > 0 ? interceptedSrcs : interceptedQualSrcs);
 
-  // Sea impact: median
-  const seaVals = indexed
-    .filter((e) => e.sea_impact !== null)
+  // Sea impact: median / qual
+  const seaSrcs = indexed.filter((e) => e.sea_impact !== null);
+  const seaQualSrcs = indexed.filter((e) => e.sea_impact_qual !== null);
+  const seaVals = seaSrcs
     .map((e) => e.sea_impact as number)
     .sort((a, b) => a - b);
   const sea_impact =
     seaVals.length > 0 ? seaVals[Math.floor(seaVals.length / 2)] : null;
+  const sea_impact_qual = sea_impact === null ? modeQual(seaQualSrcs, "sea_impact_qual") : null;
+  const sea_impact_qual_num = sea_impact_qual !== null ? medianQualNum(seaQualSrcs, "sea_impact_qual_num") : null;
+  const sea_confidence = fieldConf(seaSrcs.length > 0 ? seaSrcs : seaQualSrcs);
 
-  // Open area impact: median
-  const openVals = indexed
-    .filter((e) => e.open_area_impact !== null)
+  // Open area impact: median / qual
+  const openSrcs = indexed.filter((e) => e.open_area_impact !== null);
+  const openQualSrcs = indexed.filter((e) => e.open_area_impact_qual !== null);
+  const openVals = openSrcs
     .map((e) => e.open_area_impact as number)
     .sort((a, b) => a - b);
   const open_area_impact =
     openVals.length > 0 ? openVals[Math.floor(openVals.length / 2)] : null;
+  const open_area_impact_qual = open_area_impact === null ? modeQual(openQualSrcs, "open_area_impact_qual") : null;
+  const open_area_impact_qual_num = open_area_impact_qual !== null ? medianQualNum(openQualSrcs, "open_area_impact_qual_num") : null;
+  const open_area_confidence = fieldConf(openSrcs.length > 0 ? openSrcs : openQualSrcs);
 
-  // Weighted confidence: source_trust × confidence
+  // Rocket confidence
+  const rocket_confidence = fieldConf(rocketSrcs);
+
+  // Overall weighted confidence
   const totalWeight = indexed.reduce(
     (s, e) => s + e.source_trust * e.confidence,
     0,
   );
   const weightedConf = totalWeight / indexed.length;
-
-  // Hits citations: sources that reported confirmed hits
-  const hitsSrcs = indexed.filter(
-    (e) => e.hits_confirmed !== null && e.hits_confirmed > 0,
-  );
-  const hits_citations = hitsSrcs.map((e) => e.idx);
 
   const voted: VotedResult = {
     eta_refined_minutes: bestEta?.eta_refined_minutes ?? null,
@@ -455,17 +522,24 @@ function vote(state: AgentStateType): Partial<AgentStateType> {
     rocket_count_min,
     rocket_count_max,
     rocket_citations,
-    rocket_source_count: rocketSrcs.length,
+    rocket_confidence,
     is_cassette,
-    is_cassette_source_count: cassVals.length,
+    is_cassette_confidence,
     intercepted,
-    intercepted_source_count: interceptedVals.length,
+    intercepted_qual,
+    intercepted_qual_num,
+    intercepted_confidence,
     sea_impact,
-    sea_source_count: seaVals.length,
+    sea_impact_qual,
+    sea_impact_qual_num,
+    sea_confidence,
     open_area_impact,
-    open_area_source_count: openVals.length,
+    open_area_impact_qual,
+    open_area_impact_qual_num,
+    open_area_confidence,
     hits_confirmed,
     hits_citations,
+    hits_confidence,
     confidence: Math.round(weightedConf * 100) / 100,
     sources_count: indexed.length,
     citedSources,
@@ -546,32 +620,76 @@ function buildEnrichedMessage(
     text = insertBeforeTimeLine(text, `\n<b>Откуда:</b> ${parts.join(" + ")}`);
   }
 
+  // Confidence thresholds for uncertainty markers
+  const SKIP = 0.6;     // below this → skip field entirely
+  const UNCERTAIN = 0.75; // below this (but ≥ SKIP) → add (?)
+  const CERTAIN = 0.95;   // "none" qual requires this level
+
+  // Convert QualCount to Russian display string.
+  // Returns null if the qual should be suppressed (e.g. "none" below CERTAIN).
+  function qualDisplay(
+    qual: QualCount | null,
+    qualNum: number | null,
+    conf: number,
+  ): string | null {
+    if (qual === null) return null;
+    if (qual === "none") return conf >= CERTAIN ? "нет" : null;
+    const map: Record<QualCount, string> = {
+      all: "все",
+      most: "большинство",
+      many: "много",
+      few: "несколько",
+      exists: "есть",
+      none: "нет",
+      more_than: qualNum != null ? `>​${qualNum}` : ">​1",
+      less_than: qualNum != null ? `<​${qualNum}` : "<​нескольких",
+    };
+    return map[qual];
+  }
+
+  // Format one breakdown item: prefer exact number, fall back to qual.
+  // Returns null if nothing to show (below threshold or not reported).
+  function breakdownItem(
+    label: string,
+    num: number | null,
+    qual: QualCount | null,
+    qualNum: number | null,
+    conf: number,
+  ): string | null {
+    if (conf < SKIP) return null;
+    const u = conf < UNCERTAIN ? " (?)" : "";
+    if (num !== null) return `${label} — ${num}${u}`;
+    const qs = qualDisplay(qual, qualNum, conf);
+    if (qs === null) return null;
+    return `${label} — ${qs}${u}`;
+  }
+
   // Rocket count with breakdown and uncertainty markers
-  if (r.rocket_count_min !== null && r.rocket_count_max !== null) {
-    const rocketUncertain = r.rocket_source_count === 1 ? " (?)" : "";
+  if (
+    r.rocket_count_min !== null &&
+    r.rocket_count_max !== null &&
+    r.rocket_confidence >= SKIP
+  ) {
+    const rocketUncertain = r.rocket_confidence < UNCERTAIN ? " (?)" : "";
     const countStr =
       r.rocket_count_min === r.rocket_count_max
         ? `${r.rocket_count_min}`
         : `~${r.rocket_count_min}–${r.rocket_count_max}`;
 
     const bParts: string[] = [];
-    if (r.intercepted !== null) {
-      const u = r.intercepted_source_count === 1 ? " (?)" : "";
-      bParts.push(`[перехвачено — ${r.intercepted}${u}]`);
-    }
-    if (r.sea_impact !== null) {
-      const u = r.sea_source_count === 1 ? " (?)" : "";
-      bParts.push(`[упали в море — ${r.sea_impact}${u}]`);
-    }
-    if (r.open_area_impact !== null) {
-      const u = r.open_area_source_count === 1 ? " (?)" : "";
-      bParts.push(`[открытая местность — ${r.open_area_impact}${u}]`);
-    }
+    const bi = breakdownItem("перехвачено", r.intercepted, r.intercepted_qual, r.intercepted_qual_num, r.intercepted_confidence);
+    if (bi) bParts.push(bi);
+    const bs = breakdownItem("упали в море", r.sea_impact, r.sea_impact_qual, r.sea_impact_qual_num, r.sea_confidence);
+    if (bs) bParts.push(bs);
+    const bo = breakdownItem("открытая местность", r.open_area_impact, r.open_area_impact_qual, r.open_area_impact_qual_num, r.open_area_confidence);
+    if (bo) bParts.push(bo);
 
-    const breakdown =
-      bParts.length > 0 ? `, [из них: ${bParts.join(", ")}]` : "";
-    const cassetteU = r.is_cassette_source_count === 1 ? " (?)" : "";
-    const cassette = r.is_cassette ? `, [есть кассетные${cassetteU}]` : "";
+    const breakdown = bParts.length > 0 ? `, из них: ${bParts.join(", ")}` : "";
+    const cassetteU = r.is_cassette_confidence < UNCERTAIN ? " (?)" : "";
+    const cassette =
+      r.is_cassette && r.is_cassette_confidence >= SKIP
+        ? `, есть кассетные${cassetteU}`
+        : "";
 
     text = insertBeforeTimeLine(
       text,
@@ -579,16 +697,19 @@ function buildEnrichedMessage(
     );
   }
 
-  // Hits: [есть прямое попадание/-ия в <area>: N] — strict, with citation
-  if (r.hits_confirmed !== null && r.hits_confirmed > 0) {
+  // Hits: есть прямое попадание/-ия в <area>: N — only if confidence ≥ SKIP
+  if (
+    r.hits_confirmed !== null &&
+    r.hits_confirmed > 0 &&
+    r.hits_confidence >= SKIP
+  ) {
     const areaLabel = Object.values(config.agent.areaLabels)[0] ?? "район";
     const hitWord = r.hits_confirmed === 1 ? "попадание" : "попадания";
     const hitsCite = r.hits_citations.length > 0 ? sup(r.hits_citations) : "";
-    // Require 2+ sources for no uncertainty marker
-    const hitsU = r.hits_citations.length < 2 ? " (?)" : "";
+    const hitsU = r.hits_confidence < UNCERTAIN ? " (?)" : "";
     text = insertBeforeTimeLine(
       text,
-      `[есть прямое ${hitWord} в ${areaLabel}: ${r.hits_confirmed}${hitsCite}${hitsU}]`,
+      `есть прямое ${hitWord} в ${areaLabel}: ${r.hits_confirmed}${hitsCite}${hitsU}`,
     );
   }
 
@@ -673,8 +794,7 @@ async function editMessage(
     logger.info("Agent: no voted result — marking message as pending", {
       alertId: state.alertId,
     });
-    const pendingText =
-      state.currentText + "\n<i>Данные уточняются...</i>";
+    const pendingText = state.currentText + "\n<i>Данные уточняются...</i>";
     try {
       if (state.isCaption) {
         await tgBot.api.editMessageCaption(state.chatId, state.messageId, {
@@ -699,11 +819,14 @@ async function editMessage(
 
   // Low confidence: log but still show data with (?) markers
   if (votedResult.confidence < config.agent.confidenceThreshold) {
-    logger.info("Agent: confidence below threshold — editing with (?) markers", {
-      alertId: state.alertId,
-      confidence: votedResult.confidence,
-      threshold: config.agent.confidenceThreshold,
-    });
+    logger.info(
+      "Agent: confidence below threshold — editing with (?) markers",
+      {
+        alertId: state.alertId,
+        confidence: votedResult.confidence,
+        threshold: config.agent.confidenceThreshold,
+      },
+    );
   }
 
   const newText = buildEnrichedMessage(

@@ -2,6 +2,20 @@
 
 export type AlertType = "early_warning" | "siren" | "resolved";
 
+/**
+ * Qualitative count descriptor — used when channels report without exact numbers.
+ * "none" is only shown if confidence > 0.95 and explicitly stated in source.
+ */
+export type QualCount =
+  | "all"        // все
+  | "most"       // большинство
+  | "many"       // много
+  | "few"        // несколько
+  | "exists"     // есть
+  | "none"       // нет (strict: only if explicitly stated)
+  | "more_than"  // >N (with optional qual_num)
+  | "less_than"; // <N (with optional qual_num)
+
 // ── Pre-filter (deterministic, zero tokens) ────────────
 
 export interface RelevanceCheck {
@@ -26,10 +40,17 @@ export interface ExtractionResult {
   is_cassette: boolean | null;
   /** Rocket breakdown: intercepted by Iron Dome */
   intercepted: number | null;
+  /** Qualitative descriptor when no exact number is stated (null if exact number given) */
+  intercepted_qual: QualCount | null;
+  intercepted_qual_num: number | null; // reference number for more_than/less_than
   /** Rocket breakdown: fell in sea/empty area */
   sea_impact: number | null;
+  sea_impact_qual: QualCount | null;
+  sea_impact_qual_num: number | null;
   /** Rocket breakdown: hit open/populated ground */
   open_area_impact: number | null;
+  open_area_impact_qual: QualCount | null;
+  open_area_impact_qual_num: number | null;
   hits_confirmed: number | null;
   eta_refined_minutes: number | null;
   /** V3: tone — "calm"|"neutral"|"alarmist" */
@@ -73,25 +94,33 @@ export interface VotedResult {
   rocket_count_min: number | null;
   rocket_count_max: number | null;
   rocket_citations: number[];
-  /** Number of sources that provided rocket count (for uncertainty marker) */
-  rocket_source_count: number;
+  /** Avg weighted confidence of sources reporting rocket count (for uncertainty marker) */
+  rocket_confidence: number;
 
   is_cassette: boolean | null;
-  /** Number of sources that confirmed cassette munitions */
-  is_cassette_source_count: number;
+  /** Avg weighted confidence of sources confirming cassette munitions */
+  is_cassette_confidence: number;
 
   /** Rocket breakdown (median values; null if no sources reported) */
   intercepted: number | null;
-  /** Number of sources reporting intercepted count */
-  intercepted_source_count: number;
+  intercepted_qual: QualCount | null;
+  intercepted_qual_num: number | null;
+  /** Avg weighted confidence of sources reporting intercepted count */
+  intercepted_confidence: number;
   sea_impact: number | null;
-  sea_source_count: number;
+  sea_impact_qual: QualCount | null;
+  sea_impact_qual_num: number | null;
+  sea_confidence: number;
   open_area_impact: number | null;
-  open_area_source_count: number;
+  open_area_impact_qual: QualCount | null;
+  open_area_impact_qual_num: number | null;
+  open_area_confidence: number;
 
   hits_confirmed: number | null;
   /** Citation indices that provided hits data */
   hits_citations: number[];
+  /** Avg weighted confidence of sources reporting confirmed hits */
+  hits_confidence: number;
 
   confidence: number;
   sources_count: number;
