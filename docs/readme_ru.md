@@ -104,7 +104,7 @@ npx easyoref
 | `telegram.chat_id`       | —            | **обязательно.** ID чата (отрицательное число)                                                           |
 | `language`               | `ru`         | `ru` `en` `he` `ar`                                                                                      |
 | `alert_types`            | все          | `early` `siren` `resolved`                                                                               |
-| `gif_mode`               | `none`       | `funny_cats` `assertive` `pikud_haoref` `none`                                                           |
+| `gif_mode`               | `none`       | `funny_cats` `none`                                                                                      |
 | `title_override.*`       | —            | Свой заголовок по типу тревоги                                                                           |
 | `description_override.*` | —            | Своё описание по типу тревоги                                                                            |
 

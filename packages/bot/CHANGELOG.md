@@ -115,7 +115,7 @@
   - `emoji_override` config field — override emoji independently from title
   - Gitleaks secret detection (CI + pre-commit + Danger)
   - Arabic language support (ru/en/he/ar)
-  - GIF modes: `funny_cats`, `assertive`, `pikud_haoref`, `none`
+  - GIF modes: `funny_cats`, `none`
   - Persistent GIF rotation across container restarts
   - Alert type filtering (`early`, `siren`, `resolved`)
   - City ID resolution via `cities.json` at startup

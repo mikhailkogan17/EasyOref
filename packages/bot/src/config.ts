@@ -16,14 +16,9 @@ import { isValidLanguage, type Language } from "./i18n.js";
 // ── Types ────────────────────────────────────────────────
 
 export type AlertTypeConfig = "early" | "siren" | "resolved";
-export type GifMode = "funny_cats" | "assertive" | "pikud_haoref" | "none";
+export type GifMode = "funny_cats" | "none";
 
-const VALID_GIF_MODES: GifMode[] = [
-  "funny_cats",
-  "assertive",
-  "pikud_haoref",
-  "none",
-];
+const VALID_GIF_MODES: GifMode[] = ["funny_cats", "none"];
 
 const ALL_ALERT_TYPES: AlertTypeConfig[] = ["early", "siren", "resolved"];
 

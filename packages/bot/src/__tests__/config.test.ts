@@ -14,15 +14,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 // Instead we test the YAML parsing/validation logic in isolation.
 
 type AlertTypeConfig = "early" | "siren" | "resolved";
-type GifMode = "funny_cats" | "assertive" | "pikud_haoref" | "none";
+type GifMode = "funny_cats" | "none";
 
 const ALL_ALERT_TYPES: AlertTypeConfig[] = ["early", "siren", "resolved"];
-const VALID_GIF_MODES: GifMode[] = [
-  "funny_cats",
-  "assertive",
-  "pikud_haoref",
-  "none",
-];
+const VALID_GIF_MODES: GifMode[] = ["funny_cats", "none"];
 
 interface ConfigYaml {
   alert_types?: AlertTypeConfig[];
@@ -167,8 +162,6 @@ describe("parseAlertTypes", () => {
 describe("parseGifMode", () => {
   it("parses valid modes", () => {
     expect(parseGifMode("funny_cats")).toBe("funny_cats");
-    expect(parseGifMode("assertive")).toBe("assertive");
-    expect(parseGifMode("pikud_haoref")).toBe("pikud_haoref");
     expect(parseGifMode("none")).toBe("none");
   });
 

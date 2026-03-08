@@ -29,7 +29,7 @@ telegram:
 # ru | en | he | ar
 language: ru
 
-# funny_cats | assertive | pikud_haoref | none
+# funny_cats | none
 gif_mode: none
 
 # ── Overrides (optional) ─────────────────────────

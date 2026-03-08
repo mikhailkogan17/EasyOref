@@ -23,7 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `pikud_haoref` GIF mode was missing from README config tables
 - `observability.betterstack_token` from config.yaml was never passed to logger
 
 ## [1.0.0] — 2026-02-28
@@ -36,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **City ID filtering** — resolve numeric IDs to Hebrew area names via cities.json
 - **HTML blockquote messages** with emoji per alert type
 - **Shelter-oriented descriptions** — "go to shelter", "stay alert", "you can leave"
-- **GIF modes** — `funny_cats`, `assertive`, `pikud_haoref`, `none`
+- **GIF modes** — `funny_cats`, `none`
 - **Persistent GIF rotation** — state saved to data dir, no repeats until pool exhausted
 - **Custom overrides** — per-alert-type title and description
 - **Better Stack (Logtail)** observability integration

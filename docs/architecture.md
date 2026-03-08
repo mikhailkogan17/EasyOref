@@ -29,7 +29,7 @@ No LLM, no external AI — purely deterministic matching with sub-second latency
 - HTML blockquote with emoji per alert type
 - i18n templates in 4 languages (ru, en, he, ar)
 - Shelter-oriented descriptions ("go to shelter", "stay alert", "you can leave")
-- Optional GIF attachment: `funny_cats`, `assertive`, `pikud_haoref`, or `none`
+- Optional GIF attachment: `funny_cats` or `none`
 - Custom title/description overrides per alert type
 
 ## Health Endpoint

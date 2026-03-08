@@ -249,23 +249,6 @@ const CATS_RESOLVED = [
   "https://media1.tenor.com/m/swIMdJZK8F0AAAAd/kitten-relaxing-paws.gif",
 ];
 
-// ── assertive ─────────────────────────────────────────
-
-const ASSERTIVE_EARLY_WARNING = [
-  "https://media.giphy.com/media/3o7TKxOhkp8gO0LXMI/giphy.gif", // radar
-  "https://media.giphy.com/media/l0HlQXlQ3nHyLMvte/giphy.gif", // alert screen
-];
-
-const ASSERTIVE_SIREN = [
-  "https://media.giphy.com/media/3o7TKVfu4JSwmSqiMo/giphy.gif", // flashing red
-  "https://media.giphy.com/media/l0MYt5jPR6QX5APm0/giphy.gif", // warning sign
-];
-
-const ASSERTIVE_RESOLVED = [
-  "https://media.giphy.com/media/XreQmk7ETCak0/giphy.gif", // thumbs up
-  "https://media.giphy.com/media/3oKIPf3C7HGx1NWIJ2/giphy.gif", // all clear
-];
-
 // ── Pool map by mode ──────────────────────────────────
 
 type GifPools = {
@@ -281,12 +264,6 @@ const GIF_POOLS: Record<string, GifPools> = {
     earlyNight: [...CATS_EARLY_WARNING, ...CATS_EARLY_WARNING_NIGHT],
     siren: CATS_SIREN,
     resolved: CATS_RESOLVED,
-  },
-  assertive: {
-    early: ASSERTIVE_EARLY_WARNING,
-    earlyNight: ASSERTIVE_EARLY_WARNING,
-    siren: ASSERTIVE_SIREN,
-    resolved: ASSERTIVE_RESOLVED,
   },
 };
 
@@ -305,8 +282,7 @@ function isNightInIsrael(): boolean {
 function getGifUrl(alertType: AlertType): string | null {
   const mode = config.gifMode;
 
-  // pikud_haoref and none → no GIFs
-  if (mode === "none" || mode === "pikud_haoref") return null;
+  if (mode === "none") return null;
 
   const pools = GIF_POOLS[mode];
   if (!pools) return null;
