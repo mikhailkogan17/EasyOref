@@ -1,5 +1,11 @@
 # easyoref
 
+## 1.10.1
+
+### Patch Changes
+
+- [#35](https://github.com/mikhailkogan17/easyoref/pull/35) [`7e3fb18`](https://github.com/mikhailkogan17/easyoref/commit/7e3fb184fe4de6e072a4d4a5fa9966b0bc137453) Thanks [@mikhailkogan17](https://github.com/mikhailkogan17)! - fix: upgrade to gemini-3-flash-preview (1.5-flash deprecated), remove "Данные уточняются..." pending text
+
 ## 1.10.0
 
 ### Minor Changes
