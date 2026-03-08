@@ -80,25 +80,27 @@ GramJS MTProto ──► monitors 5 news channels ──► BullMQ delayed job (
 
 ### Model
 
-- **gpt-5-mini** (OpenAI, successor to gpt-4o-mini as of March 2026)
-- Configured in `config.yaml` under `agent.model`
+- **google/gemini-3-flash-preview** via OpenRouter (no RPD limits)
+- Configured in `config.yaml` under `ai.openrouter_model`
+- Base URL `https://openrouter.ai/api/v1` hardcoded in `graph.ts` — NOT configurable
 
 ### Config Keys (config.yaml)
 
 ```yaml
-agent:
-  openai_api_key: "sk-..."
-  session_string: "1AgAOMTQ5..."
-  model: "gpt-5-mini"
-  enrich_delay_ms: 90000
-  channels:
-    - "@newsflashhhj"
-    - "@yediotnews25"
-    - "@Trueisrael"
-    - "@israelsecurity"
-    - "@N12LIVE"
+ai:
+  enabled: true
+  openrouter_api_key: "sk-or-v1-..."
+  openrouter_model: "google/gemini-3-flash-preview"
+  enrich_delay_ms: 20000
+  confidence_threshold: 0.65
+  mtproto:
+    api_id: 2040
+    api_hash: "b18441a1ff607e10a989891a5462e627"
+    session_string: "1AgAOMTQ5..."
   redis_url: "redis://redis:6379"   # Docker network hostname, NOT localhost
 ```
+
+> **Legacy compat:** YAML key `agent:` still works but is deprecated. Use `ai:` for new configs.
 
 ### Enrichment Format
 
@@ -120,10 +122,11 @@ Unicode superscript citations (¹²³), absolute ETA (~HH:MM¹), inline key:valu
 
 - Standard CI/CD: PR → merge → changesets version PR → merge → release.yml builds Docker (linux/amd64 + arm64) → pushes to ghcr.io
 - ghcr.io package is **public** — RPi pulls without auth
-- RPi: `docker-compose pull easyoref && docker-compose up -d`
+- RPi deploy: только через npm scripts / task runner wrappers
 
 ### ЗАПРЕЩЕНО
 
+- ❌ **ВЫЗЫВАТЬ `docker compose up`, `docker compose down`, `docker-compose up/down` НАПРЯМУЮ** — они должны вызываться **ИСКЛЮЧИТЕЛЬНО** через npm package wrapper / VS Code task / deploy script. Прямой вызов docker compose команд — жёсткий запрет.
 - ❌ Предлагать ручной деплой на RPi (только через CI/CD pipeline)
 - ❌ Создавать api_id/api_hash на my.telegram.org — используются публичные Telegram Desktop
 - ❌ Писать `redis://localhost:6379` в Docker — только `redis://redis:6379`

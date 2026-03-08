@@ -1,5 +1,17 @@
 # easyoref
 
+## 1.11.1
+
+### Patch Changes
+
+- fix: upgrade all langchain packages to v1.x
+
+  - @langchain/core: 0.3.80 → 1.1.31
+  - @langchain/openai: 1.2.12 (was incompatible with core@0.3, now matched)
+  - @langchain/langgraph: 0.2.x → 1.2.1
+
+  Fixes ERR_PACKAGE_PATH_NOT_EXPORTED crash on startup.
+
 ## 1.11.0
 
 ### Minor Changes
