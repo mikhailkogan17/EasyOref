@@ -35,9 +35,5 @@
   },
   "engines": {
     "node": ">=22"
-  },
-  "dependencies": {
-    "@langchain/google-genai": "^0.1.12",
-    "p-queue": "^9.1.0"
   }
 }
