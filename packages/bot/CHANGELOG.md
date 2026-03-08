@@ -1,5 +1,11 @@
 # easyoref
 
+## 1.11.4
+
+### Patch Changes
+
+- fix: remove unused assertive and pikud_haoref gif modes
+
 ## 1.11.3
 
 ### Patch Changes
