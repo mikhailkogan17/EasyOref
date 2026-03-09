@@ -39,17 +39,19 @@ export function getEnrichQueue(): Queue<EnrichJobData> {
 export async function enqueueEnrich(
   alertId: string,
   alertTs: number,
+  delayMs?: number,
 ): Promise<void> {
   if (!config.agent.enabled) return;
 
+  const delay = delayMs ?? config.agent.enrichDelayMs;
   const queue = getEnrichQueue();
   await queue.add(
     "enrich",
     { alertId, alertTs },
-    { delay: config.agent.enrichDelayMs },
+    { delay },
   );
   logger.info("Enrich job enqueued", {
     alertId,
-    delay_ms: config.agent.enrichDelayMs,
+    delay_ms: delay,
   });
 }

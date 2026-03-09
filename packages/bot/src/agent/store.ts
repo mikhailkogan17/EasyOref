@@ -1,16 +1,39 @@
 /**
- * Alert state store — Redis operations.
+ * Session-based alert state store — Redis operations.
+ *
+ * A "session" spans the lifecycle of one attack event:
+ *   early_warning → (optional siren) → resolved → +10 min tail
  *
  * Keys:
- *   alert:{alertId}:meta   — {messageId, chatId, isCaption, alertTs, alertType}  TTL 20min
- *   alert:{alertId}:posts  — LPUSH list of ChannelPost JSON                       TTL 20min
- *   alert:active           — {alertId, alertTs, alertType}                        TTL 20min
+ *   session:active        — ActiveSession JSON         TTL 45min
+ *   session:posts         — LPUSH list of ChannelPost  TTL 45min
+ *   alert:{alertId}:meta  — AlertMeta JSON             TTL 20min
+ *
+ * Only the LATEST alert's Telegram message gets enrichment edits.
+ * Posts accumulate across the entire session (shared context).
  */
 
 import { getRedis } from "./redis.js";
 import type { AlertType } from "./types.js";
 
-const TTL_S = 20 * 60; // 20 minutes
+const META_TTL_S = 20 * 60; // 20 minutes
+const SESSION_TTL_S = 45 * 60; // 45 min worst case
+
+// ── Session phase timeouts ─────────────────────────────
+
+/** Max duration (ms) for each phase before auto-expire */
+export const PHASE_TIMEOUT_MS: Record<AlertType, number> = {
+  early_warning: 30 * 60 * 1000, // 30 min
+  siren: 15 * 60 * 1000, // 15 min
+  resolved: 10 * 60 * 1000, // 10 min tail
+};
+
+/** Enrichment interval (ms) per phase */
+export const PHASE_ENRICH_DELAY_MS: Record<AlertType, number> = {
+  early_warning: 20_000, // 20s
+  siren: 20_000, // 20s
+  resolved: 60_000, // 60s — detailed intel comes slower
+};
 
 // ── Types ──────────────────────────────────────────────
 
@@ -18,38 +41,46 @@ export interface AlertMeta {
   alertId: string;
   messageId: number;
   chatId: string;
-  isCaption: boolean; // true = sent as animation (edit via editMessageCaption)
-  alertTs: number; // Date.now() when alert was sent
+  isCaption: boolean;
+  alertTs: number;
   alertType: AlertType;
-  alertAreas: string[]; // Hebrew area names from the alert
-  currentText: string; // original message text for editing
+  alertAreas: string[];
+  currentText: string;
 }
 
 export interface ChannelPost {
   channel: string;
   text: string;
   ts: number;
-  /** https://t.me/username/messageId — for the sources footer */
   messageUrl?: string;
 }
 
-export interface ActiveAlert {
-  alertId: string;
-  alertTs: number;
-  alertType: AlertType;
+export interface ActiveSession {
+  /** First alertId that started this session */
+  sessionId: string;
+  sessionStartTs: number;
+  /** Current phase */
+  phase: AlertType;
+  phaseStartTs: number;
+  /** Latest alert being enriched */
+  latestAlertId: string;
+  latestMessageId: number;
+  latestAlertTs: number;
+  chatId: string;
+  isCaption: boolean;
+  currentText: string;
+  alertAreas: string[];
 }
 
-// ── Store ──────────────────────────────────────────────
+// ── Alert Meta (per-alert) ─────────────────────────────
 
 export async function saveAlertMeta(meta: AlertMeta): Promise<void> {
   const redis = getRedis();
-  const key = `alert:${meta.alertId}:meta`;
-  await redis.setex(key, TTL_S, JSON.stringify(meta));
-  await setActiveAlert({
-    alertId: meta.alertId,
-    alertTs: meta.alertTs,
-    alertType: meta.alertType,
-  });
+  await redis.setex(
+    `alert:${meta.alertId}:meta`,
+    META_TTL_S,
+    JSON.stringify(meta),
+  );
 }
 
 export async function getAlertMeta(alertId: string): Promise<AlertMeta | null> {
@@ -58,35 +89,68 @@ export async function getAlertMeta(alertId: string): Promise<AlertMeta | null> {
   return raw ? (JSON.parse(raw) as AlertMeta) : null;
 }
 
-export async function pushChannelPost(
-  alertId: string,
-  post: ChannelPost,
-): Promise<void> {
+// ── Session posts (shared across entire session) ───────
+
+export async function pushSessionPost(post: ChannelPost): Promise<void> {
   const redis = getRedis();
-  const key = `alert:${alertId}:posts`;
-  await redis.lpush(key, JSON.stringify(post));
-  await redis.expire(key, TTL_S);
+  await redis.lpush("session:posts", JSON.stringify(post));
+  await redis.expire("session:posts", SESSION_TTL_S);
 }
 
-export async function getChannelPosts(alertId: string): Promise<ChannelPost[]> {
+export async function getSessionPosts(): Promise<ChannelPost[]> {
   const redis = getRedis();
-  const key = `alert:${alertId}:posts`;
-  const items = await redis.lrange(key, 0, -1);
+  const items = await redis.lrange("session:posts", 0, -1);
   return items.map((i: string) => JSON.parse(i) as ChannelPost);
 }
 
-export async function setActiveAlert(active: ActiveAlert): Promise<void> {
+// ── Active session ─────────────────────────────────────
+
+export async function setActiveSession(
+  session: ActiveSession,
+): Promise<void> {
   const redis = getRedis();
-  await redis.setex("alert:active", TTL_S, JSON.stringify(active));
+  await redis.setex(
+    "session:active",
+    SESSION_TTL_S,
+    JSON.stringify(session),
+  );
 }
 
-export async function getActiveAlert(): Promise<ActiveAlert | null> {
+export async function getActiveSession(): Promise<ActiveSession | null> {
   const redis = getRedis();
-  const raw = await redis.get("alert:active");
-  return raw ? (JSON.parse(raw) as ActiveAlert) : null;
+  const raw = await redis.get("session:active");
+  return raw ? (JSON.parse(raw) as ActiveSession) : null;
 }
 
-export async function clearActiveAlert(): Promise<void> {
+export async function clearSession(): Promise<void> {
   const redis = getRedis();
-  await redis.del("alert:active");
+  await redis.del("session:active", "session:posts");
+}
+
+export function isPhaseExpired(session: ActiveSession): boolean {
+  const elapsed = Date.now() - session.phaseStartTs;
+  return elapsed >= PHASE_TIMEOUT_MS[session.phase];
+}
+
+// ── Compat shims (used by gramjs-monitor, graph) ───────
+
+export async function getActiveAlert(): Promise<
+  { alertId: string; alertTs: number; alertType: AlertType } | null
+> {
+  const s = await getActiveSession();
+  if (!s) return null;
+  return { alertId: s.latestAlertId, alertTs: s.latestAlertTs, alertType: s.phase };
+}
+
+export async function pushChannelPost(
+  _alertId: string,
+  post: ChannelPost,
+): Promise<void> {
+  await pushSessionPost(post);
+}
+
+export async function getChannelPosts(
+  _alertId: string,
+): Promise<ChannelPost[]> {
+  return getSessionPosts();
 }
