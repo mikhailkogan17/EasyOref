@@ -24,7 +24,7 @@ import { emptyEnrichmentData } from "../agent/types.js";
 vi.mock("../config.js", () => ({
   config: {
     agent: {
-      model: "google/gemini-2.0-flash-001",
+      model: "google/gemini-3-flash-preview",
       apiKey: process.env.OPENROUTER_API_KEY ?? "test-key",
       mcpTools: false,
       clarifyFetchCount: 3,
@@ -750,12 +750,13 @@ describeIntegration("LLM integration (real OpenRouter)", () => {
   // and require OPENROUTER_API_KEY env var.
 
   let llm: ReturnType<typeof _test.getLLM>;
-  const systemPrompt =
-    _test?.SYSTEM_PROMPT_BASE +
-    "\n\n" +
-    (_test?.getPhaseInstructions("early_warning") ?? "");
+  let systemPrompt: string;
 
   beforeEach(() => {
+    systemPrompt =
+      _test.SYSTEM_PROMPT_BASE +
+      "\n\n" +
+      _test.getPhaseInstructions("early_warning");
     llm = _test.getLLM();
   });
 
