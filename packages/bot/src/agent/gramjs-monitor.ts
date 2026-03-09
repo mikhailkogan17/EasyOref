@@ -41,6 +41,7 @@ const MONITORED_CHANNELS = [
   "@yaronyanir1299",
   "@ynetalerts",
   "@idf_telegram",
+  "@israel_9", // 9tv — Israeli news channel
 ];
 
 // Private channels (invite hash + channel ID for URL building)
@@ -284,7 +285,10 @@ async function handleNewMessage(event: NewMessageEvent): Promise<void> {
     );
 
   if (!isMonitored) {
-    logger.debug("GramJS: skipped message (not monitored)", { channel });
+    logger.debug("GramJS: skipped message (not monitored)", {
+      channel,
+      channelId,
+    });
     return;
   }
 
