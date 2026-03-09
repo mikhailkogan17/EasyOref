@@ -62,6 +62,10 @@ jobs:
           fi
 
       # ── NPM Publish ──────────────────────────────────────
+      - name: Build before publish
+        if: steps.check-publish.outputs.should_publish == 'true'
+        run: npm run build
+
       - name: Publish to NPM
         if: steps.check-publish.outputs.should_publish == 'true'
         run: npm publish -w packages/bot --access public --provenance
