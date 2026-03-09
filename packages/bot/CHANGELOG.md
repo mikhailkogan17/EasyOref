@@ -1,5 +1,16 @@
 # easyoref
 
+## 1.14.1
+
+### Patch Changes
+
+- [#61](https://github.com/mikhailkogan17/easyoref/pull/61) [`759b380`](https://github.com/mikhailkogan17/easyoref/commit/759b3809bcaa0e80d496179fe7b55b5336a5d287) Thanks [@mikhailkogan17-agent](https://github.com/mikhailkogan17-agent)! - fix: add @israel_9 channel, Oref list filter, trust boost, diagnostic logging
+
+  - Added @israel_9 (9tv) to monitored Telegram channels
+  - Hard-filter Pikud HaOref official area lists (oref.org.il links, long official posts)
+  - Boosted LLM trust for explicit interception/sea impact claims from channels
+  - Enhanced diagnostic logging: per-channel breakdown in pre-filter, extraction details, post-filter reasons
+
 ## 1.14.0
 
 ### Minor Changes
