@@ -1,40 +1,47 @@
 /**
- * LangGraph.js enrichment pipeline — tiered validation.
+ * LangGraph.js enrichment pipeline — tiered validation + tool calling.
  *
  * Design: minimize tokens, maximize confidence.
+ * When confidence is low, offer tools — agent decides if they help.
  *
  * ┌──────────────────────────────────────────────────────────────┐
  * │ Tier 0: preFilter       (deterministic, 0 tokens)           │
  * │   → keyword + region check on raw post text                 │
  * │                                                              │
  * │ Tier 1: extractAndValidate  (1 LLM call per post)           │
- * │   → combined extraction + 3 validators in single JSON:      │
- * │     V1: region_relevance  (is post about our area?)         │
- * │     V2: source_trust      (factual vs rumor/panic?)         │
- * │     V3: tone              (calm/neutral/alarmist?)          │
- * │   → structured output, all validation in one prompt         │
+ * │   → combined extraction + 3 validators in single JSON       │
  * │                                                              │
  * │ Tier 2: postFilter      (deterministic, 0 tokens)           │
- * │   → reject: region_relevance < 0.5                          │
- * │   → reject: source_trust < 0.4                              │
- * │   → reject: tone === "alarmist"                             │
- * │   → reject: all data fields null                            │
+ * │   → reject low relevance / trust / alarmist / empty         │
  * │                                                              │
  * │ Tier 3: vote            (deterministic, 0 tokens)           │
  * │   → majority consensus across validated sources             │
+ * │                                                              │
+ * │ Tier 3.5: shouldClarify (conditional edge)                  │
+ * │   → if confidence < threshold AND tools enabled:            │
+ * │     → clarify: LLM sees voted result + 4 tools              │
+ * │       • read_telegram_sources (1-4 channel posts)           │
+ * │       • alert_history (Oref history verification)           │
+ * │       • resolve_area (defense-zone proximity check)         │
+ * │       • betterstack_log (query recent pipeline logs)        │
+ * │       LLM decides: call 0, 1, 2, or 3+ tools.              │
+ * │     → revote with merged extractions                        │
+ * │   → else: proceed to editMessage                            │
  * │                                                              │
  * │ Tier 4: editMessage     (deterministic, 0 tokens)           │
  * │   → inline update of existing key:value pairs               │
  * └──────────────────────────────────────────────────────────────┘
  *
- * Total LLM cost: 1 call × N posts (max 8). GPT-4o-mini ≈ $0.0001/post.
+ * Checkpointer: MemorySaver — session-level state persistence.
+ * Total LLM cost: 1 call × N posts + (optional) 1 clarify call + 0-N tools.
  */
 
-import { Annotation, StateGraph } from "@langchain/langgraph";
+import { Annotation, MemorySaver, StateGraph } from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";
 import { Bot } from "grammy";
 import { config } from "../config.js";
 import * as logger from "../logger.js";
+import { runClarify } from "./clarify.js";
 import type { ChannelPost } from "./store.js";
 import { getChannelPosts } from "./store.js";
 import type {
@@ -61,6 +68,8 @@ const AgentState = Annotation.Root({
   filteredPosts: Annotation<ChannelPost[]>({ reducer: (_, b) => b }),
   extractions: Annotation<ValidatedExtraction[]>({ reducer: (_, b) => b }),
   votedResult: Annotation<VotedResult | null>({ reducer: (_, b) => b }),
+  /** Tracks whether clarify has already run (prevents infinite loop) */
+  clarifyAttempted: Annotation<boolean>({ reducer: (_, b) => b }),
 });
 
 type AgentStateType = typeof AgentState.State;
@@ -892,7 +901,105 @@ async function editMessage(
   return {};
 }
 
+// ─────────────────────────────────────────────────────────
+// Clarify Node — MCP tool calling via ReAct (conditional)
+// ─────────────────────────────────────────────────────────
+
+async function clarifyNode(
+  state: AgentStateType,
+): Promise<Partial<AgentStateType>> {
+  const {
+    votedResult,
+    extractions,
+    alertId,
+    alertAreas,
+    alertType,
+    messageId,
+    currentText,
+  } = state;
+
+  if (!votedResult) {
+    logger.info("Agent: clarify skipped — no voted result", { alertId });
+    return { clarifyAttempted: true };
+  }
+
+  logger.info("Agent: clarify triggered", {
+    alertId,
+    confidence: votedResult.confidence,
+    threshold: config.agent.confidenceThreshold,
+  });
+
+  try {
+    const result = await runClarify({
+      alertId,
+      alertAreas,
+      alertType,
+      messageId,
+      currentText,
+      extractions,
+      votedResult,
+    });
+
+    // Merge new extractions with existing valid ones
+    const mergedExtractions = [...extractions, ...result.newExtractions];
+
+    logger.info("Agent: clarify completed", {
+      alertId,
+      toolCalls: result.toolCallCount,
+      clarified: result.clarified,
+      newExtractions: result.newExtractions.length,
+      newPosts: result.newPosts.length,
+    });
+
+    return {
+      extractions: mergedExtractions,
+      // Reset votedResult so vote() re-runs with merged data
+      votedResult: null,
+      clarifyAttempted: true,
+    };
+  } catch (err) {
+    logger.error("Agent: clarify failed", {
+      alertId,
+      error: String(err),
+    });
+    return { clarifyAttempted: true };
+  }
+}
+
+// ── Conditional routing after vote ─────────────────────
+
+function shouldClarify(state: AgentStateType): "clarify" | "editMessage" {
+  // Only clarify once per pipeline run (prevents infinite loop)
+  if (state.clarifyAttempted) {
+    return "editMessage";
+  }
+
+  // MCP tools must be enabled
+  if (!config.agent.mcpTools) {
+    return "editMessage";
+  }
+
+  // No voted result → nothing to clarify
+  if (!state.votedResult) {
+    return "editMessage";
+  }
+
+  // Confidence below threshold → clarify
+  if (state.votedResult.confidence < config.agent.confidenceThreshold) {
+    logger.info("Agent: routing to clarify (low confidence)", {
+      confidence: state.votedResult.confidence,
+      threshold: config.agent.confidenceThreshold,
+    });
+    return "clarify";
+  }
+
+  return "editMessage";
+}
+
 // ── Build graph ────────────────────────────────────────
+
+/** MemorySaver checkpointer — session-level state persistence */
+const checkpointer = new MemorySaver();
 
 function buildGraph() {
   const graph = new StateGraph(AgentState)
@@ -900,15 +1007,23 @@ function buildGraph() {
     .addNode("extractAndValidate", extractAndValidate)
     .addNode("postFilter", postFilter)
     .addNode("vote", vote)
+    .addNode("clarify", clarifyNode)
+    .addNode("revote", vote) // Re-run vote after clarify with merged data
     .addNode("editMessage", editMessage)
     .addEdge("__start__", "collectAndPreFilter")
     .addEdge("collectAndPreFilter", "extractAndValidate")
     .addEdge("extractAndValidate", "postFilter")
     .addEdge("postFilter", "vote")
-    .addEdge("vote", "editMessage")
+    // Conditional edge: vote → clarify (low conf) or editMessage (high conf)
+    .addConditionalEdges("vote", shouldClarify, {
+      clarify: "clarify",
+      editMessage: "editMessage",
+    })
+    .addEdge("clarify", "revote")
+    .addEdge("revote", "editMessage")
     .addEdge("editMessage", "__end__");
 
-  return graph.compile();
+  return graph.compile({ checkpointer });
 }
 
 // ── Public API ─────────────────────────────────────────
@@ -927,18 +1042,23 @@ export interface RunEnrichmentInput {
 export async function runEnrichment(input: RunEnrichmentInput): Promise<void> {
   const app = buildGraph();
 
-  await app.invoke({
-    alertId: input.alertId,
-    alertTs: input.alertTs,
-    alertType: input.alertType,
-    alertAreas: input.alertAreas,
-    chatId: input.chatId,
-    messageId: input.messageId,
-    isCaption: input.isCaption,
-    currentText: input.currentText,
-    channelPosts: [],
-    filteredPosts: [],
-    extractions: [],
-    votedResult: null,
-  });
+  await app.invoke(
+    {
+      alertId: input.alertId,
+      alertTs: input.alertTs,
+      alertType: input.alertType,
+      alertAreas: input.alertAreas,
+      chatId: input.chatId,
+      messageId: input.messageId,
+      isCaption: input.isCaption,
+      currentText: input.currentText,
+      channelPosts: [],
+      filteredPosts: [],
+      extractions: [],
+      votedResult: null,
+      clarifyAttempted: false,
+    },
+    // Thread ID for MemorySaver — enables session-level state persistence
+    { configurable: { thread_id: input.alertId } },
+  );
 }

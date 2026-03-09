@@ -42,6 +42,7 @@ interface ConfigYaml {
   poll_interval_ms?: number;
   data_dir?: string;
   oref_api_url?: string;
+  oref_history_url?: string;
   ai?: ConfigYamlAi;
 }
 
@@ -55,6 +56,10 @@ interface ConfigYamlAi {
   confidence_threshold?: number;
   window_minutes?: number;
   timeout_minutes?: number;
+  /** Enable MCP tool calling for low-confidence clarification */
+  mcp_tools?: boolean;
+  /** Number of recent posts to fetch per channel during clarify (1-4) */
+  clarify_fetch_count?: number;
   mtproto?: {
     api_id?: number;
     api_hash?: string;
@@ -178,6 +183,9 @@ export const config = {
     process.env.OREF_API_URL ??
     "https://www.oref.org.il/WarningMessages/alert/alerts.json",
 
+  /** Oref alert history URL (base, without date params) */
+  orefHistoryUrl: yml.oref_history_url ?? process.env.OREF_HISTORY_URL ?? "",
+
   /** Better Stack Logtail token */
   logtailToken:
     yml.observability?.betterstack_token ?? process.env.LOGTAIL_TOKEN ?? "",
@@ -210,6 +218,10 @@ export const config = {
       },
       channels: ai?.channels ?? [],
       areaLabels: ai?.area_labels ?? {},
+      /** Enable MCP tool calling — deterministic fan-out on low confidence */
+      mcpTools: ai?.mcp_tools ?? false,
+      /** Posts per channel to fetch during clarify (1-4, default 3) */
+      clarifyFetchCount: Math.min(4, Math.max(1, ai?.clarify_fetch_count ?? 3)),
     };
   })(),
 };

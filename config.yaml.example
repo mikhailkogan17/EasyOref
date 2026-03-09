@@ -86,6 +86,16 @@ gif_mode: none
 #   # Minimum confidence to edit message (0–1). Default 0.7.
 #   confidence_threshold: 0.7
 #
+#   # MCP tool calling in clarify node (requires GramJS + Redis).
+#   # When true, low-confidence results get an extra LLM call with 2 MCP tools:
+#   #   - telegram_mtproto_mcp_read_sources (fetch last N posts from channels)
+#   #   - pikud_haoref_mcp (official Oref API ground truth)
+#   # The LLM decides autonomously whether to call 0, 1, or 2 tools.
+#   mcp_tools: false
+#
+#   # How many posts to fetch per read_sources tool call (1-4). Default 3.
+#   clarify_fetch_count: 3
+#
 #   # Collect channel posts within ±N minutes of alert_ts. Default 2.
 #   window_minutes: 2
 #
