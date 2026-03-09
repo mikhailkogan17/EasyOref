@@ -1,5 +1,13 @@
 # easyoref
 
+## 1.13.1
+
+### Patch Changes
+
+- [#56](https://github.com/mikhailkogan17/easyoref/pull/56) [`4abd9e1`](https://github.com/mikhailkogan17/easyoref/commit/4abd9e13086db9b4b72a18148886395ecdb8b611) Thanks [@mikhailkogan17](https://github.com/mikhailkogan17)! - fix: add build step before npm publish in release workflow
+
+  v1.13.0 was published without dist/ — npm package was empty.
+
 ## 1.13.0
 
 ### Minor Changes
