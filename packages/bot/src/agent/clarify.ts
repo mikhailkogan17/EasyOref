@@ -40,6 +40,7 @@ export interface ClarifyInput {
   alertId: string;
   alertAreas: string[];
   alertType: string;
+  alertTs: number;
   messageId: number;
   currentText: string;
   extractions: ValidatedExtraction[];
@@ -75,11 +76,20 @@ low confidence or contradictions. You have access to 4 tools:
   4. betterstack_log — query recent EasyOref logs from Better Stack.
      See what the enrichment pipeline did recently (extractions, confidence, errors).
 
+CRITICAL — TIME VALIDATION:
+You receive the alert time (Israel timezone). Channel posts may be about PREVIOUS
+attacks or ongoing military operations (not THIS specific alert). When in doubt:
+- Use alert_history to verify if an alert really occurred at the claimed time/area.
+- If a post discusses events from hours ago, it is STALE — ignore it.
+- If the voted result has a country_origin that seems unlikely for the alert region
+  (e.g., "Lebanon" for central Israel) — verify with alert_history and fresh sources.
+
 You decide whether tools would help:
 - If contradictions can be resolved with existing data → respond immediately, no tools.
 - If an authoritative source (IDF, N12) could settle a disagreement → fetch 1-4 posts.
 - If you need to verify whether an alert occurred → check alert_history.
 - If news mentions a city/region and you're unsure if it's relevant → use resolve_area.
+- If the attack origin seems stale (about a previous event) → use alert_history to verify.
 - You can call 0, 1, 2, or 3+ tools. Your choice.
 
 When done (with or without tools), respond with ONLY valid JSON (no markdown):
@@ -90,6 +100,8 @@ When done (with or without tools), respond with ONLY valid JSON (no markdown):
     "rocket_count": int|null,
     "intercepted": int|null,
     "hits_confirmed": int|null,
+    "casualties": int|null,
+    "injuries": int|null,
     "is_cassette": bool|null
   },
   "confidence_boost": float,  // 0-0.3 (0 if no new info)
@@ -177,9 +189,16 @@ export async function runClarify(input: ClarifyInput): Promise<ClarifyOutput> {
     input.votedResult,
   );
 
+  const alertTimeIL = new Date(input.alertTs).toLocaleTimeString("he-IL", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Jerusalem",
+  });
+
   const userPrompt =
     `Alert region: ${input.alertAreas.join(", ")}\n` +
     `Alert type: ${input.alertType}\n` +
+    `Alert time: ${alertTimeIL} (Israel)\n` +
     `Message ID: ${input.messageId}\n\n` +
     `Current voted result:\n` +
     JSON.stringify(input.votedResult, null, 2) +
@@ -328,6 +347,7 @@ export async function runClarify(input: ClarifyInput): Promise<ClarifyOutput> {
         region_relevance: 1.0,
         source_trust: 0.85,
         tone: "calm" as const,
+        time_relevance: 1.0,
         country_origin: findings.new_data.country_origin ?? null,
         rocket_count: findings.new_data.rocket_count ?? null,
         is_cassette: findings.new_data.is_cassette ?? null,
@@ -341,6 +361,8 @@ export async function runClarify(input: ClarifyInput): Promise<ClarifyOutput> {
         open_area_impact_qual: null,
         open_area_impact_qual_num: null,
         hits_confirmed: findings.new_data.hits_confirmed ?? null,
+        casualties: findings.new_data.casualties ?? null,
+        injuries: findings.new_data.injuries ?? null,
         eta_refined_minutes: null,
         confidence: Math.min(
           0.9,

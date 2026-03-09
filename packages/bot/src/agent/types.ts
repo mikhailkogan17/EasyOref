@@ -7,13 +7,13 @@ export type AlertType = "early_warning" | "siren" | "resolved";
  * "none" is only shown if confidence > 0.95 and explicitly stated in source.
  */
 export type QualCount =
-  | "all"        // все
-  | "most"       // большинство
-  | "many"       // много
-  | "few"        // несколько
-  | "exists"     // есть
-  | "none"       // нет (strict: only if explicitly stated)
-  | "more_than"  // >N (with optional qual_num)
+  | "all" // все
+  | "most" // большинство
+  | "many" // много
+  | "few" // несколько
+  | "exists" // есть
+  | "none" // нет (strict: only if explicitly stated)
+  | "more_than" // >N (with optional qual_num)
   | "less_than"; // <N (with optional qual_num)
 
 // ── Pre-filter (deterministic, zero tokens) ────────────
@@ -52,11 +52,20 @@ export interface ExtractionResult {
   open_area_impact_qual: QualCount | null;
   open_area_impact_qual_num: number | null;
   hits_confirmed: number | null;
+  /** Casualties reported (injured/killed) — primarily resolved phase */
+  casualties: number | null;
+  injuries: number | null;
   eta_refined_minutes: number | null;
   /** V3: tone — "calm"|"neutral"|"alarmist" */
   tone: "calm" | "neutral" | "alarmist";
   /** Overall extraction confidence (0-1) */
   confidence: number;
+  /**
+   * Time relevance (0-1) — does this post discuss the CURRENT attack?
+   * LLM sets: 0 = clearly about a previous/different event, 1 = current event.
+   * Post-filter rejects posts with time_relevance < 0.5.
+   */
+  time_relevance: number;
 }
 
 // ── Post-filter (deterministic, zero tokens) ───────────
@@ -122,8 +131,87 @@ export interface VotedResult {
   /** Avg weighted confidence of sources reporting confirmed hits */
   hits_confidence: number;
 
+  casualties: number | null;
+  casualties_citations: number[];
+  casualties_confidence: number;
+
+  injuries: number | null;
+  injuries_citations: number[];
+  injuries_confidence: number;
+
   confidence: number;
   sources_count: number;
   /** All valid sources, ordered by citation index */
   citedSources: CitedSource[];
+}
+
+/**
+ * Cross-phase enrichment data persisted in Redis.
+ * Each phase writes its findings; the next phase reads and carries forward.
+ * This is the "single track" — results flow: early → siren → resolved.
+ *
+ * Inline citations are stored as arrays of {url, channel} for rendering
+ * as [[1]](url), [[2]](url) inline after each data point.
+ */
+export interface InlineCite {
+  url: string;
+  channel: string;
+}
+
+export interface EnrichmentData {
+  /** Origin country (from early_warning or siren) */
+  origin: string | null;
+  originCites: InlineCite[];
+  /** ETA absolute time string (e.g. "~17:42") */
+  etaAbsolute: string | null;
+  etaCites: InlineCite[];
+  /** Rocket count display string (e.g. "~5–7") */
+  rocketCount: string | null;
+  rocketCites: InlineCite[];
+  /** Is cassette munitions */
+  isCassette: boolean | null;
+  /** Interception data display string (e.g. "3", "большинство") */
+  intercepted: string | null;
+  interceptedCites: InlineCite[];
+  /** Sea impact display string */
+  seaImpact: string | null;
+  /** Open area impact display string */
+  openAreaImpact: string | null;
+  /** Confirmed hits on structures */
+  hitsConfirmed: string | null;
+  hitsCites: InlineCite[];
+  /** Casualties / injuries (from resolved) */
+  casualties: string | null;
+  casualtiesCites: InlineCite[];
+  injuries: string | null;
+  injuriesCites: InlineCite[];
+  /** Time early_warning was received (for siren "Раннее: было в HH:MM") */
+  earlyWarningTime: string | null;
+  /** Hash of last enriched text to detect "message not modified" before sending */
+  lastEditHash: string | null;
+}
+
+/** Empty enrichment data template */
+export function emptyEnrichmentData(): EnrichmentData {
+  return {
+    origin: null,
+    originCites: [],
+    etaAbsolute: null,
+    etaCites: [],
+    rocketCount: null,
+    rocketCites: [],
+    isCassette: null,
+    intercepted: null,
+    interceptedCites: [],
+    seaImpact: null,
+    openAreaImpact: null,
+    hitsConfirmed: null,
+    hitsCites: [],
+    casualties: null,
+    casualtiesCites: [],
+    injuries: null,
+    injuriesCites: [],
+    earlyWarningTime: null,
+    lastEditHash: null,
+  };
 }

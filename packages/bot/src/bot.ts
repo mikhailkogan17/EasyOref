@@ -22,6 +22,7 @@ import {
   clearSession,
   getActiveSession,
   PHASE_ENRICH_DELAY_MS,
+  PHASE_INITIAL_DELAY_MS,
   saveAlertMeta,
   setActiveSession,
   type ActiveSession,
@@ -575,7 +576,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
           });
         }
 
-        const delay = PHASE_ENRICH_DELAY_MS[alertType];
+        const delay = PHASE_INITIAL_DELAY_MS[alertType];
         await enqueueEnrich(alert.id, alertTs, delay);
       }
     }

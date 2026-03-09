@@ -1,57 +1,49 @@
 /**
- * LangGraph.js enrichment pipeline — tiered validation + tool calling.
+ * LangGraph.js enrichment pipeline — phase-aware, time-validated.
  *
- * Design: minimize tokens, maximize confidence.
- * When confidence is low, offer tools — agent decides if they help.
+ * KEY DESIGN PRINCIPLES:
+ *   1. TIME IS KING — every post is validated against the alert time window.
+ *      LLM receives alert time + post time and scores time_relevance.
+ *      Posts about previous/different attacks are rejected.
+ *   2. PHASE-AWARE — each phase extracts only what's relevant:
+ *      - early_warning: origin, ETA, rocket count, cassette
+ *      - siren: carries early data + adds interception, impacts
+ *      - resolved: carries all + adds casualties, injuries, final stats
+ *   3. CARRY-FORWARD — results persist in Redis (EnrichmentData).
+ *      Each phase inherits previous phase's findings.
+ *   4. INLINE CITATIONS — no superscripts, no footer sources.
+ *      Format: [[1]](url) right after each data point.
+ *   5. DEDUP EDITS — hash-based check prevents "message not modified" spam.
  *
- * ┌──────────────────────────────────────────────────────────────┐
- * │ Tier 0: preFilter       (deterministic, 0 tokens)           │
- * │   → keyword + region check on raw post text                 │
- * │                                                              │
- * │ Tier 1: extractAndValidate  (1 LLM call per post)           │
- * │   → combined extraction + 3 validators in single JSON       │
- * │                                                              │
- * │ Tier 2: postFilter      (deterministic, 0 tokens)           │
- * │   → reject low relevance / trust / alarmist / empty         │
- * │                                                              │
- * │ Tier 3: vote            (deterministic, 0 tokens)           │
- * │   → majority consensus across validated sources             │
- * │                                                              │
- * │ Tier 3.5: shouldClarify (conditional edge)                  │
- * │   → if confidence < threshold AND tools enabled:            │
- * │     → clarify: LLM sees voted result + 4 tools              │
- * │       • read_telegram_sources (1-4 channel posts)           │
- * │       • alert_history (Oref history verification)           │
- * │       • resolve_area (defense-zone proximity check)         │
- * │       • betterstack_log (query recent pipeline logs)        │
- * │       LLM decides: call 0, 1, 2, or 3+ tools.              │
- * │     → revote with merged extractions                        │
- * │   → else: proceed to editMessage                            │
- * │                                                              │
- * │ Tier 4: editMessage     (deterministic, 0 tokens)           │
- * │   → inline update of existing key:value pairs               │
- * └──────────────────────────────────────────────────────────────┘
- *
- * Checkpointer: MemorySaver — session-level state persistence.
- * Total LLM cost: 1 call × N posts + (optional) 1 clarify call + 0-N tools.
+ * Pipeline:
+ *   preFilter → extractAndValidate → postFilter → vote → [clarify] → editMessage
  */
 
 import { Annotation, MemorySaver, StateGraph } from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";
 import { Bot } from "grammy";
+import { createHash } from "node:crypto";
 import { config } from "../config.js";
 import * as logger from "../logger.js";
 import { runClarify } from "./clarify.js";
 import type { ChannelPost } from "./store.js";
-import { getChannelPosts } from "./store.js";
+import {
+  getActiveSession,
+  getChannelPosts,
+  getEnrichmentData,
+  saveEnrichmentData,
+} from "./store.js";
 import type {
   AlertType,
   CitedSource,
+  EnrichmentData,
   ExtractionResult,
+  InlineCite,
   QualCount,
   ValidatedExtraction,
   VotedResult,
 } from "./types.js";
+import { emptyEnrichmentData } from "./types.js";
 
 // ── State ──────────────────────────────────────────────
 
@@ -70,6 +62,12 @@ const AgentState = Annotation.Root({
   votedResult: Annotation<VotedResult | null>({ reducer: (_, b) => b }),
   /** Tracks whether clarify has already run (prevents infinite loop) */
   clarifyAttempted: Annotation<boolean>({ reducer: (_, b) => b }),
+  /** Cross-phase enrichment data loaded at start */
+  previousEnrichment: Annotation<EnrichmentData>({ reducer: (_, b) => b }),
+  /** Session start timestamp for time window calculations */
+  sessionStartTs: Annotation<number>({ reducer: (_, b) => b }),
+  /** Phase start timestamp */
+  phaseStartTs: Annotation<number>({ reducer: (_, b) => b }),
 });
 
 type AgentStateType = typeof AgentState.State;
@@ -88,29 +86,23 @@ function getLLM(): ChatOpenAI {
     },
     apiKey: config.agent.apiKey,
     temperature: 0,
-    maxTokens: 400,
+    maxTokens: 500,
   });
 }
 
 // ── Region keywords (Hebrew + transliterations) ────────
 
-/**
- * Build keyword list from config areas + area_labels.
- * Returns lowercased keywords for matching.
- */
 function buildRegionKeywords(): string[] {
   const keywords: string[] = [];
 
   for (const area of config.areas) {
     keywords.push(area.toLowerCase());
-    // First word often enough (e.g. "תל אביב" → "תל")
     const first = area.split(" ")[0];
     if (first && first.length >= 2) keywords.push(first.toLowerCase());
   }
 
   for (const [he, label] of Object.entries(config.agent.areaLabels)) {
     keywords.push(he.toLowerCase());
-    // Add transliterated label words (e.g. "Дан центр" → "дан", "центр")
     for (const word of label.split(/\s+/)) {
       if (word.length >= 3) keywords.push(word.toLowerCase());
     }
@@ -126,11 +118,8 @@ function buildRegionKeywords(): string[] {
     "missile",
     "iron dome",
     "כיפת ברזל",
-    "жд",
     "перехват",
     "intercept",
-    "siren",
-    "азака",
     "צבע אדום",
     "red alert",
   );
@@ -138,68 +127,219 @@ function buildRegionKeywords(): string[] {
   return [...new Set(keywords)];
 }
 
+// ── Launch detection keywords (strict — early_warning only) ──
+
+const LAUNCH_KEYWORDS = [
+  "שיגור",
+  "שיגורים",
+  "שוגרו",
+  "נורו",
+  "зафиксированы запуски",
+  "обнаружены запуски",
+  "запуски ракет",
+  "запуск ракет",
+  "пуски ракет",
+  "ракетный обстрел",
+  "ракетная атака",
+  "missile launch",
+  "rocket launch",
+  "barrage",
+  "fired towards",
+  "launches detected",
+  "missiles fired",
+  "שיגורים לישראל",
+  "ירי טילים",
+  "ירי רקטות",
+  "إطلاق صواريخ",
+].map((kw) => kw.toLowerCase());
+
+// ── Time window per phase (ms before alertTs to accept posts) ──
+
+const TIME_WINDOW_MS: Record<AlertType, number> = {
+  early_warning: 5 * 60 * 1000, // 5 min before alert
+  siren: 10 * 60 * 1000, // 10 min (includes early_warning period)
+  resolved: 30 * 60 * 1000, // 30 min (full session window)
+};
+
+// ── Helpers ────────────────────────────────────────────
+
+/** Format timestamp as HH:MM Israel time */
+function toIsraelTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString("he-IL", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Jerusalem",
+  });
+}
+
+/** MD5 hash for edit dedup */
+function textHash(text: string): string {
+  return createHash("md5").update(text).digest("hex");
+}
+
 // ─────────────────────────────────────────────────────────
-// Tier 0: Pre-filter (deterministic, 0 tokens)
+// Tier 0: Pre-filter (phase-aware, time-bounded, 0 tokens)
 // ─────────────────────────────────────────────────────────
 
 async function collectAndPreFilter(
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> {
-  // Session-scoped: all posts belong to the current session already
   const posts = await getChannelPosts(state.alertId);
+  const prevEnrichment = await getEnrichmentData();
+
+  // Load session for time boundaries
+  const session = await getActiveSession();
+  const sessionStartTs = session?.sessionStartTs ?? state.alertTs;
+  const phaseStartTs = session?.phaseStartTs ?? state.alertTs;
 
   if (posts.length === 0) {
     logger.info("Agent: no posts in session", { alertId: state.alertId });
-    return { channelPosts: posts, filteredPosts: [] };
+    return {
+      channelPosts: posts,
+      filteredPosts: [],
+      previousEnrichment: prevEnrichment,
+      sessionStartTs,
+      phaseStartTs,
+    };
   }
 
   const keywords = buildRegionKeywords();
+  const alertType = state.alertType;
+  const alertTs = state.alertTs;
 
-  const filtered = posts.filter((post) => {
-    const text = post.text.toLowerCase();
-    // Must contain at least 1 region/attack keyword
-    return keywords.some((kw) => text.includes(kw));
-  });
+  // Time window: reject posts older than window before alertTs
+  const windowMs = TIME_WINDOW_MS[alertType];
+  const cutoffTs = alertTs - windowMs;
 
-  logger.info("Agent: pre-filter", {
-    alertId: state.alertId,
-    total: posts.length,
-    after_keyword_filter: filtered.length,
-  });
+  let filtered: ChannelPost[];
 
-  return { channelPosts: posts, filteredPosts: filtered };
+  if (alertType === "early_warning") {
+    // ── STRICT launch-only filter for early warning ──
+    // Step 1: Find posts with launch keywords, within time window
+    const launchPosts = posts.filter((post) => {
+      if (post.ts < cutoffTs) return false;
+      const text = post.text.toLowerCase();
+      return LAUNCH_KEYWORDS.some((kw) => text.includes(kw));
+    });
+
+    // Step 2: Get channels that posted about launches
+    const channelFirstLaunchTs = new Map<string, number>();
+    for (const post of launchPosts) {
+      const current = channelFirstLaunchTs.get(post.channel);
+      if (current === undefined || post.ts < current) {
+        channelFirstLaunchTs.set(post.channel, post.ts);
+      }
+    }
+
+    // Step 3: Accept follow-up posts from launch channels only (within window)
+    filtered = posts.filter((post) => {
+      if (post.ts < cutoffTs) return false;
+      const text = post.text.toLowerCase();
+      if (!keywords.some((kw) => text.includes(kw))) return false;
+      const firstLaunch = channelFirstLaunchTs.get(post.channel);
+      if (firstLaunch === undefined) return false;
+      return post.ts >= firstLaunch;
+    });
+
+    logger.info("Agent: pre-filter (early_warning)", {
+      alertId: state.alertId,
+      total: posts.length,
+      launch_posts: launchPosts.length,
+      launch_channels: channelFirstLaunchTs.size,
+      after_filter: filtered.length,
+      cutoff: toIsraelTime(cutoffTs),
+    });
+  } else {
+    // ── Siren & Resolved: broader filter, time-bounded ──
+    filtered = posts.filter((post) => {
+      if (post.ts < cutoffTs) return false;
+      const text = post.text.toLowerCase();
+      return keywords.some((kw) => text.includes(kw));
+    });
+
+    logger.info("Agent: pre-filter", {
+      alertId: state.alertId,
+      alertType,
+      total: posts.length,
+      after_filter: filtered.length,
+      cutoff: toIsraelTime(cutoffTs),
+    });
+  }
+
+  return {
+    channelPosts: posts,
+    filteredPosts: filtered,
+    previousEnrichment: prevEnrichment,
+    sessionStartTs,
+    phaseStartTs,
+  };
 }
 
 // ─────────────────────────────────────────────────────────
 // Tier 1: Extract + validate (1 LLM call per post)
+// Phase-aware prompts — agent knows what to look for.
+// TIME CONTEXT — agent sees alert time + post time.
 // ─────────────────────────────────────────────────────────
 
 const QUAL_VALUES =
   '"all"|"most"|"many"|"few"|"exists"|"none"|"more_than"|"less_than"';
 
-const SYSTEM_PROMPT = `You analyze Telegram channel messages about a missile/rocket attack on Israel.
-Your job: extract factual data AND assess message quality. Be concise.
+/** Phase-specific extraction instructions */
+function getPhaseInstructions(alertType: AlertType): string {
+  switch (alertType) {
+    case "early_warning":
+      return `PHASE: EARLY WARNING (radar detected launches, sirens not yet).
+Focus on: country_origin (WHERE were rockets launched from?), eta_refined_minutes, rocket_count, is_cassette.
+Do NOT extract: intercepted, sea_impact, open_area_impact, hits_confirmed, casualties, injuries — these are IMPOSSIBLE at this stage.
+If a message discusses interception results, it is about a PREVIOUS attack — set time_relevance=0.`;
+
+    case "siren":
+      return `PHASE: SIREN (rockets incoming, impact imminent).
+Focus on: country_origin (if not known yet), rocket_count, intercepted, sea_impact, open_area_impact, is_cassette.
+Do NOT extract: hits_confirmed, casualties, injuries — too early for confirmed damage reports.
+If a message discusses casualties or confirmed hits, verify the timing carefully - it may be about a previous attack.`;
+
+    case "resolved":
+      return `PHASE: RESOLVED (incident over, assessing damage).
+Focus on: intercepted (final count), hits_confirmed, casualties, injuries, open_area_impact.
+All fields are valid at this stage. Prioritize confirmed official reports.`;
+  }
+}
+
+const SYSTEM_PROMPT_BASE = `You analyze Telegram channel messages about a missile/rocket attack on Israel.
+Your job: extract factual data, assess quality, AND validate temporal relevance.
+
+CRITICAL — TIME VALIDATION:
+You will receive the alert time and the post time. You MUST determine if this post
+is about the CURRENT attack or about a previous/different event.
+- If post discusses events clearly BEFORE the alert time → time_relevance=0
+- If post is generic military news not specific to this attack → time_relevance=0.2
+- If post discusses the current attack → time_relevance=1.0
+- If uncertain → time_relevance=0.5 (the system will use alert_history to verify)
 
 Return ONLY valid JSON (no markdown, no explanation):
 {
   "region_relevance": float,       // 0–1: does this message discuss the specified alert region?
   "source_trust": float,           // 0–1: factual reporting (1.0) vs unverified rumors/panic (0.0)
-  "tone": "calm"|"neutral"|"alarmist",  // message tone — reject alarmist content
+  "tone": "calm"|"neutral"|"alarmist",
+  "time_relevance": float,         // 0–1: is this post about the CURRENT attack? (see rules above)
   "country_origin": string|null,   // "Iran","Yemen","Lebanon","Gaza","Iraq","Syria" or null
-  "rocket_count": int|null,        // total rockets/missiles launched if mentioned
-  "is_cassette": bool|null,        // cluster/cassette munitions confirmed?
-  "intercepted": int|null,         // exact number intercepted by Iron Dome/air defense
-  "intercepted_qual": ${QUAL_VALUES}|null, // qualitative if no exact number; null if exact number given
-  "intercepted_qual_num": int|null, // reference number for more_than/less_than (e.g. 5 if "more than 5")
-  "sea_impact": int|null,          // exact number fell in sea/unpopulated area
+  "rocket_count": int|null,
+  "is_cassette": bool|null,
+  "intercepted": int|null,
+  "intercepted_qual": ${QUAL_VALUES}|null,
+  "intercepted_qual_num": int|null,
+  "sea_impact": int|null,
   "sea_impact_qual": ${QUAL_VALUES}|null,
   "sea_impact_qual_num": int|null,
-  "open_area_impact": int|null,    // exact number hit open/populated ground
+  "open_area_impact": int|null,
   "open_area_impact_qual": ${QUAL_VALUES}|null,
   "open_area_impact_qual_num": int|null,
-  "hits_confirmed": int|null,      // confirmed hits on structures/buildings
-  "eta_refined_minutes": int|null, // refined time-to-impact if mentioned
-  "confidence": float              // 0–1: overall confidence in this extraction
+  "hits_confirmed": int|null,
+  "casualties": int|null,
+  "injuries": int|null,
+  "eta_refined_minutes": int|null,
+  "confidence": float
 }
 
 Rules:
@@ -207,12 +347,12 @@ Rules:
 - If message is speculative/unconfirmed rumor, set source_trust < 0.4.
 - If message uses excessive caps, exclamation marks, panic language → tone="alarmist".
 - Only extract concrete numbers explicitly stated in the text. Never guess.
-- intercpted + sea_impact + open_area_impact should sum to rocket_count when all are known.
-- If partial breakdown known, set unknown sub-fields to null (not 0).
-- *_qual fields: use ONLY when the message explicitly states a qualitative descriptor WITHOUT an exact count.
-  If an exact number is given, set *_qual to null. Do NOT infer from absence.
-- NEVER extract qualitative descriptors for casualties or injuries — hits_confirmed handles structural hits only.
-- "none" qual is only valid if explicitly stated in the message (e.g., "все перехвачены", "не упало в море").`;
+- *_qual fields: use ONLY when NO exact count is given. If exact number present, set *_qual=null.
+- "none" qual is only valid if explicitly stated (e.g., "все перехвачены", "не упало в море").
+- For IDF (@idf_telegram) posts about ongoing operations (not this specific attack) → time_relevance=0.
+- LANGUAGE NEUTRALITY: Posts may be in Hebrew, Russian, Arabic, or English. The language of the post
+  MUST NOT affect source_trust or confidence. Russian-language Israeli channels are equally reliable
+  and often break news faster than Hebrew ones. Judge ONLY by factual content and tone.`;
 
 async function extractAndValidate(
   state: AgentStateType,
@@ -232,36 +372,33 @@ async function extractAndValidate(
       ? state.alertAreas.join(", ")
       : Object.keys(config.agent.areaLabels).join(", ") || "Israel";
 
-  // Format alert time in Israel timezone
-  const alertTimeIL = new Date(state.alertTs).toLocaleTimeString("he-IL", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Jerusalem",
-  });
-  const nowIL = new Date().toLocaleTimeString("he-IL", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Jerusalem",
-  });
-  const alertTypeLabel =
-    state.alertType === "early_warning"
-      ? "early warning (radar detection)"
-      : state.alertType === "siren"
-      ? "siren (impact imminent)"
-      : state.alertType;
+  const alertTimeIL = toIsraelTime(state.alertTs);
+  const nowIL = toIsraelTime(Date.now());
+  const phaseInstructions = getPhaseInstructions(state.alertType);
 
-  const contextHeader =
-    `Alert type: ${alertTypeLabel}\n` +
-    `Alert time: ${alertTimeIL} (Israel)\n` +
-    `Current time: ${nowIL} (Israel)\n` +
-    `Alert region: ${regionHint}\n` +
-    `UI language: ${config.language}\n`;
+  const systemPrompt = SYSTEM_PROMPT_BASE + "\n\n" + phaseInstructions;
 
   const results = await Promise.all(
     posts.map(async (post): Promise<ValidatedExtraction> => {
+      const postTimeIL = toIsraelTime(post.ts);
+      const postAgeMin = Math.round((state.alertTs - post.ts) / 60_000);
+      const postAgeSuffix =
+        postAgeMin > 0
+          ? `(${postAgeMin} min BEFORE alert)`
+          : postAgeMin < 0
+          ? `(${Math.abs(postAgeMin)} min AFTER alert)`
+          : "(same time as alert)";
+
+      const contextHeader =
+        `Alert time: ${alertTimeIL} (Israel)\n` +
+        `Post time:  ${postTimeIL} (Israel) ${postAgeSuffix}\n` +
+        `Current time: ${nowIL} (Israel)\n` +
+        `Alert region: ${regionHint}\n` +
+        `UI language: ${config.language}\n`;
+
       try {
         const response = await llm.invoke([
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: systemPrompt },
           {
             role: "user",
             content: `${contextHeader}Channel: ${
@@ -275,7 +412,6 @@ async function extractAndValidate(
             ? response.content
             : JSON.stringify(response.content);
 
-        // Strip markdown code fences (```json ... ```) that some models wrap around JSON
         const text = raw
           .replace(/^```(?:json)?\s*\n?/i, "")
           .replace(/\n?```\s*$/i, "");
@@ -285,6 +421,7 @@ async function extractAndValidate(
           ...parsed,
           channel: post.channel,
           messageUrl: post.messageUrl,
+          time_relevance: parsed.time_relevance ?? 0.5,
           valid: true,
         };
       } catch (err) {
@@ -297,6 +434,7 @@ async function extractAndValidate(
           region_relevance: 0,
           source_trust: 0,
           tone: "neutral" as const,
+          time_relevance: 0,
           country_origin: null,
           rocket_count: null,
           is_cassette: null,
@@ -310,6 +448,8 @@ async function extractAndValidate(
           open_area_impact_qual: null,
           open_area_impact_qual_num: null,
           hits_confirmed: null,
+          casualties: null,
+          injuries: null,
           eta_refined_minutes: null,
           confidence: 0,
           valid: false,
@@ -322,6 +462,10 @@ async function extractAndValidate(
   logger.info("Agent: extracted", {
     alertId: state.alertId,
     count: results.length,
+    timeRelevance: results.map((r) => ({
+      ch: r.channel,
+      tr: r.time_relevance,
+    })),
   });
 
   return { extractions: results };
@@ -329,10 +473,16 @@ async function extractAndValidate(
 
 // ─────────────────────────────────────────────────────────
 // Tier 2: Post-filter (deterministic, 0 tokens)
+// Now includes TIME RELEVANCE check.
 // ─────────────────────────────────────────────────────────
 
 function postFilter(state: AgentStateType): Partial<AgentStateType> {
   const validated = state.extractions.map((ext): ValidatedExtraction => {
+    // V0: TIME RELEVANCE — the most important check
+    if (ext.time_relevance < 0.5) {
+      return { ...ext, valid: false, reject_reason: "stale_post" };
+    }
+
     // V1: region relevance
     if (ext.region_relevance < 0.5) {
       return { ...ext, valid: false, reject_reason: "region_irrelevant" };
@@ -341,7 +491,7 @@ function postFilter(state: AgentStateType): Partial<AgentStateType> {
     if (ext.source_trust < 0.4) {
       return { ...ext, valid: false, reject_reason: "untrusted_source" };
     }
-    // V3: tone — reject alarmist (бот для успокоения, не для паники)
+    // V3: tone — reject alarmist
     if (ext.tone === "alarmist") {
       return { ...ext, valid: false, reject_reason: "alarmist_tone" };
     }
@@ -350,7 +500,11 @@ function postFilter(state: AgentStateType): Partial<AgentStateType> {
       ext.country_origin !== null ||
       ext.rocket_count !== null ||
       ext.is_cassette !== null ||
+      ext.intercepted !== null ||
+      ext.intercepted_qual !== null ||
       ext.hits_confirmed !== null ||
+      ext.casualties !== null ||
+      ext.injuries !== null ||
       ext.eta_refined_minutes !== null;
     if (!hasData) {
       return { ...ext, valid: false, reject_reason: "no_data" };
@@ -387,23 +541,22 @@ function vote(state: AgentStateType): Partial<AgentStateType> {
     return { votedResult: null };
   }
 
-  // Assign 1-based citation indices to valid extractions
+  // Assign 1-based citation indices
   const indexed = valid.map((e, i) => ({ ...e, idx: i + 1 }));
 
-  // All valid sources become cited sources
   const citedSources: CitedSource[] = indexed.map((e) => ({
     index: e.idx,
     channel: e.channel,
     messageUrl: e.messageUrl ?? null,
   }));
 
-  // ETA: highest confidence source that has eta
+  // ETA: highest confidence source
   const withEta = indexed
     .filter((e) => e.eta_refined_minutes !== null)
     .sort((a, b) => b.confidence - a.confidence);
   const bestEta = withEta[0] ?? null;
 
-  // Country: group unique values, each with their source indices
+  // Country: group unique values
   const countryMap = new Map<string, number[]>();
   for (const e of indexed) {
     if (e.country_origin) {
@@ -420,7 +573,7 @@ function vote(state: AgentStateType): Partial<AgentStateType> {
         }))
       : null;
 
-  // Rocket count: range across sources (min … max)
+  // Rocket count: range
   const rocketSrcs = indexed.filter((e) => e.rocket_count !== null);
   const rocketVals = rocketSrcs.map((e) => e.rocket_count as number);
   const rocket_count_min =
@@ -429,7 +582,7 @@ function vote(state: AgentStateType): Partial<AgentStateType> {
     rocketVals.length > 0 ? Math.max(...rocketVals) : null;
   const rocket_citations = rocketSrcs.map((e) => e.idx);
 
-  // Helper: avg weighted confidence for a set of sources
+  // Helper: avg weighted confidence
   function fieldConf(
     srcs: Array<{ source_trust: number; confidence: number }>,
   ): number {
@@ -437,6 +590,31 @@ function vote(state: AgentStateType): Partial<AgentStateType> {
     return (
       srcs.reduce((s, e) => s + e.source_trust * e.confidence, 0) / srcs.length
     );
+  }
+
+  // Helper: mode for QualCount
+  function modeQual(
+    srcs: Array<{ [k: string]: unknown }>,
+    key: string,
+  ): QualCount | null {
+    const vals = srcs
+      .map((e) => e[key] as QualCount | null)
+      .filter((v): v is QualCount => v !== null);
+    if (vals.length === 0) return null;
+    const freq = new Map<QualCount, number>();
+    for (const v of vals) freq.set(v, (freq.get(v) ?? 0) + 1);
+    return [...freq.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+  }
+
+  function medianQualNum(
+    srcs: Array<{ [k: string]: unknown }>,
+    key: string,
+  ): number | null {
+    const vals = srcs
+      .map((e) => e[key] as number | null)
+      .filter((v): v is number => v !== null)
+      .sort((a, b) => a - b);
+    return vals.length > 0 ? vals[Math.floor(vals.length / 2)] : null;
   }
 
   // Cassette: majority
@@ -461,31 +639,7 @@ function vote(state: AgentStateType): Partial<AgentStateType> {
   const hits_citations = hitsSrcs.map((e) => e.idx);
   const hits_confidence = fieldConf(hitsSrcs);
 
-  // Helper: mode (most frequent non-null value) for QualCount aggregation
-  function modeQual(
-    srcs: Array<{ [k: string]: unknown }>,
-    key: string,
-  ): QualCount | null {
-    const vals = srcs
-      .map((e) => e[key] as QualCount | null)
-      .filter((v): v is QualCount => v !== null);
-    if (vals.length === 0) return null;
-    const freq = new Map<QualCount, number>();
-    for (const v of vals) freq.set(v, (freq.get(v) ?? 0) + 1);
-    return [...freq.entries()].sort((a, b) => b[1] - a[1])[0]![0];
-  }
-  function medianQualNum(
-    srcs: Array<{ [k: string]: unknown }>,
-    key: string,
-  ): number | null {
-    const vals = srcs
-      .map((e) => e[key] as number | null)
-      .filter((v): v is number => v !== null)
-      .sort((a, b) => a - b);
-    return vals.length > 0 ? vals[Math.floor(vals.length / 2)] : null;
-  }
-
-  // Intercepted: median across sources that reported exact number; mode for qual
+  // Intercepted: median / qual
   const interceptedSrcs = indexed.filter((e) => e.intercepted !== null);
   const interceptedQualSrcs = indexed.filter(
     (e) => e.intercepted_qual !== null,
@@ -545,6 +699,34 @@ function vote(state: AgentStateType): Partial<AgentStateType> {
     openSrcs.length > 0 ? openSrcs : openQualSrcs,
   );
 
+  // Casualties
+  const casualtySrcs = indexed.filter(
+    (e) => e.casualties !== null && e.casualties > 0,
+  );
+  const casualtyVals = casualtySrcs
+    .map((e) => e.casualties as number)
+    .sort((a, b) => a - b);
+  const casualties =
+    casualtyVals.length > 0
+      ? casualtyVals[Math.floor(casualtyVals.length / 2)]
+      : null;
+  const casualties_citations = casualtySrcs.map((e) => e.idx);
+  const casualties_confidence = fieldConf(casualtySrcs);
+
+  // Injuries
+  const injurySrcs = indexed.filter(
+    (e) => e.injuries !== null && (e.injuries as number) > 0,
+  );
+  const injuryVals = injurySrcs
+    .map((e) => e.injuries as number)
+    .sort((a, b) => a - b);
+  const injuries =
+    injuryVals.length > 0
+      ? injuryVals[Math.floor(injuryVals.length / 2)]
+      : null;
+  const injuries_citations = injurySrcs.map((e) => e.idx);
+  const injuries_confidence = fieldConf(injurySrcs);
+
   // Rocket confidence
   const rocket_confidence = fieldConf(rocketSrcs);
 
@@ -580,6 +762,12 @@ function vote(state: AgentStateType): Partial<AgentStateType> {
     hits_confirmed,
     hits_citations,
     hits_confidence,
+    casualties,
+    casualties_citations,
+    casualties_confidence,
+    injuries,
+    injuries_citations,
+    injuries_confidence,
     confidence: Math.round(weightedConf * 100) / 100,
     sources_count: indexed.length,
     citedSources,
@@ -590,7 +778,7 @@ function vote(state: AgentStateType): Partial<AgentStateType> {
 }
 
 // ─────────────────────────────────────────────────────────
-// Tier 4: Edit message — inline update (0 tokens)
+// Tier 4: Edit message — inline citations, carry-forward
 // ─────────────────────────────────────────────────────────
 
 /** EN country name → Russian */
@@ -604,180 +792,304 @@ const COUNTRY_RU: Record<string, string> = {
   Hezbollah: "Хезболла",
 };
 
-/** Convert index to Unicode superscript string: 1 → ¹, 13 → ¹³ */
-const SUPERSCRIPTS = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"];
-function sup(indices: number[]): string {
-  return indices
-    .map((n) =>
-      String(n)
-        .split("")
-        .map((d) => SUPERSCRIPTS[Number(d)])
-        .join(""),
-    )
-    .join("");
+/** Format inline citations: [[1]](url), [[2]](url) */
+function inlineCites(indices: number[], citedSources: CitedSource[]): string {
+  const parts: string[] = [];
+  for (const idx of indices) {
+    const src = citedSources.find((s) => s.index === idx);
+    if (src?.messageUrl) {
+      parts.push(`<a href="${src.messageUrl}">[${idx}]</a>`);
+    }
+  }
+  return parts.length > 0 ? " " + parts.join(", ") : "";
+}
+
+/** Get InlineCite[] from citation indices */
+function extractCites(
+  indices: number[],
+  citedSources: CitedSource[],
+): InlineCite[] {
+  const cites: InlineCite[] = [];
+  for (const idx of indices) {
+    const src = citedSources.find((s) => s.index === idx);
+    if (src?.messageUrl) {
+      cites.push({ url: src.messageUrl, channel: src.channel });
+    }
+  }
+  return cites;
+}
+
+/** Format inline citations from InlineCite[] (for carry-forward data) */
+function inlineCitesFromData(cites: InlineCite[]): string {
+  if (cites.length === 0) return "";
+  return (
+    " " + cites.map((c, i) => `<a href="${c.url}">[${i + 1}]</a>`).join(", ")
+  );
+}
+
+// Confidence thresholds
+const SKIP = 0.6;
+const UNCERTAIN = 0.75;
+const CERTAIN = 0.95;
+
+function qualDisplay(
+  qual: QualCount | null,
+  qualNum: number | null,
+  conf: number,
+): string | null {
+  if (qual === null) return null;
+  if (qual === "none") return conf >= CERTAIN ? "нет" : null;
+  const map: Record<QualCount, string> = {
+    all: "все",
+    most: "большинство",
+    many: "много",
+    few: "несколько",
+    exists: "есть",
+    none: "нет",
+    more_than: qualNum != null ? `>${qualNum}` : ">1",
+    less_than: qualNum != null ? `<${qualNum}` : "<нескольких",
+  };
+  return map[qual];
+}
+
+function breakdownItem(
+  label: string,
+  num: number | null,
+  qual: QualCount | null,
+  qualNum: number | null,
+  conf: number,
+): string | null {
+  if (conf < SKIP) return null;
+  const u = conf < UNCERTAIN ? " (?)" : "";
+  if (num !== null) return `${label} — ${num}${u}`;
+  const qs = qualDisplay(qual, qualNum, conf);
+  if (qs === null) return null;
+  return `${label} — ${qs}${u}`;
 }
 
 /**
- * Merge enrichment data INTO the existing key:value message.
- * Format:
- *   Подлётное время: ~00:21¹          ← ETA as absolute clock time
- *
- *   Откуда: Иран¹³ + Ливан²           ← blank line before intel block
- *   Ракет: ~5-7
- *   Попадания (Дан центр): 2¹
- *   Время оповещения: 03:47
- *   —
- *   Источники: [1](url) [2](url) [3](url)
+ * Build enrichment data from current vote + previous enrichment (carry-forward).
+ * Returns updated EnrichmentData for Redis persistence.
  */
-function buildEnrichedMessage(
-  currentText: string,
+function buildEnrichmentFromVote(
+  r: VotedResult,
+  prev: EnrichmentData,
   alertType: AlertType,
   alertTs: number,
-  r: VotedResult,
-): string {
-  let text = currentText;
+): EnrichmentData {
+  const data: EnrichmentData = { ...prev };
 
-  // Refine ETA in-place (early/siren only)
-  if (
-    r.eta_refined_minutes !== null &&
-    r.eta_citations.length > 0 &&
-    (alertType === "early_warning" || alertType === "siren")
-  ) {
-    text = refineEtaInPlace(
-      text,
-      r.eta_refined_minutes,
-      alertTs,
-      r.eta_citations,
+  // Origin — update if voted has it
+  if (r.country_origins && r.country_origins.length > 0) {
+    data.origin = r.country_origins
+      .map((c) => COUNTRY_RU[c.name] ?? c.name)
+      .join(" + ");
+    data.originCites = r.country_origins.flatMap((c) =>
+      extractCites(c.citations, r.citedSources),
     );
   }
 
-  // Insert "Откуда" before time line (with leading blank line for visual separation)
-  if (r.country_origins && r.country_origins.length > 0) {
-    const parts = r.country_origins.map((c) => {
-      const ru = COUNTRY_RU[c.name] ?? c.name;
-      return `${ru}${sup(c.citations)}`;
-    });
-    text = insertBeforeTimeLine(text, `\n<b>Откуда:</b> ${parts.join(" + ")}`);
-  }
-
-  // Confidence thresholds for uncertainty markers
-  const SKIP = 0.6; // below this → skip field entirely
-  const UNCERTAIN = 0.75; // below this (but ≥ SKIP) → add (?)
-  const CERTAIN = 0.95; // "none" qual requires this level
-
-  // Convert QualCount to Russian display string.
-  // Returns null if the qual should be suppressed (e.g. "none" below CERTAIN).
-  function qualDisplay(
-    qual: QualCount | null,
-    qualNum: number | null,
-    conf: number,
-  ): string | null {
-    if (qual === null) return null;
-    if (qual === "none") return conf >= CERTAIN ? "нет" : null;
-    const map: Record<QualCount, string> = {
-      all: "все",
-      most: "большинство",
-      many: "много",
-      few: "несколько",
-      exists: "есть",
-      none: "нет",
-      more_than: qualNum != null ? `>​${qualNum}` : ">​1",
-      less_than: qualNum != null ? `<​${qualNum}` : "<​нескольких",
-    };
-    return map[qual];
-  }
-
-  // Format one breakdown item: prefer exact number, fall back to qual.
-  // Returns null if nothing to show (below threshold or not reported).
-  function breakdownItem(
-    label: string,
-    num: number | null,
-    qual: QualCount | null,
-    qualNum: number | null,
-    conf: number,
-  ): string | null {
-    if (conf < SKIP) return null;
-    const u = conf < UNCERTAIN ? " (?)" : "";
-    if (num !== null) return `${label} — ${num}${u}`;
-    const qs = qualDisplay(qual, qualNum, conf);
-    if (qs === null) return null;
-    return `${label} — ${qs}${u}`;
-  }
-
-  // Rocket count with breakdown and uncertainty markers
+  // ETA — only for early_warning/siren
   if (
-    r.rocket_count_min !== null &&
-    r.rocket_count_max !== null &&
-    r.rocket_confidence >= SKIP
+    r.eta_refined_minutes !== null &&
+    (alertType === "early_warning" || alertType === "siren")
   ) {
-    const rocketUncertain = r.rocket_confidence < UNCERTAIN ? " (?)" : "";
-    const countStr =
-      r.rocket_count_min === r.rocket_count_max
-        ? `${r.rocket_count_min}`
-        : `~${r.rocket_count_min}–${r.rocket_count_max}`;
+    const absTime = new Date(
+      alertTs + r.eta_refined_minutes * 60_000,
+    ).toLocaleTimeString("he-IL", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Jerusalem",
+    });
+    data.etaAbsolute = `~${absTime}`;
+    data.etaCites = extractCites(r.eta_citations, r.citedSources);
+  }
 
-    const bParts: string[] = [];
-    const bi = breakdownItem(
-      "перехвачено",
-      r.intercepted,
+  // Rocket count
+  if (r.rocket_count_min !== null && r.rocket_count_max !== null) {
+    const u = r.rocket_confidence < UNCERTAIN ? " (?)" : "";
+    data.rocketCount =
+      r.rocket_count_min === r.rocket_count_max
+        ? `${r.rocket_count_min}${u}`
+        : `~${r.rocket_count_min}–${r.rocket_count_max}${u}`;
+    data.rocketCites = extractCites(r.rocket_citations, r.citedSources);
+  }
+
+  // Cassette
+  if (r.is_cassette !== null && r.is_cassette_confidence >= SKIP) {
+    data.isCassette = r.is_cassette;
+  }
+
+  // Intercepted
+  if (r.intercepted !== null && r.intercepted_confidence >= SKIP) {
+    const u = r.intercepted_confidence < UNCERTAIN ? " (?)" : "";
+    data.intercepted = `${r.intercepted}${u}`;
+    data.interceptedCites = extractCites(
+      r.citedSources
+        .filter((s) => {
+          const ext = r.citedSources.find((cs) => cs.index === s.index);
+          return ext !== undefined;
+        })
+        .map((s) => s.index),
+      r.citedSources,
+    );
+  } else if (r.intercepted_qual !== null && r.intercepted_confidence >= SKIP) {
+    const qs = qualDisplay(
       r.intercepted_qual,
       r.intercepted_qual_num,
       r.intercepted_confidence,
     );
-    if (bi) bParts.push(bi);
-    const bs = breakdownItem(
-      "упали в море",
-      r.sea_impact,
-      r.sea_impact_qual,
-      r.sea_impact_qual_num,
-      r.sea_confidence,
-    );
-    if (bs) bParts.push(bs);
-    const bo = breakdownItem(
-      "открытая местность",
-      r.open_area_impact,
-      r.open_area_impact_qual,
-      r.open_area_impact_qual_num,
-      r.open_area_confidence,
-    );
-    if (bo) bParts.push(bo);
-
-    const breakdown = bParts.length > 0 ? `, из них: ${bParts.join(", ")}` : "";
-    const cassetteU = r.is_cassette_confidence < UNCERTAIN ? " (?)" : "";
-    const cassette =
-      r.is_cassette && r.is_cassette_confidence >= SKIP
-        ? `, есть кассетные${cassetteU}`
-        : "";
-
-    text = insertBeforeTimeLine(
-      text,
-      `<b>Ракет:</b> ${countStr}${rocketUncertain}${breakdown}${cassette}`,
-    );
+    if (qs) data.intercepted = qs;
   }
 
-  // Hits: есть прямое попадание/-ия в <area>: N — only if confidence ≥ SKIP
+  // Hits
   if (
     r.hits_confirmed !== null &&
     r.hits_confirmed > 0 &&
     r.hits_confidence >= SKIP
   ) {
-    const areaLabel = Object.values(config.agent.areaLabels)[0] ?? "район";
-    const hitWord = r.hits_confirmed === 1 ? "попадание" : "попадания";
-    const hitsCite = r.hits_citations.length > 0 ? sup(r.hits_citations) : "";
-    const hitsU = r.hits_confidence < UNCERTAIN ? " (?)" : "";
+    const u = r.hits_confidence < UNCERTAIN ? " (?)" : "";
+    data.hitsConfirmed = `${r.hits_confirmed}${u}`;
+    data.hitsCites = extractCites(r.hits_citations, r.citedSources);
+  }
+
+  // Casualties
+  if (
+    r.casualties !== null &&
+    r.casualties > 0 &&
+    r.casualties_confidence >= SKIP
+  ) {
+    const u = r.casualties_confidence < UNCERTAIN ? " (?)" : "";
+    data.casualties = `${r.casualties}${u}`;
+    data.casualtiesCites = extractCites(r.casualties_citations, r.citedSources);
+  }
+
+  // Injuries
+  if (r.injuries !== null && r.injuries > 0 && r.injuries_confidence >= SKIP) {
+    const u = r.injuries_confidence < UNCERTAIN ? " (?)" : "";
+    data.injuries = `${r.injuries}${u}`;
+    data.injuriesCites = extractCites(r.injuries_citations, r.citedSources);
+  }
+
+  // Early warning time — record when first early_warning was received
+  if (alertType === "early_warning" && !data.earlyWarningTime) {
+    data.earlyWarningTime = toIsraelTime(alertTs);
+  }
+
+  return data;
+}
+
+/**
+ * Build the enriched message text from current message + enrichment data.
+ * Uses inline [[1]](url) citations. No superscripts. No footer sources.
+ */
+function buildEnrichedMessage(
+  currentText: string,
+  alertType: AlertType,
+  alertTs: number,
+  enrichment: EnrichmentData,
+): string {
+  let text = currentText;
+
+  // ── Refine ETA in-place ──
+  if (
+    enrichment.etaAbsolute &&
+    (alertType === "early_warning" || alertType === "siren")
+  ) {
+    const etaCiteStr = inlineCitesFromData(enrichment.etaCites);
+    const refined = `${enrichment.etaAbsolute}${etaCiteStr}`;
+
+    const etaPatterns = [
+      /~\d+[–-]\d+\s*мин/, // ~5–12 мин
+      /~\d+[–-]\d+\s*min/, // ~5–12 min
+      /~\d+[–-]\d+\s*דקות/, // ~5–12 דקות
+      /~\d+[–-]\d+\s*دقيقة/, // ~5–12 دقيقة
+      /1\.5\s*мин/, // 1.5 мин (siren)
+      /1\.5\s*min/,
+      /1\.5\s*דקות/,
+      /1\.5\s*دقيقة/,
+    ];
+
+    for (const pattern of etaPatterns) {
+      if (pattern.test(text)) {
+        text = text.replace(pattern, refined);
+        break;
+      }
+    }
+  }
+
+  // ── Siren: show "Раннее предупреждение: было в HH:MM" ──
+  if (alertType === "siren" && enrichment.earlyWarningTime) {
     text = insertBeforeTimeLine(
       text,
-      `есть прямое ${hitWord} в ${areaLabel}: ${r.hits_confirmed}${hitsCite}${hitsU}`,
+      `<b>Раннее предупреждение:</b> было в ${enrichment.earlyWarningTime}`,
     );
   }
 
-  // Sources footer: [1](url)   [2](url)   ...
-  const sourcesWithUrl = r.citedSources.filter((s) => s.messageUrl);
-  if (sourcesWithUrl.length > 0) {
-    const links = sourcesWithUrl
-      .map((s) => `<a href="${s.messageUrl}">[${s.index}]</a>`)
-      .join("  ");
-    text += `\n—\n<i>Источники: ${links}</i>`;
+  // ── Origin ──
+  if (enrichment.origin) {
+    const citeStr = inlineCitesFromData(enrichment.originCites);
+    text = insertBeforeTimeLine(
+      text,
+      `\n<b>Откуда:</b> ${enrichment.origin}${citeStr}`,
+    );
+  }
+
+  // ── Rocket count + breakdown ──
+  if (enrichment.rocketCount) {
+    const citeStr = inlineCitesFromData(enrichment.rocketCites);
+    const cassette = enrichment.isCassette ? ", есть кассетные" : "";
+
+    let breakdown = "";
+    const bParts: string[] = [];
+    if (enrichment.intercepted) {
+      bParts.push(`перехвачено — ${enrichment.intercepted}`);
+    }
+    if (enrichment.seaImpact) {
+      bParts.push(`упали в море — ${enrichment.seaImpact}`);
+    }
+    if (enrichment.openAreaImpact) {
+      bParts.push(`открытая местность — ${enrichment.openAreaImpact}`);
+    }
+    if (bParts.length > 0) breakdown = `, из них: ${bParts.join(", ")}`;
+
+    text = insertBeforeTimeLine(
+      text,
+      `<b>Ракет:</b> ${enrichment.rocketCount}${breakdown}${cassette}${citeStr}`,
+    );
+  } else if (enrichment.intercepted && alertType !== "early_warning") {
+    // No rocket count but have interception data
+    const citeStr = inlineCitesFromData(enrichment.interceptedCites);
+    text = insertBeforeTimeLine(
+      text,
+      `<b>Перехвачено:</b> ${enrichment.intercepted}${citeStr}`,
+    );
+  }
+
+  // ── Hits ──
+  if (enrichment.hitsConfirmed && alertType !== "early_warning") {
+    const areaLabel = Object.values(config.agent.areaLabels)[0] ?? "район";
+    const citeStr = inlineCitesFromData(enrichment.hitsCites);
+    text = insertBeforeTimeLine(
+      text,
+      `<b>Попадания (${areaLabel}):</b> ${enrichment.hitsConfirmed}${citeStr}`,
+    );
+  }
+
+  // ── Casualties / Injuries (resolved only) ──
+  if (enrichment.casualties && alertType === "resolved") {
+    const citeStr = inlineCitesFromData(enrichment.casualtiesCites);
+    text = insertBeforeTimeLine(
+      text,
+      `<b>Погибшие:</b> ${enrichment.casualties}${citeStr}`,
+    );
+  }
+  if (enrichment.injuries && alertType === "resolved") {
+    const citeStr = inlineCitesFromData(enrichment.injuriesCites);
+    text = insertBeforeTimeLine(
+      text,
+      `<b>Пострадавшие:</b> ${enrichment.injuries}${citeStr}`,
+    );
   }
 
   return text;
@@ -785,57 +1097,17 @@ function buildEnrichedMessage(
 
 /**
  * Insert a line before the time line (last "Время" / "Time" / "שעת" line).
- * This keeps new data visually grouped with existing fields.
  */
 function insertBeforeTimeLine(text: string, line: string): string {
-  // Match "Время оповещения" / "Alert time" / "שעת ההתרעה" / "وقت الإنذار"
   const timePattern =
     /(<b>(?:Время оповещения|Alert time|שעת ההתרעה|وقت الإنذار):<\/b>)/;
   const match = text.match(timePattern);
   if (match?.index !== undefined) {
     return text.slice(0, match.index) + line + "\n" + text.slice(match.index);
   }
-  // Fallback: append before last line
   const lines = text.split("\n");
   lines.splice(Math.max(lines.length - 1, 0), 0, line);
   return lines.join("\n");
-}
-
-/**
- * Replace the default ETA range with absolute impact time + superscript citation.
- * "~5–12 мин" → "~00:21¹"
- */
-function refineEtaInPlace(
-  text: string,
-  minutes: number,
-  alertTs: number,
-  citations: number[],
-): string {
-  // Compute absolute impact time in Israel timezone
-  const absTime = new Date(alertTs + minutes * 60_000).toLocaleTimeString(
-    "he-IL",
-    { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" },
-  );
-  const refined = `~${absTime}${sup(citations)}`;
-
-  const etaPatterns = [
-    /~\d+[–-]\d+\s*мин/, // ~5–12 мин
-    /~\d+[–-]\d+\s*min/, // ~5–12 min
-    /~\d+[–-]\d+\s*דקות/, // ~5–12 דקות
-    /~\d+[–-]\d+\s*دقائق/, // ~5–12 دقائق
-    /1\.5\s*мин/, // 1.5 мин (siren)
-    /1\.5\s*min/, // 1.5 min
-    /1\.5\s*דקות/, // 1.5 דקות
-    /1\.5\s*دقائق/, // 1.5 دقائق
-  ];
-
-  for (const pattern of etaPatterns) {
-    if (pattern.test(text)) {
-      return text.replace(pattern, refined);
-    }
-  }
-
-  return text;
 }
 
 async function editMessage(
@@ -847,9 +1119,92 @@ async function editMessage(
 
   const tgBot = new Bot(config.botToken);
 
-  // No valid sources found — silently skip (don't touch the message)
+  // No valid sources — carry forward previous data only
+  const prevEnrichment = state.previousEnrichment ?? emptyEnrichmentData();
+
   if (!votedResult) {
-    logger.info("Agent: no voted result — skipping edit", {
+    // No new data from channels — still try to build message from carry-forward
+    if (prevEnrichment.origin || prevEnrichment.intercepted) {
+      // Have carry-forward data, build message
+      const newText = buildEnrichedMessage(
+        state.currentText,
+        state.alertType,
+        state.alertTs,
+        prevEnrichment,
+      );
+
+      const hash = textHash(newText);
+      if (hash === prevEnrichment.lastEditHash) {
+        logger.info("Agent: no change in message (dedup) — skipping edit", {
+          alertId: state.alertId,
+        });
+        return {};
+      }
+
+      try {
+        if (state.isCaption) {
+          await tgBot.api.editMessageCaption(state.chatId, state.messageId, {
+            caption: newText,
+            parse_mode: "HTML",
+          });
+        } else {
+          await tgBot.api.editMessageText(
+            state.chatId,
+            state.messageId,
+            newText,
+            { parse_mode: "HTML" },
+          );
+        }
+
+        prevEnrichment.lastEditHash = hash;
+        await saveEnrichmentData(prevEnrichment);
+
+        logger.info("Agent: message enriched (carry-forward only)", {
+          alertId: state.alertId,
+          messageId: state.messageId,
+        });
+      } catch (err) {
+        const errStr = String(err);
+        if (errStr.includes("message is not modified")) {
+          prevEnrichment.lastEditHash = hash;
+          await saveEnrichmentData(prevEnrichment);
+          logger.info("Agent: message already up-to-date (dedup)", {
+            alertId: state.alertId,
+          });
+        } else {
+          logger.error("Agent: failed to edit message", {
+            alertId: state.alertId,
+            error: errStr,
+          });
+        }
+      }
+    } else {
+      logger.info("Agent: no voted result — skipping edit", {
+        alertId: state.alertId,
+      });
+    }
+    return {};
+  }
+
+  // Build enrichment data: merge vote + previous
+  const enrichment = buildEnrichmentFromVote(
+    votedResult,
+    prevEnrichment,
+    state.alertType,
+    state.alertTs,
+  );
+
+  const newText = buildEnrichedMessage(
+    state.currentText,
+    state.alertType,
+    state.alertTs,
+    enrichment,
+  );
+
+  // Dedup: skip if text hasn't changed
+  const hash = textHash(newText);
+  if (hash === enrichment.lastEditHash) {
+    logger.info("Agent: no change in message (dedup) — skipping edit", {
       alertId: state.alertId,
     });
     return {};
@@ -867,13 +1222,6 @@ async function editMessage(
     );
   }
 
-  const newText = buildEnrichedMessage(
-    state.currentText,
-    state.alertType,
-    state.alertTs,
-    votedResult,
-  );
-
   try {
     if (state.isCaption) {
       await tgBot.api.editMessageCaption(state.chatId, state.messageId, {
@@ -885,17 +1233,31 @@ async function editMessage(
         parse_mode: "HTML",
       });
     }
+
+    enrichment.lastEditHash = hash;
+    await saveEnrichmentData(enrichment);
+
     logger.info("Agent: message enriched", {
       alertId: state.alertId,
       messageId: state.messageId,
       confidence: votedResult.confidence,
       sources: votedResult.sources_count,
+      phase: state.alertType,
     });
   } catch (err) {
-    logger.error("Agent: failed to edit message", {
-      alertId: state.alertId,
-      error: String(err),
-    });
+    const errStr = String(err);
+    if (errStr.includes("message is not modified")) {
+      enrichment.lastEditHash = hash;
+      await saveEnrichmentData(enrichment);
+      logger.info("Agent: message already up-to-date (dedup)", {
+        alertId: state.alertId,
+      });
+    } else {
+      logger.error("Agent: failed to edit message", {
+        alertId: state.alertId,
+        error: errStr,
+      });
+    }
   }
 
   return {};
@@ -914,6 +1276,7 @@ async function clarifyNode(
     alertId,
     alertAreas,
     alertType,
+    alertTs,
     messageId,
     currentText,
   } = state;
@@ -927,6 +1290,7 @@ async function clarifyNode(
     alertId,
     confidence: votedResult.confidence,
     threshold: config.agent.confidenceThreshold,
+    phase: alertType,
   });
 
   try {
@@ -934,13 +1298,13 @@ async function clarifyNode(
       alertId,
       alertAreas,
       alertType,
+      alertTs,
       messageId,
       currentText,
       extractions,
       votedResult,
     });
 
-    // Merge new extractions with existing valid ones
     const mergedExtractions = [...extractions, ...result.newExtractions];
 
     logger.info("Agent: clarify completed", {
@@ -953,7 +1317,6 @@ async function clarifyNode(
 
     return {
       extractions: mergedExtractions,
-      // Reset votedResult so vote() re-runs with merged data
       votedResult: null,
       clarifyAttempted: true,
     };
@@ -969,22 +1332,11 @@ async function clarifyNode(
 // ── Conditional routing after vote ─────────────────────
 
 function shouldClarify(state: AgentStateType): "clarify" | "editMessage" {
-  // Only clarify once per pipeline run (prevents infinite loop)
-  if (state.clarifyAttempted) {
-    return "editMessage";
-  }
+  if (state.clarifyAttempted) return "editMessage";
+  if (!config.agent.mcpTools) return "editMessage";
+  if (!state.votedResult) return "editMessage";
 
-  // MCP tools must be enabled
-  if (!config.agent.mcpTools) {
-    return "editMessage";
-  }
-
-  // No voted result → nothing to clarify
-  if (!state.votedResult) {
-    return "editMessage";
-  }
-
-  // Confidence below threshold → clarify
+  // Low confidence → clarify (may use Oref tool for time validation)
   if (state.votedResult.confidence < config.agent.confidenceThreshold) {
     logger.info("Agent: routing to clarify (low confidence)", {
       confidence: state.votedResult.confidence,
@@ -993,12 +1345,40 @@ function shouldClarify(state: AgentStateType): "clarify" | "editMessage" {
     return "clarify";
   }
 
+  // Suspicious time: if the only country is unexpected for the region, verify
+  // This catches cases like "Lebanon" appearing on a Tel Aviv alert
+  // when the real attack is from Iran/Yemen
+  const origins = state.votedResult.country_origins;
+  if (
+    origins &&
+    origins.length === 1 &&
+    state.votedResult.sources_count === 1
+  ) {
+    const singleOrigin = origins[0]!.name;
+    // Lebanon attacks typically don't reach central Israel
+    if (
+      singleOrigin === "Lebanon" &&
+      state.alertAreas.some(
+        (a) =>
+          a.includes("תל אביב") ||
+          a.includes("גוש דן") ||
+          a.includes("שרון") ||
+          a.includes("מרכז"),
+      )
+    ) {
+      logger.info(
+        "Agent: routing to clarify (suspicious single source: Lebanon for central Israel)",
+        { origin: singleOrigin },
+      );
+      return "clarify";
+    }
+  }
+
   return "editMessage";
 }
 
 // ── Build graph ────────────────────────────────────────
 
-/** MemorySaver checkpointer — session-level state persistence */
 const checkpointer = new MemorySaver();
 
 function buildGraph() {
@@ -1008,13 +1388,12 @@ function buildGraph() {
     .addNode("postFilter", postFilter)
     .addNode("vote", vote)
     .addNode("clarify", clarifyNode)
-    .addNode("revote", vote) // Re-run vote after clarify with merged data
+    .addNode("revote", vote)
     .addNode("editMessage", editMessage)
     .addEdge("__start__", "collectAndPreFilter")
     .addEdge("collectAndPreFilter", "extractAndValidate")
     .addEdge("extractAndValidate", "postFilter")
     .addEdge("postFilter", "vote")
-    // Conditional edge: vote → clarify (low conf) or editMessage (high conf)
     .addConditionalEdges("vote", shouldClarify, {
       clarify: "clarify",
       editMessage: "editMessage",
@@ -1057,8 +1436,35 @@ export async function runEnrichment(input: RunEnrichmentInput): Promise<void> {
       extractions: [],
       votedResult: null,
       clarifyAttempted: false,
+      previousEnrichment: emptyEnrichmentData(),
+      sessionStartTs: 0,
+      phaseStartTs: 0,
     },
-    // Thread ID for MemorySaver — enables session-level state persistence
     { configurable: { thread_id: input.alertId } },
   );
 }
+
+// ── Exported for testing ───────────────────────────────
+
+export const _test = {
+  getLLM,
+  buildRegionKeywords,
+  LAUNCH_KEYWORDS,
+  TIME_WINDOW_MS,
+  toIsraelTime,
+  textHash,
+  postFilter,
+  vote,
+  buildEnrichmentFromVote,
+  buildEnrichedMessage,
+  insertBeforeTimeLine,
+  inlineCites,
+  inlineCitesFromData,
+  extractCites,
+  COUNTRY_RU,
+  SYSTEM_PROMPT_BASE,
+  getPhaseInstructions,
+  SKIP,
+  UNCERTAIN,
+  CERTAIN,
+} as const;

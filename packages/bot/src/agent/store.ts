@@ -14,7 +14,8 @@
  */
 
 import { getRedis } from "./redis.js";
-import type { AlertType } from "./types.js";
+import type { AlertType, EnrichmentData } from "./types.js";
+import { emptyEnrichmentData } from "./types.js";
 
 const META_TTL_S = 20 * 60; // 20 minutes
 const SESSION_TTL_S = 45 * 60; // 45 min worst case
@@ -33,6 +34,13 @@ export const PHASE_ENRICH_DELAY_MS: Record<AlertType, number> = {
   early_warning: 20_000, // 20s
   siren: 20_000, // 20s
   resolved: 60_000, // 60s — detailed intel comes slower
+};
+
+/** Initial enrichment delay — first job after alert (channels need time to post) */
+export const PHASE_INITIAL_DELAY_MS: Record<AlertType, number> = {
+  early_warning: 120_000, // 2 min — wait for launch reports
+  siren: 15_000, // 15s
+  resolved: 60_000, // 60s
 };
 
 // ── Types ──────────────────────────────────────────────
@@ -105,15 +113,9 @@ export async function getSessionPosts(): Promise<ChannelPost[]> {
 
 // ── Active session ─────────────────────────────────────
 
-export async function setActiveSession(
-  session: ActiveSession,
-): Promise<void> {
+export async function setActiveSession(session: ActiveSession): Promise<void> {
   const redis = getRedis();
-  await redis.setex(
-    "session:active",
-    SESSION_TTL_S,
-    JSON.stringify(session),
-  );
+  await redis.setex("session:active", SESSION_TTL_S, JSON.stringify(session));
 }
 
 export async function getActiveSession(): Promise<ActiveSession | null> {
@@ -124,7 +126,7 @@ export async function getActiveSession(): Promise<ActiveSession | null> {
 
 export async function clearSession(): Promise<void> {
   const redis = getRedis();
-  await redis.del("session:active", "session:posts");
+  await redis.del("session:active", "session:posts", "session:enrichment");
 }
 
 export function isPhaseExpired(session: ActiveSession): boolean {
@@ -134,12 +136,18 @@ export function isPhaseExpired(session: ActiveSession): boolean {
 
 // ── Compat shims (used by gramjs-monitor, graph) ───────
 
-export async function getActiveAlert(): Promise<
-  { alertId: string; alertTs: number; alertType: AlertType } | null
-> {
+export async function getActiveAlert(): Promise<{
+  alertId: string;
+  alertTs: number;
+  alertType: AlertType;
+} | null> {
   const s = await getActiveSession();
   if (!s) return null;
-  return { alertId: s.latestAlertId, alertTs: s.latestAlertTs, alertType: s.phase };
+  return {
+    alertId: s.latestAlertId,
+    alertTs: s.latestAlertTs,
+    alertType: s.phase,
+  };
 }
 
 export async function pushChannelPost(
@@ -153,4 +161,17 @@ export async function getChannelPosts(
   _alertId: string,
 ): Promise<ChannelPost[]> {
   return getSessionPosts();
+}
+
+// ── Enrichment data (cross-phase persistence) ──────────
+
+export async function saveEnrichmentData(data: EnrichmentData): Promise<void> {
+  const redis = getRedis();
+  await redis.setex("session:enrichment", SESSION_TTL_S, JSON.stringify(data));
+}
+
+export async function getEnrichmentData(): Promise<EnrichmentData> {
+  const redis = getRedis();
+  const raw = await redis.get("session:enrichment");
+  return raw ? (JSON.parse(raw) as EnrichmentData) : emptyEnrichmentData();
 }
