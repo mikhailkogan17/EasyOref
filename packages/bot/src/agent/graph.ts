@@ -127,6 +127,22 @@ function buildRegionKeywords(): string[] {
   return [...new Set(keywords)];
 }
 
+// ── Hard-ignore: Pikud HaOref official area lists ("простыня") ──
+
+const OREF_LINK_PATTERN = /oref\.org\.il/i;
+const OREF_OFFICIAL_CHANNEL_PATTERN = /pikud|פיקוד|oref/i;
+
+/** Detect posts that are just official Pikud HaOref area list links */
+function isOrefAreaList(post: ChannelPost): boolean {
+  const text = post.text;
+  // Link to official Pikud HaOref page
+  if (OREF_LINK_PATTERN.test(text)) return true;
+  // Official channels that just echo the area list (very long, >300 chars, mostly city names)
+  if (OREF_OFFICIAL_CHANNEL_PATTERN.test(post.channel) && text.length > 300)
+    return true;
+  return false;
+}
+
 // ── Launch detection keywords (strict — early_warning only) ──
 
 const LAUNCH_KEYWORDS = [
@@ -218,6 +234,7 @@ async function collectAndPreFilter(
     // Step 1: Find posts with launch keywords, within time window
     const launchPosts = posts.filter((post) => {
       if (post.ts < cutoffTs) return false;
+      if (isOrefAreaList(post)) return false;
       const text = post.text.toLowerCase();
       return LAUNCH_KEYWORDS.some((kw) => text.includes(kw));
     });
@@ -248,11 +265,22 @@ async function collectAndPreFilter(
       launch_channels: channelFirstLaunchTs.size,
       after_filter: filtered.length,
       cutoff: toIsraelTime(cutoffTs),
+      channels_breakdown: Object.fromEntries(
+        [...new Set(posts.map((p) => p.channel))].map((ch) => [
+          ch,
+          {
+            total: posts.filter((p) => p.channel === ch).length,
+            passed: filtered.filter((p) => p.channel === ch).length,
+          },
+        ]),
+      ),
+      oref_filtered: posts.filter(isOrefAreaList).length,
     });
   } else {
     // ── Siren & Resolved: broader filter, time-bounded ──
     filtered = posts.filter((post) => {
       if (post.ts < cutoffTs) return false;
+      if (isOrefAreaList(post)) return false;
       const text = post.text.toLowerCase();
       return keywords.some((kw) => text.includes(kw));
     });
@@ -263,6 +291,16 @@ async function collectAndPreFilter(
       total: posts.length,
       after_filter: filtered.length,
       cutoff: toIsraelTime(cutoffTs),
+      channels_breakdown: Object.fromEntries(
+        [...new Set(posts.map((p) => p.channel))].map((ch) => [
+          ch,
+          {
+            total: posts.filter((p) => p.channel === ch).length,
+            passed: filtered.filter((p) => p.channel === ch).length,
+          },
+        ]),
+      ),
+      oref_filtered: posts.filter(isOrefAreaList).length,
     });
   }
 
@@ -352,7 +390,12 @@ Rules:
 - For IDF (@idf_telegram) posts about ongoing operations (not this specific attack) → time_relevance=0.
 - LANGUAGE NEUTRALITY: Posts may be in Hebrew, Russian, Arabic, or English. The language of the post
   MUST NOT affect source_trust or confidence. Russian-language Israeli channels are equally reliable
-  and often break news faster than Hebrew ones. Judge ONLY by factual content and tone.`;
+  and often break news faster than Hebrew ones. Judge ONLY by factual content and tone.
+- TRUST INTERCEPTION & IMPACT REPORTS: When a channel explicitly states interception results
+  (e.g., "перехвачены", "intercepted", "יירוט", "упали в море", "fell in the sea", "נפלו בים",
+  "open area impact", "שטח פתוח"), trust these claims with source_trust >= 0.7 and confidence >= 0.7.
+  Israeli Telegram channels often report interception results before official confirmation,
+  and these reports are typically accurate. Do NOT downgrade these just because they lack official source.`;
 
 async function extractAndValidate(
   state: AgentStateType,
@@ -465,6 +508,11 @@ async function extractAndValidate(
     timeRelevance: results.map((r) => ({
       ch: r.channel,
       tr: r.time_relevance,
+      conf: r.confidence,
+      origin: r.country_origin,
+      intercepted: r.intercepted ?? r.intercepted_qual,
+      sea: r.sea_impact ?? r.sea_impact_qual,
+      valid: r.valid,
     })),
   });
 
@@ -524,7 +572,8 @@ function postFilter(state: AgentStateType): Partial<AgentStateType> {
     alertId: state.alertId,
     passed: passed.length,
     rejected: rejected.length,
-    reasons: rejected.map((r) => r.reject_reason),
+    reasons: rejected.map((r) => `${r.channel}:${r.reject_reason}`),
+    passed_channels: passed.map((p) => p.channel),
   });
 
   return { extractions: validated };
