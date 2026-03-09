@@ -1,5 +1,18 @@
 # easyoref
 
+## 1.13.0
+
+### Minor Changes
+
+- [#54](https://github.com/mikhailkogan17/easyoref/pull/54) [`8729851`](https://github.com/mikhailkogan17/easyoref/commit/87298513a1e95ba4ab3a8b35191b3a5316281495) Thanks [@mikhailkogan17](https://github.com/mikhailkogan17)! - feat: agentic clarification tools — rename, add history/area/logs
+
+  - Renamed all LangChain tools (dropped MCP prefix): `read_telegram_sources`, `alert_history`, `resolve_area`
+  - Added `alert_history` tool — query Pikud HaOref alert history by area and time window
+  - Added `resolve_area` tool — defense-zone proximity resolver (9 zones, 3-tier matching)
+  - Added `betterstack_log` tool — query recent pipeline logs from Better Stack via existing Logtail token
+  - Updated clarify node system prompt for 4 tools
+  - 80 tests passing
+
 ## 1.12.0
 
 ### Minor Changes
