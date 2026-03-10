@@ -7,6 +7,7 @@
  * Keys:
  *   session:active        — ActiveSession JSON         TTL 45min
  *   session:posts         — LPUSH list of ChannelPost  TTL 45min
+ *   session:ext_cache     — HASH {post_hash → extraction JSON} TTL 45min
  *   alert:{alertId}:meta  — AlertMeta JSON             TTL 20min
  *
  * Only the LATEST alert's Telegram message gets enrichment edits.
@@ -31,9 +32,9 @@ export const PHASE_TIMEOUT_MS: Record<AlertType, number> = {
 
 /** Enrichment interval (ms) per phase */
 export const PHASE_ENRICH_DELAY_MS: Record<AlertType, number> = {
-  early_warning: 20_000, // 20s
-  siren: 20_000, // 20s
-  resolved: 60_000, // 60s — detailed intel comes slower
+  early_warning: 60_000, // 60s — channels need time to post; saves tokens
+  siren: 45_000, // 45s
+  resolved: 180_000, // 180s — detailed intel comes slower
 };
 
 /** Initial enrichment delay — first job after alert (channels need time to post) */
@@ -126,7 +127,12 @@ export async function getActiveSession(): Promise<ActiveSession | null> {
 
 export async function clearSession(): Promise<void> {
   const redis = getRedis();
-  await redis.del("session:active", "session:posts", "session:enrichment");
+  await redis.del(
+    "session:active",
+    "session:posts",
+    "session:enrichment",
+    EXT_CACHE_KEY,
+  );
 }
 
 export function isPhaseExpired(session: ActiveSession): boolean {
@@ -174,4 +180,38 @@ export async function getEnrichmentData(): Promise<EnrichmentData> {
   const redis = getRedis();
   const raw = await redis.get("session:enrichment");
   return raw ? (JSON.parse(raw) as EnrichmentData) : emptyEnrichmentData();
+}
+
+// ── Extraction cache (post-level dedup between jobs) ───
+
+const EXT_CACHE_KEY = "session:ext_cache";
+
+/**
+ * Get cached extraction results for a batch of post hashes.
+ * Returns a map: postHash → serialized ValidatedExtraction JSON.
+ */
+export async function getCachedExtractions(
+  postHashes: string[],
+): Promise<Map<string, string>> {
+  if (postHashes.length === 0) return new Map();
+  const redis = getRedis();
+  const results = await redis.hmget(EXT_CACHE_KEY, ...postHashes);
+  const map = new Map<string, string>();
+  postHashes.forEach((hash, i) => {
+    if (results[i]) map.set(hash, results[i]!);
+  });
+  return map;
+}
+
+/**
+ * Save new extraction results to cache.
+ * @param entries - Record of postHash → serialized ValidatedExtraction JSON
+ */
+export async function saveCachedExtractions(
+  entries: Record<string, string>,
+): Promise<void> {
+  if (Object.keys(entries).length === 0) return;
+  const redis = getRedis();
+  await redis.hset(EXT_CACHE_KEY, entries);
+  await redis.expire(EXT_CACHE_KEY, SESSION_TTL_S);
 }
