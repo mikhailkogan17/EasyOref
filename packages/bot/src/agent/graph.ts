@@ -29,8 +29,10 @@ import { runClarify } from "./clarify.js";
 import type { ChannelPost } from "./store.js";
 import {
   getActiveSession,
+  getCachedExtractions,
   getChannelPosts,
   getEnrichmentData,
+  saveCachedExtractions,
   saveEnrichmentData,
 } from "./store.js";
 import type {
@@ -407,8 +409,54 @@ async function extractAndValidate(
     return { extractions: [] };
   }
 
+  // ── Post-level dedup: only send NEW posts to LLM ───────
+  const posts = state.filteredPosts;
+
+  // Compute hash for each post (channel + text content)
+  const postHashMap = new Map<string, string>(); // hash → serialized post key
+  const hashToPost = new Map<string, (typeof posts)[number]>();
+  for (const post of posts) {
+    const hash = textHash(post.channel + "|" + post.text.slice(0, 800));
+    postHashMap.set(hash, post.channel);
+    hashToPost.set(hash, post);
+  }
+
+  // Fetch cached extractions from previous jobs in this session
+  const allHashes = [...postHashMap.keys()];
+  const cached = await getCachedExtractions(allHashes);
+
+  // Split: cached results vs posts needing LLM
+  const cachedResults: ValidatedExtraction[] = [];
+  const newPosts: typeof posts = [];
+  const newHashes: string[] = [];
+
+  for (const [hash, post] of hashToPost) {
+    const cachedJson = cached.get(hash);
+    if (cachedJson) {
+      cachedResults.push(JSON.parse(cachedJson) as ValidatedExtraction);
+    } else {
+      newPosts.push(post);
+      newHashes.push(hash);
+    }
+  }
+
+  logger.info("Agent: extraction dedup", {
+    alertId: state.alertId,
+    total: posts.length,
+    cached: cachedResults.length,
+    new: newPosts.length,
+  });
+
+  // If all posts are cached, return immediately (0 LLM calls)
+  if (newPosts.length === 0) {
+    logger.info("Agent: extracted (all cached)", {
+      alertId: state.alertId,
+      count: cachedResults.length,
+    });
+    return { extractions: cachedResults };
+  }
+
   const llm = getLLM();
-  const posts = state.filteredPosts.slice(0, 8); // max 8 posts
 
   const regionHint =
     state.alertAreas.length > 0
@@ -421,8 +469,9 @@ async function extractAndValidate(
 
   const systemPrompt = SYSTEM_PROMPT_BASE + "\n\n" + phaseInstructions;
 
-  const results = await Promise.all(
-    posts.map(async (post): Promise<ValidatedExtraction> => {
+  // Only extract NEW posts (not seen in previous jobs)
+  const newResults = await Promise.all(
+    newPosts.map(async (post): Promise<ValidatedExtraction> => {
       const postTimeIL = toIsraelTime(post.ts);
       const postAgeMin = Math.round((state.alertTs - post.ts) / 60_000);
       const postAgeSuffix =
@@ -502,9 +551,22 @@ async function extractAndValidate(
     }),
   );
 
+  // Save new extractions to Redis cache for future jobs
+  const cacheEntries: Record<string, string> = {};
+  newPosts.forEach((post, i) => {
+    const hash = textHash(post.channel + "|" + post.text.slice(0, 800));
+    cacheEntries[hash] = JSON.stringify(newResults[i]);
+  });
+  await saveCachedExtractions(cacheEntries);
+
+  // Merge cached + new results
+  const results = [...cachedResults, ...newResults];
+
   logger.info("Agent: extracted", {
     alertId: state.alertId,
     count: results.length,
+    newLLMCalls: newResults.length,
+    cachedReused: cachedResults.length,
     timeRelevance: results.map((r) => ({
       ch: r.channel,
       tr: r.time_relevance,
