@@ -1,5 +1,11 @@
 # easyoref
 
+## 1.15.0
+
+### Minor Changes
+
+- [#66](https://github.com/mikhailkogan17/easyoref/pull/66) [`758d261`](https://github.com/mikhailkogan17/easyoref/commit/758d26119c60cfddf1012e61d551747c78dae5d3) Thanks [@mikhailkogan17-agent](https://github.com/mikhailkogan17-agent)! - Modular enrichment pipeline: split graph.ts into 6 modules, two-tier LLM, deterministic noise filters
+
 ## 1.14.2
 
 ### Patch Changes
