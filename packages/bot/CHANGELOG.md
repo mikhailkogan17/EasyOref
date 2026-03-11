@@ -1,5 +1,11 @@
 # easyoref
 
+## 1.15.1
+
+### Patch Changes
+
+- Rename `model` → `filterModel` config key, correct `extractModel` default to `google/gemini-3.1-flash-lite-preview`
+
 ## 1.15.0
 
 ### Minor Changes
