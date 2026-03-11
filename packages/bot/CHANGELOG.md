@@ -1,5 +1,17 @@
 # easyoref
 
+## 1.14.2
+
+### Patch Changes
+
+- [#63](https://github.com/mikhailkogan17/easyoref/pull/63) [`23657c3`](https://github.com/mikhailkogan17/easyoref/commit/23657c3d35b23f450d63b7f7ac4c4fb2aeb1a28e) Thanks [@mikhailkogan17-agent](https://github.com/mikhailkogan17-agent)! - Token economy: reduce LLM costs by ~90%
+
+  - Switch default model to `gemini-3.1-flash-lite-preview` (2x cheaper per token)
+  - Increase enrichment intervals: 60s/45s/180s (was 20s/20s/60s) — 3x fewer jobs
+  - Post-level extraction dedup: cache extraction results in Redis per session,
+    only send NEW posts to LLM. Reuse cached results for already-seen posts.
+    Saves ~80% of LLM calls per session.
+
 ## 1.14.1
 
 ### Patch Changes
