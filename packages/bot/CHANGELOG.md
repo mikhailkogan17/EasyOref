@@ -1,5 +1,16 @@
 # easyoref
 
+## 1.16.0
+
+### Minor Changes
+
+- Blockquote format: all key-value pairs wrapped in `<blockquote>`
+- Reply chain: alerts in same track reply to previous alert message
+- Carry-forward: enrichment data carried to new phase messages
+- Separate fields: Ракет, Перехваты, Прилеты, Попадания on own lines
+- Removed compound "из них" format
+- Removed "Раннее предупреждение: было в" (replaced by reply chain)
+
 ## 1.15.2
 
 ### Patch Changes
