@@ -392,7 +392,10 @@ async function sendTelegram(
 
   const gifUrl = getGifUrl(alertType);
   const replyOpts = replyToMessageId
-    ? { reply_to_message_id: replyToMessageId, allow_sending_without_reply: true }
+    ? {
+        reply_to_message_id: replyToMessageId,
+        allow_sending_without_reply: true,
+      }
     : {};
 
   // No GIF mode → send text only
@@ -402,7 +405,10 @@ async function sendTelegram(
         parse_mode: "HTML",
         ...replyOpts,
       });
-      logger.info("Alert sent via Telegram (text)", { type: alertType, reply_to: replyToMessageId });
+      logger.info("Alert sent via Telegram (text)", {
+        type: alertType,
+        reply_to: replyToMessageId,
+      });
       return { messageId: msg.message_id, isCaption: false };
     } catch (err) {
       logger.error("Telegram send failed", {
