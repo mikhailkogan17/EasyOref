@@ -1,5 +1,11 @@
 # easyoref
 
+## 1.15.2
+
+### Patch Changes
+
+- fix: global citations, interceptedCites bug, noImpacts, rocketDetail
+
 ## 1.15.1
 
 ### Patch Changes
