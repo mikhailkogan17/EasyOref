@@ -47,8 +47,8 @@ import { vi } from "vitest";
 vi.mock("../config.js", () => ({
   config: {
     agent: {
-      model: "google/gemini-3.1-flash-lite-preview",
-      extractModel: "google/gemini-3-flash-preview",
+      filterModel: "google/gemini-2.5-flash-lite",
+      extractModel: "google/gemini-3.1-flash-lite-preview",
       apiKey: "", // Will be set dynamically
       mcpTools: false,
       confidenceThreshold: 0.65,

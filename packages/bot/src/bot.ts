@@ -661,7 +661,7 @@ async function main(): Promise<void> {
     startEnrichWorker();
     await startMonitor();
     logger.info("Agent subsystems started", {
-      model: config.agent.model,
+      filterModel: config.agent.filterModel,
       provider: "openrouter.ai",
       channels: 14, // MONITORED_CHANNELS length (hardcoded)
       enrich_delay_ms: config.agent.enrichDelayMs,

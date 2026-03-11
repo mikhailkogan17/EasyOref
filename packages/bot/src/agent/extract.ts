@@ -24,7 +24,7 @@ import type {
 /** Cheap model for channel pre-filtering (single call, short output) */
 export function getFilterLLM(): ChatOpenAI {
   return new ChatOpenAI({
-    model: config.agent.model,
+    model: config.agent.filterModel,
     configuration: {
       baseURL: "https://openrouter.ai/api/v1",
       defaultHeaders: {

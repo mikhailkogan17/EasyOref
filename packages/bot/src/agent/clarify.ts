@@ -112,7 +112,7 @@ When done (with or without tools), respond with ONLY valid JSON (no markdown):
 
 function getClarifyLLM(): ChatOpenAI {
   return new ChatOpenAI({
-    model: config.agent.model,
+    model: config.agent.filterModel,
     configuration: {
       baseURL: "https://openrouter.ai/api/v1",
       defaultHeaders: {

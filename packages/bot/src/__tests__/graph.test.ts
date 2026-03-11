@@ -24,8 +24,8 @@ import { emptyEnrichmentData } from "../agent/types.js";
 vi.mock("../config.js", () => ({
   config: {
     agent: {
-      model: "google/gemini-3.1-flash-lite-preview",
-      extractModel: "google/gemini-3-flash-preview",
+      filterModel: "google/gemini-2.5-flash-lite",
+      extractModel: "google/gemini-3.1-flash-lite-preview",
       apiKey: process.env.OPENROUTER_API_KEY ?? "test-key",
       mcpTools: false,
       clarifyFetchCount: 3,

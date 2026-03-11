@@ -49,7 +49,7 @@ interface ConfigYaml {
 interface ConfigYamlAi {
   enabled?: boolean;
   openrouter_api_key?: string;
-  openrouter_model?: string;
+  openrouter_filter_model?: string;
   openrouter_extract_model?: string;
   redis_url?: string;
   socks5_proxy?: string;
@@ -203,9 +203,10 @@ export const config = {
     return {
       enabled: ai?.enabled ?? false,
       apiKey: ai?.openrouter_api_key ?? process.env.OPENROUTER_API_KEY ?? "",
-      model: ai?.openrouter_model ?? "google/gemini-3.1-flash-lite-preview",
+      filterModel:
+        ai?.openrouter_filter_model ?? "google/gemini-2.5-flash-lite",
       extractModel:
-        ai?.openrouter_extract_model ?? "google/gemini-3-flash-preview",
+        ai?.openrouter_extract_model ?? "google/gemini-3.1-flash-lite-preview",
       redisUrl:
         ai?.redis_url ?? process.env.REDIS_URL ?? "redis://localhost:6379",
       socks5Proxy: ai?.socks5_proxy ?? process.env.SOCKS5_PROXY ?? "",
@@ -233,5 +234,6 @@ export const config = {
 export {
   loadYaml as _loadYaml,
   parseAlertTypes as _parseAlertTypes,
-  type ConfigYaml,
+  type ConfigYaml
 };
+
