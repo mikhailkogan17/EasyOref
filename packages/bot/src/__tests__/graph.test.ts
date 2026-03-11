@@ -571,16 +571,18 @@ describe("buildEnrichedMessage", () => {
     expect(originIdx).toBeLessThan(timeIdx);
   });
 
-  it("inserts rocket count with breakdown", () => {
+  it("inserts rocket count and intercepted as separate lines", () => {
     const enrichment = emptyEnrichmentData();
     enrichment.rocketCount = "~10–15";
     enrichment.intercepted = "8";
     enrichment.rocketCites = [{ url: "https://t.me/a/1", channel: "@a" }];
+    enrichment.interceptedCites = [{ url: "https://t.me/b/1", channel: "@b" }];
 
     const text = "🔴 Тревога!\n<b>Время оповещения:</b> 18:00";
     const result = buildEnrichedMessage(text, "siren", alertTs, enrichment);
     expect(result).toContain("<b>Ракет:</b> ~10–15");
-    expect(result).toContain("перехвачено — 8");
+    expect(result).toContain("<b>Перехваты:</b> 8");
+    expect(result).not.toContain("из них");
   });
 
   it("inserts casualties/injuries only for resolved", () => {
@@ -610,14 +612,13 @@ describe("buildEnrichedMessage", () => {
     expect(resultSiren).not.toContain("Пострадавшие:");
   });
 
-  it("inserts early warning time in siren phase", () => {
+  it("does not insert early warning time in siren phase (replaced by reply chain)", () => {
     const enrichment = emptyEnrichmentData();
     enrichment.earlyWarningTime = "17:55";
 
     const text = "🟡 Сирена!\n<b>Время оповещения:</b> 18:00";
     const result = buildEnrichedMessage(text, "siren", alertTs, enrichment);
-    expect(result).toContain("Раннее предупреждение:");
-    expect(result).toContain("17:55");
+    expect(result).not.toContain("Раннее предупреждение:");
   });
 });
 

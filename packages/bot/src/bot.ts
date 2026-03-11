@@ -18,9 +18,11 @@ import { createServer } from "node:http";
 import { startMonitor, stopMonitor } from "./agent/gramjs-monitor.js";
 import { enqueueEnrich } from "./agent/queue.js";
 import { closeRedis } from "./agent/redis.js";
+import { buildEnrichedMessage } from "./agent/message.js";
 import {
   clearSession,
   getActiveSession,
+  getEnrichmentData,
   PHASE_ENRICH_DELAY_MS,
   PHASE_INITIAL_DELAY_MS,
   saveAlertMeta,
@@ -357,6 +359,7 @@ function formatMessage(alertType: AlertType, areas: string): string {
   const lines: string[] = [`<b>${emoji} ${title}</b>`];
   if (desc) lines.push(desc);
   lines.push("");
+  lines.push("<blockquote>");
   lines.push(`<b>${labels.area}:</b> ${localAreas}`);
 
   if (alertType === "early_warning") {
@@ -368,6 +371,7 @@ function formatMessage(alertType: AlertType, areas: string): string {
   } else if (alertType === "resolved") {
     lines.push(`<b>${labels.time}:</b> ${time}`);
   }
+  lines.push("</blockquote>");
 
   return lines.join("\n");
 }
@@ -376,6 +380,7 @@ function formatMessage(alertType: AlertType, areas: string): string {
 async function sendTelegram(
   alertType: AlertType,
   text: string,
+  replyToMessageId?: number,
 ): Promise<{ messageId: number; isCaption: boolean } | null> {
   if (!bot || !config.chatId) {
     logger.error("Telegram unavailable", {
@@ -386,14 +391,24 @@ async function sendTelegram(
   }
 
   const gifUrl = getGifUrl(alertType);
+  const replyOpts = replyToMessageId
+    ? {
+        reply_to_message_id: replyToMessageId,
+        allow_sending_without_reply: true,
+      }
+    : {};
 
   // No GIF mode → send text only
   if (!gifUrl) {
     try {
       const msg = await bot.api.sendMessage(config.chatId, text, {
         parse_mode: "HTML",
+        ...replyOpts,
       });
-      logger.info("Alert sent via Telegram (text)", { type: alertType });
+      logger.info("Alert sent via Telegram (text)", {
+        type: alertType,
+        reply_to: replyToMessageId,
+      });
       return { messageId: msg.message_id, isCaption: false };
     } catch (err) {
       logger.error("Telegram send failed", {
@@ -409,10 +424,12 @@ async function sendTelegram(
     const msg = await bot.api.sendAnimation(config.chatId, gifUrl, {
       caption: text,
       parse_mode: "HTML",
+      ...replyOpts,
     });
     logger.info("Alert sent via Telegram (GIF)", {
       type: alertType,
       gif_url: gifUrl,
+      reply_to: replyToMessageId,
     });
     return { messageId: msg.message_id, isCaption: true };
   } catch (err) {
@@ -423,9 +440,11 @@ async function sendTelegram(
     try {
       const msg = await bot.api.sendMessage(config.chatId, text, {
         parse_mode: "HTML",
+        ...replyOpts,
       });
       logger.info("Alert sent via Telegram (text fallback)", {
         type: alertType,
+        reply_to: replyToMessageId,
       });
       return { messageId: msg.message_id, isCaption: false };
     } catch (err2) {
@@ -482,14 +501,39 @@ async function processAlert(alert: OrefAlert): Promise<void> {
 
   markSent(alertType);
 
-  const message = formatMessage(alertType, areas);
+  let message = formatMessage(alertType, areas);
+  const alertTs = Date.now();
+
+  // ── Reply chain + carry-forward enrichment ──
+  let replyTo: number | undefined;
+  if (config.agent.enabled) {
+    const existingForReply = await getActiveSession();
+    const shouldReply =
+      existingForReply &&
+      (alertType === "resolved" || existingForReply.phase !== "resolved");
+    if (shouldReply) {
+      replyTo = existingForReply.latestMessageId;
+      const prevEnrichment = await getEnrichmentData();
+      const hasData =
+        prevEnrichment.origin ||
+        prevEnrichment.rocketCount ||
+        prevEnrichment.intercepted;
+      if (hasData) {
+        message = buildEnrichedMessage(
+          message,
+          alertType,
+          alertTs,
+          prevEnrichment,
+        );
+      }
+    }
+  }
 
   try {
-    const sent = await sendTelegram(alertType, message);
+    const sent = await sendTelegram(alertType, message, replyTo);
 
     // ── Session-based enrichment lifecycle ──
     if (sent && config.agent.enabled && config.chatId) {
-      const alertTs = Date.now();
       const existingSession = await getActiveSession();
 
       // Save meta for this alert (always)

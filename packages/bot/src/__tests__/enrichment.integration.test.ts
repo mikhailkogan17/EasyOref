@@ -569,7 +569,7 @@ describe("buildEnrichedMessage", () => {
     expect(result).toContain("~16:42");
   });
 
-  it("shows early warning time for siren phase", () => {
+  it("does NOT show early warning time for siren phase (replaced by reply chain)", () => {
     const sirenMessage = [
       "<b>🚨 Сирена</b>",
       "",
@@ -590,8 +590,8 @@ describe("buildEnrichedMessage", () => {
       enrichment,
     );
 
-    expect(result).toContain("Раннее предупреждение:");
-    expect(result).toContain("было в 16:30");
+    expect(result).not.toContain("Раннее предупреждение:");
+    expect(result).toContain("<b>Откуда:</b> Иран");
   });
 
   it("adds casualties in resolved phase", () => {
@@ -625,7 +625,7 @@ describe("buildEnrichedMessage", () => {
     expect(result).toContain("<b>Пострадавшие:</b> 3");
     expect(result).toContain('href="https://t.me/N12LIVE/167790"');
     // Resolved doesn't show rocket count breakdown if no rocketCount
-    expect(result).toContain("<b>Перехвачено:</b> 12");
+    expect(result).toContain("<b>Перехваты:</b> 12");
   });
 
   it("does NOT show casualties in siren phase", () => {

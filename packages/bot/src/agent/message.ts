@@ -308,64 +308,43 @@ export function buildEnrichedMessage(
     }
   }
 
-  // ── Siren: show early warning time ──
-  if (alertType === "siren" && enrichment.earlyWarningTime) {
-    text = insertBeforeTimeLine(
-      text,
-      `<b>Раннее предупреждение:</b> было в ${enrichment.earlyWarningTime}`,
-    );
-  }
-
   // ── Origin ──
   if (enrichment.origin) {
     const citeStr = renderCitesGlobal(enrichment.originCites, citeMap);
     text = insertBeforeTimeLine(
       text,
-      `\n<b>Откуда:</b> ${enrichment.origin}${citeStr}`,
+      `<b>Откуда:</b> ${enrichment.origin}${citeStr}`,
     );
   }
 
-  // ── Rocket count + breakdown ──
+  // ── Rocket count (separate line, no compound breakdown) ──
   if (enrichment.rocketCount) {
     const citeStr = renderCitesGlobal(enrichment.rocketCites, citeMap);
-    const cassette = enrichment.isCassette ? ", есть кассетные" : "";
-
-    let breakdown = "";
-    const bParts: string[] = [];
-    if (enrichment.intercepted) {
-      bParts.push(`перехвачено — ${enrichment.intercepted}`);
-    }
-    if (enrichment.seaImpact) {
-      bParts.push(`упали в море — ${enrichment.seaImpact}`);
-    }
-    if (enrichment.openAreaImpact) {
-      bParts.push(`открытая местность — ${enrichment.openAreaImpact}`);
-    }
-    if (bParts.length > 0) breakdown = `, из них: ${bParts.join(", ")}`;
-
+    const cassette = enrichment.isCassette ? ", кассетные" : "";
     const detail = enrichment.rocketDetail
       ? ` (${enrichment.rocketDetail})`
       : "";
-
     text = insertBeforeTimeLine(
       text,
-      `<b>Ракет:</b> ${enrichment.rocketCount}${detail}${breakdown}${cassette}${citeStr}`,
-    );
-  } else if (enrichment.intercepted && alertType !== "early_warning") {
-    const citeStr = renderCitesGlobal(enrichment.interceptedCites, citeMap);
-    text = insertBeforeTimeLine(
-      text,
-      `<b>Перехвачено:</b> ${enrichment.intercepted}${citeStr}`,
+      `<b>Ракет:</b> ${enrichment.rocketCount}${detail}${cassette}${citeStr}`,
     );
   }
 
-  // ── Hits ──
+  // ── Intercepted (own line) ──
+  if (enrichment.intercepted && alertType !== "early_warning") {
+    const citeStr = renderCitesGlobal(enrichment.interceptedCites, citeMap);
+    text = insertBeforeTimeLine(
+      text,
+      `<b>Перехваты:</b> ${enrichment.intercepted}${citeStr}`,
+    );
+  }
+
+  // ── Hits / No impacts (own line) ──
   if (enrichment.hitsConfirmed && alertType !== "early_warning") {
-    const areaLabel = Object.values(config.agent.areaLabels)[0] ?? "район";
     const citeStr = renderCitesGlobal(enrichment.hitsCites, citeMap);
     text = insertBeforeTimeLine(
       text,
-      `<b>Попадания (${areaLabel}):</b> ${enrichment.hitsConfirmed}${citeStr}`,
+      `<b>Попадания:</b> ${enrichment.hitsConfirmed}${citeStr}`,
     );
   } else if (enrichment.noImpacts && alertType !== "early_warning") {
     const citeStr = renderCitesGlobal(enrichment.noImpactsCites, citeMap);
