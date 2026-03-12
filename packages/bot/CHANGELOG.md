@@ -1,5 +1,19 @@
 # easyoref
 
+## 1.17.0
+
+### Minor Changes
+
+- [#75](https://github.com/mikhailkogan17/easyoref/pull/75) [`142800a`](https://github.com/mikhailkogan17/easyoref/commit/142800ac5809a0cd95bcc08c8732241a0c82c388) Thanks [@mikhailkogan17-agent](https://github.com/mikhailkogan17-agent)! - Add monitoring status indicator to active alert messages
+
+  - Show "⏳ Мониторинг..." (i18n) below blockquote for early/siren alerts while enrichment agent is active
+  - Automatically remove indicator when session phase expires, resolved alert arrives, or phase upgrades to new message
+  - Strip and re-add indicator during enrichment edits to keep it at the bottom
+
+### Patch Changes
+
+- [#75](https://github.com/mikhailkogan17/easyoref/pull/75) [`142800a`](https://github.com/mikhailkogan17/easyoref/commit/142800ac5809a0cd95bcc08c8732241a0c82c388) Thanks [@mikhailkogan17-agent](https://github.com/mikhailkogan17-agent)! - Update GEMINI.md lethal laws and RPi docs for npm/systemd deployment (homebridge pattern)
+
 ## 1.16.0
 
 ### Minor Changes
