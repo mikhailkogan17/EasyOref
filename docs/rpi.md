@@ -2,89 +2,94 @@
 
 ## Overview
 
-EasyOref runs on a Raspberry Pi as a Docker container, pulling images from GHCR.
+EasyOref runs on a Raspberry Pi as a native Node.js service via systemd (like Homebridge).
 
 ## Prerequisites
 
-- Raspberry Pi with 64-bit OS and Docker installed
+- Raspberry Pi with Node.js 20+ installed
 - SSH access to RPi
 
-## Deploy
+## Install
 
-### 1. SSH into RPi
-
-```bash
-ssh pi@raspberrypi.local
-```
-
-### 2. Create project directory
+### 1. Install Node.js (if not already)
 
 ```bash
-mkdir -p ~/easyoref && cd ~/easyoref
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
 ```
 
-### 3. Create config.yaml
-
-```yaml
-city_ids: [722]              # your city ID
-language: ru
-
-telegram:
-  bot_token: "YOUR_TOKEN"
-  chat_id: "YOUR_CHAT_ID"
-```
-
-### 4. Create docker-compose.yml
-
-```yaml
-services:
-  easyoref:
-    image: ghcr.io/mikhailkogan17/easyoref:latest
-    container_name: easyoref
-    restart: unless-stopped
-    ports:
-      - "3100:3100"
-    volumes:
-      - easyoref-data:/app/data
-      - ./config.yaml:/app/config.yaml:ro
-
-volumes:
-  easyoref-data:
-```
-
-### 5. Start
+### 2. Install Redis
 
 ```bash
-docker compose up -d
+sudo apt install -y redis-server
+sudo systemctl enable redis-server
+sudo systemctl start redis-server
 ```
+
+### 3. Install EasyOref
+
+```bash
+sudo npm install -g easyoref
+```
+
+### 4. Run setup wizard
+
+```bash
+easyoref init
+```
+
+The wizard creates `~/.easyoref/config.yaml` with your settings.
+
+### 5. Install as service
+
+```bash
+sudo HOME=$HOME easyoref install
+```
+
+This creates a systemd service that starts automatically on boot.
 
 ### 6. Verify
 
 ```bash
+easyoref status
 curl http://localhost:3100/health
-docker logs easyoref --tail 20
+easyoref logs
 ```
 
 ## Update
 
 ```bash
-cd ~/easyoref
-docker compose pull
-docker compose up -d
+sudo npm update -g easyoref
+easyoref restart
+```
+
+## Service Management
+
+```bash
+easyoref status    # show service status
+easyoref logs      # follow logs (journalctl)
+easyoref restart   # restart service
+easyoref stop      # stop service
+easyoref start     # start service
+easyoref uninstall # remove systemd service
 ```
 
 ## Troubleshooting
 
 ```bash
-# Check container status
-docker ps
+# Check service status
+easyoref status
 
 # View logs
-docker logs easyoref --tail 50
+easyoref logs
 
-# Restart
-docker compose restart
+# Check Redis
+redis-cli ping
 
 # Health check
 curl http://localhost:3100/health
+
+# Manual run (foreground, for debugging)
+easyoref stop
+easyoref run
 ```

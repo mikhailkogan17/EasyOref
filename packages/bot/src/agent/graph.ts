@@ -59,6 +59,7 @@ const AgentState = Annotation.Root({
   votedResult: Annotation<VotedResult | null>({ reducer: (_, b) => b }),
   clarifyAttempted: Annotation<boolean>({ reducer: (_, b) => b }),
   previousEnrichment: Annotation<EnrichmentData>({ reducer: (_, b) => b }),
+  monitoringLabel: Annotation<string | undefined>({ reducer: (_, b) => b }),
 });
 
 type AgentStateType = typeof AgentState.State;
@@ -223,6 +224,7 @@ async function editNode(
     currentText: state.currentText,
     votedResult: state.votedResult,
     previousEnrichment: state.previousEnrichment ?? emptyEnrichmentData(),
+    monitoringLabel: state.monitoringLabel,
   });
   return {};
 }
@@ -302,6 +304,7 @@ export interface RunEnrichmentInput {
   messageId: number;
   isCaption: boolean;
   currentText: string;
+  monitoringLabel?: string;
 }
 
 export async function runEnrichment(input: RunEnrichmentInput): Promise<void> {
@@ -320,6 +323,7 @@ export async function runEnrichment(input: RunEnrichmentInput): Promise<void> {
       votedResult: null,
       clarifyAttempted: false,
       previousEnrichment: emptyEnrichmentData(),
+      monitoringLabel: input.monitoringLabel,
     },
     { configurable: { thread_id: input.alertId } },
   );

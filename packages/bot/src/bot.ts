@@ -18,7 +18,7 @@ import { createServer } from "node:http";
 import { startMonitor, stopMonitor } from "./agent/gramjs-monitor.js";
 import { enqueueEnrich } from "./agent/queue.js";
 import { closeRedis } from "./agent/redis.js";
-import { buildEnrichedMessage } from "./agent/message.js";
+import { buildEnrichedMessage, MONITORING_RE, stripMonitoring } from "./agent/message.js";
 import {
   clearSession,
   getActiveSession,
@@ -373,6 +373,11 @@ function formatMessage(alertType: AlertType, areas: string): string {
   }
   lines.push("</blockquote>");
 
+  // Monitoring indicator for active enrichment phases
+  if (config.agent.enabled && alertType !== "resolved") {
+    lines.push(labels.monitoring);
+  }
+
   return lines.join("\n");
 }
 
@@ -524,6 +529,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
           alertType,
           alertTs,
           prevEnrichment,
+          alertType !== "resolved" ? langPack.labels.monitoring : undefined,
         );
       }
     }
@@ -551,6 +557,32 @@ async function processAlert(alert: OrefAlert): Promise<void> {
       if (alertType === "resolved") {
         // ── Resolved: switch existing session to resolved phase ──
         if (existingSession) {
+          // Remove monitoring indicator from previous message
+          if (
+            bot &&
+            MONITORING_RE.test(existingSession.currentText)
+          ) {
+            const cleaned = stripMonitoring(existingSession.currentText);
+            try {
+              if (existingSession.isCaption) {
+                await bot.api.editMessageCaption(
+                  existingSession.chatId,
+                  existingSession.latestMessageId,
+                  { caption: cleaned, parse_mode: "HTML" },
+                );
+              } else {
+                await bot.api.editMessageText(
+                  existingSession.chatId,
+                  existingSession.latestMessageId,
+                  cleaned,
+                  { parse_mode: "HTML" },
+                );
+              }
+            } catch {
+              // Best-effort: ignore edit failures
+            }
+          }
+
           const updated: ActiveSession = {
             ...existingSession,
             phase: "resolved",
@@ -577,6 +609,32 @@ async function processAlert(alert: OrefAlert): Promise<void> {
         // ── Early warning / Siren ──
         if (existingSession && existingSession.phase !== "resolved") {
           // Upgrade session phase (early → siren, or same-type refresh)
+          // Remove monitoring indicator from previous message
+          if (
+            bot &&
+            existingSession.latestMessageId !== sent.messageId &&
+            MONITORING_RE.test(existingSession.currentText)
+          ) {
+            const cleaned = stripMonitoring(existingSession.currentText);
+            try {
+              if (existingSession.isCaption) {
+                await bot.api.editMessageCaption(
+                  existingSession.chatId,
+                  existingSession.latestMessageId,
+                  { caption: cleaned, parse_mode: "HTML" },
+                );
+              } else {
+                await bot.api.editMessageText(
+                  existingSession.chatId,
+                  existingSession.latestMessageId,
+                  cleaned,
+                  { parse_mode: "HTML" },
+                );
+              }
+            } catch {
+              // Best-effort
+            }
+          }
           const updated: ActiveSession = {
             ...existingSession,
             phase: alertType,

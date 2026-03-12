@@ -122,6 +122,19 @@ export const SKIP = 0.6;
 export const UNCERTAIN = 0.75;
 export const CERTAIN = 0.95;
 
+// ── Monitoring indicator ───────────────────────────────
+
+/** Strip "⏳ ..." monitoring line from message text */
+export const MONITORING_RE = /\n?⏳\s*[^\n]+$/;
+
+export function stripMonitoring(text: string): string {
+  return text.replace(MONITORING_RE, "");
+}
+
+export function appendMonitoring(text: string, label: string): string {
+  return text + "\n" + label;
+}
+
 // ── Display helpers ────────────────────────────────────
 
 function qualDisplay(
@@ -275,8 +288,10 @@ export function buildEnrichedMessage(
   alertType: AlertType,
   alertTs: number,
   enrichment: EnrichmentData,
+  monitoringLabel?: string,
 ): string {
-  let text = currentText;
+  // Strip monitoring indicator before building — will re-add at the end
+  let text = stripMonitoring(currentText);
 
   // ── Global citation map ──
   const citeMap = buildGlobalCiteMap(enrichment);
@@ -367,6 +382,11 @@ export function buildEnrichedMessage(
     );
   }
 
+  // Re-add monitoring indicator if still in active phase
+  if (monitoringLabel && alertType !== "resolved") {
+    text = appendMonitoring(text, monitoringLabel);
+  }
+
   return text;
 }
 
@@ -397,6 +417,7 @@ export interface EditMessageInput {
   currentText: string;
   votedResult: VotedResult | null;
   previousEnrichment: EnrichmentData;
+  monitoringLabel?: string;
 }
 
 /**
@@ -416,6 +437,7 @@ export async function editMessage(input: EditMessageInput): Promise<void> {
         input.alertType,
         input.alertTs,
         prev,
+        input.monitoringLabel,
       );
 
       const hash = textHash(newText);
@@ -478,6 +500,7 @@ export async function editMessage(input: EditMessageInput): Promise<void> {
     input.alertType,
     input.alertTs,
     enrichment,
+    input.monitoringLabel,
   );
 
   // Dedup: skip if text hasn't changed

@@ -10,10 +10,13 @@
  * with the appropriate delay. Stops when phase expires.
  */
 
+import { Bot } from "grammy";
 import { Worker } from "bullmq";
 import { config } from "../config.js";
+import { getLanguagePack } from "../i18n.js";
 import * as logger from "../logger.js";
 import { runEnrichment } from "./graph.js";
+import { MONITORING_RE, stripMonitoring } from "./message.js";
 import { enqueueEnrich } from "./queue.js";
 import type { EnrichJobData } from "./queue.js";
 import {
@@ -24,6 +27,44 @@ import {
 } from "./store.js";
 
 let _worker: Worker | null = null;
+
+/** Remove ⏳ monitoring indicator from the last message */
+async function removeMonitoringIndicator(session: {
+  chatId: string;
+  latestMessageId: number;
+  isCaption: boolean;
+  currentText: string;
+}): Promise<void> {
+  if (!config.botToken || !MONITORING_RE.test(session.currentText)) return;
+  const cleaned = stripMonitoring(session.currentText);
+  try {
+    const tgBot = new Bot(config.botToken);
+    if (session.isCaption) {
+      await tgBot.api.editMessageCaption(
+        session.chatId,
+        session.latestMessageId,
+        { caption: cleaned, parse_mode: "HTML" },
+      );
+    } else {
+      await tgBot.api.editMessageText(
+        session.chatId,
+        session.latestMessageId,
+        cleaned,
+        { parse_mode: "HTML" },
+      );
+    }
+    logger.info("Removed monitoring indicator", {
+      messageId: session.latestMessageId,
+    });
+  } catch (err) {
+    const errStr = String(err);
+    if (!errStr.includes("message is not modified")) {
+      logger.error("Failed to remove monitoring indicator", {
+        error: errStr,
+      });
+    }
+  }
+}
 
 export function startEnrichWorker(): void {
   if (!config.agent.enabled) return;
@@ -52,9 +93,12 @@ export function startEnrichWorker(): void {
           alertId: session.latestAlertId,
           phase: session.phase,
         });
+        await removeMonitoringIndicator(session);
         await clearSession();
         return;
       }
+
+      const langPack = getLanguagePack(config.language);
 
       // Run enrichment using latest alert's message as edit target
       await runEnrichment({
@@ -66,6 +110,7 @@ export function startEnrichWorker(): void {
         messageId: session.latestMessageId,
         isCaption: session.isCaption,
         currentText: session.currentText,
+        monitoringLabel: langPack.labels.monitoring,
       });
 
       // Re-check session after enrichment (may have changed phase)
@@ -76,6 +121,7 @@ export function startEnrichWorker(): void {
         logger.info("Enrich worker: phase expired post-enrich — ending session", {
           phase: after.phase,
         });
+        await removeMonitoringIndicator(after);
         await clearSession();
         return;
       }

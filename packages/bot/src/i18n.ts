@@ -31,6 +31,7 @@ export interface I18nLabels {
   time: string;
   earlyEta: string;
   sirenEta: string;
+  monitoring: string;
 }
 
 export interface LanguagePack {
@@ -66,6 +67,7 @@ const ruPack: LanguagePack = {
     time: "Время оповещения",
     earlyEta: "~5–12 мин",
     sirenEta: "1.5 мин",
+    monitoring: "⏳ Мониторинг...",
   },
 };
 
@@ -93,6 +95,7 @@ const enPack: LanguagePack = {
     time: "Alert time",
     earlyEta: "~5–12 min",
     sirenEta: "1.5 min",
+    monitoring: "⏳ Monitoring...",
   },
 };
 
@@ -120,6 +123,7 @@ const hePack: LanguagePack = {
     time: "שעת ההתרעה",
     earlyEta: "~5–12 דקות",
     sirenEta: "1.5 דקות",
+    monitoring: "⏳ ניטור...",
   },
 };
 
@@ -147,6 +151,7 @@ const arPack: LanguagePack = {
     time: "وقت التنبيه",
     earlyEta: "~5–12 دقيقة",
     sirenEta: "1.5 دقيقة",
+    monitoring: "⏳ مراقبة...",
   },
 };
 

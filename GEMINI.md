@@ -118,14 +118,24 @@ Unicode superscript citations (¹²³), absolute ETA (~HH:MM¹), inline key:valu
 
 ### Deployment
 
-- Standard CI/CD: PR → merge → changesets version PR → merge → release.yml builds Docker (linux/amd64 + arm64) → pushes to ghcr.io
-- ghcr.io package is **public** — RPi pulls without auth
-- RPi deploy: только через npm scripts / task runner wrappers
+- CI/CD: PR → merge → changesets version PR → merge → release.yml → npm publish (OIDC) + Docker push (ghcr.io, amd64+arm64)
+- **RPi production**: npm global install + systemd (homebridge-паттерн)
+  ```bash
+  sudo npm install -g easyoref   # install / update
+  easyoref install                # create systemd service (first time)
+  easyoref restart                # after update
+  ```
+- Config: `~/.easyoref/config.yaml` (created by `easyoref init`)
+- Redis: native `redis-server` (apt), NOT Docker
+- Logs: `easyoref logs` / `journalctl -u easyoref -f`
+- Docker image exists for `docker compose` local dev / CI only
 
-### ЗАПРЕЩЕНО
+### ЗАПРЕЩЕНО (Lethal Laws)
 
-- ❌ **ВЫЗЫВАТЬ `docker compose up`, `docker compose down`, `docker-compose up/down` НАПРЯМУЮ** — они должны вызываться **ИСКЛЮЧИТЕЛЬНО** через npm package wrapper / VS Code task / deploy script. Прямой вызов docker compose команд — жёсткий запрет.
-- ❌ Предлагать ручной деплой на RPi (только через CI/CD pipeline)
+- ❌ **Клонировать git-репозиторий на RPi** — на RPi нет и не должно быть git clone. Деплой ТОЛЬКО через `npm install -g easyoref`
+- ❌ **Вызывать `docker compose` / `docker-compose` для деплоя на RPi** — production RPi работает через systemd, НЕ через Docker. Docker compose — только для локальной разработки
+- ❌ **Предлагать `docker compose up/down/pull` как способ обновления** — обновление: `sudo npm update -g easyoref && easyoref restart`
+- ❌ Предлагать ручной деплой на RPi (только через npm + systemd)
 - ❌ Создавать api_id/api_hash на my.telegram.org — используются публичные Telegram Desktop
-- ❌ Писать `redis://localhost:6379` в Docker — только `redis://redis:6379`
+- ❌ Писать `redis://redis:6379` в systemd/native конфиге — только `redis://localhost:6379` (Docker hostname не существует вне Docker network)
 - ❌ Удалять `.gitleaks.toml` allowlist — apiHash fingerprint нужен для прохождения CI
