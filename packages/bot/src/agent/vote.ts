@@ -196,6 +196,13 @@ export function vote(
       : allHitsSrcs.map((e) => e.idx);
   const hits_confidence = fieldConf(allHitsSrcs);
 
+  // Hit location & type: highest-confidence source with hits > 0
+  const hitsWithLoc = hitsSrcs
+    .filter((e) => e.hit_location)
+    .sort((a, b) => b.confidence - a.confidence);
+  const hit_location = hitsWithLoc[0]?.hit_location ?? null;
+  const hit_type = hitsWithLoc[0]?.hit_type ?? null;
+
   // No impacts: explicit confirmation from sources
   const noImpactSrcs = allHitsSrcs.filter(
     (e) => (e.hits_confirmed as number) === 0,
@@ -264,6 +271,8 @@ export function vote(
     hits_confirmed,
     hits_citations,
     hits_confidence,
+    hit_location,
+    hit_type,
     no_impacts,
     no_impacts_citations,
     intercepted_citations: interceptedSrcs.map((e) => e.idx),

@@ -109,7 +109,7 @@ export function startEnrichWorker(): void {
         chatId: session.chatId,
         messageId: session.latestMessageId,
         isCaption: session.isCaption,
-        currentText: session.currentText,
+        currentText: session.baseText ?? session.currentText,
         monitoringLabel: langPack.labels.monitoring,
       });
 
@@ -118,9 +118,12 @@ export function startEnrichWorker(): void {
       if (!after) return;
 
       if (isPhaseExpired(after)) {
-        logger.info("Enrich worker: phase expired post-enrich — ending session", {
-          phase: after.phase,
-        });
+        logger.info(
+          "Enrich worker: phase expired post-enrich — ending session",
+          {
+            phase: after.phase,
+          },
+        );
         await removeMonitoringIndicator(after);
         await clearSession();
         return;

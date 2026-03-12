@@ -78,6 +78,8 @@ export interface ActiveSession {
   chatId: string;
   isCaption: boolean;
   currentText: string;
+  /** Original formatMessage output without enrichment — used for rebuild */
+  baseText: string;
   alertAreas: string[];
 }
 

@@ -9,7 +9,11 @@ import { Bot } from "grammy";
 import { config } from "../config.js";
 import * as logger from "../logger.js";
 import { textHash, toIsraelTime } from "./helpers.js";
-import { saveEnrichmentData } from "./store.js";
+import {
+  getActiveSession,
+  saveEnrichmentData,
+  setActiveSession,
+} from "./store.js";
 import type {
   AlertType,
   CitedSource,
@@ -251,6 +255,14 @@ export function buildEnrichmentFromVote(
     data.rocketDetail = r.rocket_detail;
   }
 
+  // Hit location & type
+  if (r.hit_location && r.hits_confirmed !== null && r.hits_confirmed > 0) {
+    data.hitLocation = r.hit_location;
+  }
+  if (r.hit_type && r.hits_confirmed !== null && r.hits_confirmed > 0) {
+    data.hitType = r.hit_type;
+  }
+
   // Casualties
   if (
     r.casualties !== null &&
@@ -326,7 +338,7 @@ export function buildEnrichedMessage(
   // ── Origin ──
   if (enrichment.origin) {
     const citeStr = renderCitesGlobal(enrichment.originCites, citeMap);
-    text = insertBeforeTimeLine(
+    text = insertBeforeBlockEnd(
       text,
       `<b>Откуда:</b> ${enrichment.origin}${citeStr}`,
     );
@@ -339,7 +351,7 @@ export function buildEnrichedMessage(
     const detail = enrichment.rocketDetail
       ? ` (${enrichment.rocketDetail})`
       : "";
-    text = insertBeforeTimeLine(
+    text = insertBeforeBlockEnd(
       text,
       `<b>Ракет:</b> ${enrichment.rocketCount}${detail}${cassette}${citeStr}`,
     );
@@ -348,7 +360,7 @@ export function buildEnrichedMessage(
   // ── Intercepted (own line) ──
   if (enrichment.intercepted && alertType !== "early_warning") {
     const citeStr = renderCitesGlobal(enrichment.interceptedCites, citeMap);
-    text = insertBeforeTimeLine(
+    text = insertBeforeBlockEnd(
       text,
       `<b>Перехваты:</b> ${enrichment.intercepted}${citeStr}`,
     );
@@ -357,26 +369,37 @@ export function buildEnrichedMessage(
   // ── Hits / No impacts (own line) ──
   if (enrichment.hitsConfirmed && alertType !== "early_warning") {
     const citeStr = renderCitesGlobal(enrichment.hitsCites, citeMap);
-    text = insertBeforeTimeLine(
+    const HIT_TYPE_DISPLAY: Record<string, string> = {
+      direct: "прямое",
+      shrapnel: "обломки",
+    };
+    const qualifiers: string[] = [];
+    if (enrichment.hitLocation) qualifiers.push(enrichment.hitLocation);
+    if (enrichment.hitType)
+      qualifiers.push(
+        HIT_TYPE_DISPLAY[enrichment.hitType] ?? enrichment.hitType,
+      );
+    const suffix = qualifiers.length > 0 ? ` (${qualifiers.join(", ")})` : "";
+    text = insertBeforeBlockEnd(
       text,
-      `<b>Попадания:</b> ${enrichment.hitsConfirmed}${citeStr}`,
+      `<b>Попадания:</b> ${enrichment.hitsConfirmed}${suffix}${citeStr}`,
     );
   } else if (enrichment.noImpacts && alertType !== "early_warning") {
     const citeStr = renderCitesGlobal(enrichment.noImpactsCites, citeMap);
-    text = insertBeforeTimeLine(text, `<b>Прилетов:</b> нет${citeStr}`);
+    text = insertBeforeBlockEnd(text, `<b>Прилетов:</b> нет${citeStr}`);
   }
 
   // ── Casualties / Injuries (resolved only) ──
   if (enrichment.casualties && alertType === "resolved") {
     const citeStr = renderCitesGlobal(enrichment.casualtiesCites, citeMap);
-    text = insertBeforeTimeLine(
+    text = insertBeforeBlockEnd(
       text,
       `<b>Погибшие:</b> ${enrichment.casualties}${citeStr}`,
     );
   }
   if (enrichment.injuries && alertType === "resolved") {
     const citeStr = renderCitesGlobal(enrichment.injuriesCites, citeMap);
-    text = insertBeforeTimeLine(
+    text = insertBeforeBlockEnd(
       text,
       `<b>Пострадавшие:</b> ${enrichment.injuries}${citeStr}`,
     );
@@ -391,9 +414,14 @@ export function buildEnrichedMessage(
 }
 
 /**
- * Insert a line before the time line (last "Время" / "Time" / "שעת" line).
+ * Insert a line before </blockquote> (or legacy time line as fallback).
  */
-export function insertBeforeTimeLine(text: string, line: string): string {
+export function insertBeforeBlockEnd(text: string, line: string): string {
+  const bqIdx = text.lastIndexOf("</blockquote>");
+  if (bqIdx !== -1) {
+    return text.slice(0, bqIdx) + line + "\n" + text.slice(bqIdx);
+  }
+  // Legacy fallback: insert before time line
   const timePattern =
     /(<b>(?:Время оповещения|Alert time|שעת ההתרעה|وقت الإنذار):<\/b>)/;
   const match = text.match(timePattern);
@@ -404,6 +432,9 @@ export function insertBeforeTimeLine(text: string, line: string): string {
   lines.splice(Math.max(lines.length - 1, 0), 0, line);
   return lines.join("\n");
 }
+
+/** @deprecated Use insertBeforeBlockEnd */
+export const insertBeforeTimeLine = insertBeforeBlockEnd;
 
 // ── Edit message ───────────────────────────────────────
 
@@ -463,6 +494,13 @@ export async function editMessage(input: EditMessageInput): Promise<void> {
 
         prev.lastEditHash = hash;
         await saveEnrichmentData(prev);
+
+        // Keep session.currentText in sync for monitoring removal
+        const sess = await getActiveSession();
+        if (sess) {
+          sess.currentText = newText;
+          await setActiveSession(sess);
+        }
 
         logger.info("Agent: enriched (carry-forward)", {
           alertId: input.alertId,
@@ -531,6 +569,13 @@ export async function editMessage(input: EditMessageInput): Promise<void> {
 
     enrichment.lastEditHash = hash;
     await saveEnrichmentData(enrichment);
+
+    // Keep session.currentText in sync for monitoring removal
+    const sess = await getActiveSession();
+    if (sess) {
+      sess.currentText = newText;
+      await setActiveSession(sess);
+    }
 
     logger.info("Agent: enriched", {
       alertId: input.alertId,

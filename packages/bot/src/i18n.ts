@@ -28,7 +28,6 @@ export interface AlertMeta {
 export interface I18nLabels {
   area: string;
   timeToImpact: string;
-  time: string;
   earlyEta: string;
   sirenEta: string;
   monitoring: string;
@@ -48,7 +47,7 @@ const ruPack: LanguagePack = {
     early: {
       emoji: "⚠️",
       title: "Раннее предупреждение",
-      description: "Обнаружены запуски ракет по Израилю",
+      description: "Обнаружены запуски ракет по Израилю.",
     },
     siren: {
       emoji: "🚨",
@@ -64,7 +63,6 @@ const ruPack: LanguagePack = {
   labels: {
     area: "Район",
     timeToImpact: "Подлётное время",
-    time: "Время оповещения",
     earlyEta: "~5–12 мин",
     sirenEta: "1.5 мин",
     monitoring: "⏳ Мониторинг...",
@@ -92,7 +90,6 @@ const enPack: LanguagePack = {
   labels: {
     area: "Area",
     timeToImpact: "Time to impact",
-    time: "Alert time",
     earlyEta: "~5–12 min",
     sirenEta: "1.5 min",
     monitoring: "⏳ Monitoring...",
@@ -120,7 +117,6 @@ const hePack: LanguagePack = {
   labels: {
     area: "אזור",
     timeToImpact: "זמן מעוף",
-    time: "שעת ההתרעה",
     earlyEta: "~5–12 דקות",
     sirenEta: "1.5 דקות",
     monitoring: "⏳ ניטור...",
@@ -148,7 +144,6 @@ const arPack: LanguagePack = {
   labels: {
     area: "المنطقة",
     timeToImpact: "وقت الوصول",
-    time: "وقت التنبيه",
     earlyEta: "~5–12 دقيقة",
     sirenEta: "1.5 دقيقة",
     monitoring: "⏳ مراقبة...",

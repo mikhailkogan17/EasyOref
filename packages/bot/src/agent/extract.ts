@@ -194,6 +194,8 @@ Return ONLY valid JSON (no markdown, no explanation):
   "open_area_impact_qual": ${QUAL_VALUES}|null,
   "open_area_impact_qual_num": int|null,
   "hits_confirmed": int|null,
+  "hit_location": string|null,
+  "hit_type": "direct"|"shrapnel"|null,
   "casualties": int|null,
   "injuries": int|null,
   "eta_refined_minutes": int|null,
@@ -207,7 +209,10 @@ Rules:
 - If message uses excessive caps, exclamation marks, panic language → tone="alarmist".
 - Only extract concrete numbers explicitly stated in the text. Never guess.
 - NEVER invent specific interception numbers. If source says "all intercepted" without a count, use intercepted=null, intercepted_qual="all". If source says "no impacts" without specifying interceptions, set hits_confirmed=0 and intercepted=null.
-- rocket_detail: If the source splits rocket count by region (e.g. "2 to the center, 3 to the north"), put the verbatim regional breakdown in rocket_detail and the TOTAL in rocket_count. If no regional split, set rocket_detail=null.
+- rocket_detail: If the source splits rocket count by region (e.g. "2 to the center, 3 to the north"), put the regional breakdown in rocket_detail and the TOTAL in rocket_count. If no regional split, set rocket_detail=null.
+- hit_location: If hits_confirmed > 0, specify the MACRO-REGION where impact occurred (e.g. "Center", "Gush Dan", "North"). Do NOT use specific town names. null if unknown or hits_confirmed == 0.
+- hit_type: "direct" (direct hit on structure/infrastructure) | "shrapnel" (debris/fragments/shrapnel). null if unknown or hits_confirmed == 0.
+- LANGUAGE: rocket_detail, hit_location MUST be written in the UI language (see context header). Translate from Hebrew/Arabic/English as needed. Do NOT output verbatim Hebrew if UI language is Russian, etc.
 - *_qual fields: use ONLY when NO exact count is given. If exact number present, set *_qual=null.
 - "none" qual is only valid if explicitly stated (e.g., "все перехвачены", "не упало в море").
 - For IDF (@idf_telegram) posts about ongoing operations (not this specific attack) → time_relevance=0.

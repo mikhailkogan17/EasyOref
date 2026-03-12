@@ -75,6 +75,10 @@ export interface ExtractionResult {
   open_area_impact_qual: QualCount | null;
   open_area_impact_qual_num: number | null;
   hits_confirmed: number | null;
+  /** Region where impact occurred (in UI language) */
+  hit_location?: string | null;
+  /** Type of impact */
+  hit_type?: "direct" | "shrapnel" | null;
   /** Casualties reported (injured/killed) — primarily resolved phase */
   casualties: number | null;
   injuries: number | null;
@@ -157,6 +161,10 @@ export interface VotedResult {
   hits_citations: number[];
   /** Avg weighted confidence of sources reporting confirmed hits */
   hits_confidence: number;
+  /** Region where impact occurred (in UI language, from highest-confidence source) */
+  hit_location: string | null;
+  /** Type of impact: direct or shrapnel/debris */
+  hit_type: "direct" | "shrapnel" | null;
   /** Sources explicitly confirm NO impacts ("прилетов нет") */
   no_impacts: boolean;
   no_impacts_citations: number[];
@@ -212,6 +220,10 @@ export interface EnrichmentData {
   /** Confirmed hits on structures */
   hitsConfirmed: string | null;
   hitsCites: InlineCite[];
+  /** Region where impact occurred (in UI language) */
+  hitLocation: string | null;
+  /** Type of impact: "direct" | "shrapnel" */
+  hitType: string | null;
   /** Explicitly confirmed no impacts */
   noImpacts: boolean;
   noImpactsCites: InlineCite[];
@@ -244,6 +256,8 @@ export function emptyEnrichmentData(): EnrichmentData {
     openAreaImpact: null,
     hitsConfirmed: null,
     hitsCites: [],
+    hitLocation: null,
+    hitType: null,
     noImpacts: false,
     noImpactsCites: [],
     rocketDetail: null,

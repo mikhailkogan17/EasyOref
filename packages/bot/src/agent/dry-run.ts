@@ -181,7 +181,11 @@ function vote(extractions: typeof MOCK_EXTRACTIONS) {
   };
 }
 
-function insertBeforeTimeLine(text: string, line: string): string {
+function insertBeforeBlockEnd(text: string, line: string): string {
+  const bqIdx = text.lastIndexOf("</blockquote>");
+  if (bqIdx !== -1) {
+    return text.slice(0, bqIdx) + line + "\n" + text.slice(bqIdx);
+  }
   const timeLinePattern = /(<b>Время оповещения:<\/b>)/;
   const match = text.match(timeLinePattern);
   if (match?.index !== undefined) {
@@ -239,7 +243,7 @@ function buildEnrichedMessage(
       return `${ru}${sup(c.citations)}`;
     });
     // Leading \n creates blank line between ETA and intel block
-    text = insertBeforeTimeLine(text, `\n<b>Откуда:</b> ${parts.join(" + ")}`);
+    text = insertBeforeBlockEnd(text, `\n<b>Откуда:</b> ${parts.join(" + ")}`);
   }
 
   if (r.rocket_count_min !== null && r.rocket_count_max !== null) {
@@ -248,12 +252,12 @@ function buildEnrichedMessage(
         ? `${r.rocket_count_min}`
         : `~${r.rocket_count_min}-${r.rocket_count_max}`;
     const cassette = r.is_cassette ? " (кассет.)" : "";
-    text = insertBeforeTimeLine(text, `<b>Ракет:</b> ${countStr}${cassette}`);
+    text = insertBeforeBlockEnd(text, `<b>Ракет:</b> ${countStr}${cassette}`);
   }
 
   if (r.hits_confirmed !== null && r.hits_confirmed > 0) {
     const hitsCite = r.hits_citations.length > 0 ? sup(r.hits_citations) : "";
-    text = insertBeforeTimeLine(
+    text = insertBeforeBlockEnd(
       text,
       `<b>Попадания (Дан центр):</b> ${r.hits_confirmed}${hitsCite}`,
     );

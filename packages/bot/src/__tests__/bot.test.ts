@@ -64,13 +64,12 @@ describe("isRelevantArea", () => {
 describe("message format", () => {
   it("produces valid HTML with blockquote", () => {
     const msg = [
-      "<b>⚠️ Early Warning</b>",
+      "<b>⚠️ Early Warning</b> (14:32)",
       "Rocket launches detected. Stay near a protected space.",
       "",
       "<blockquote>",
       "<b>Area:</b> Tel Aviv - South And Jaffa",
       "<b>Time to impact:</b> ~5–12 min",
-      "<b>Time:</b> 14:32",
       "</blockquote>",
     ].join("\n");
 

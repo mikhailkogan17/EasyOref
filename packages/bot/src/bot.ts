@@ -18,7 +18,11 @@ import { createServer } from "node:http";
 import { startMonitor, stopMonitor } from "./agent/gramjs-monitor.js";
 import { enqueueEnrich } from "./agent/queue.js";
 import { closeRedis } from "./agent/redis.js";
-import { buildEnrichedMessage, MONITORING_RE, stripMonitoring } from "./agent/message.js";
+import {
+  buildEnrichedMessage,
+  MONITORING_RE,
+  stripMonitoring,
+} from "./agent/message.js";
 import {
   clearSession,
   getActiveSession,
@@ -356,7 +360,7 @@ function formatMessage(alertType: AlertType, areas: string): string {
   const title = config.titleOverride[cfgKey] ?? defaults.title;
   const desc = config.descriptionOverride[cfgKey] ?? defaults.description;
 
-  const lines: string[] = [`<b>${emoji} ${title}</b>`];
+  const lines: string[] = [`<b>${emoji} ${title}</b> (${time})`];
   if (desc) lines.push(desc);
   lines.push("");
   lines.push("<blockquote>");
@@ -364,12 +368,8 @@ function formatMessage(alertType: AlertType, areas: string): string {
 
   if (alertType === "early_warning") {
     lines.push(`<b>${labels.timeToImpact}:</b> ${labels.earlyEta}`);
-    lines.push(`<b>${labels.time}:</b> ${time}`);
   } else if (alertType === "siren") {
     lines.push(`<b>${labels.timeToImpact}:</b> ${labels.sirenEta}`);
-    lines.push(`<b>${labels.time}:</b> ${time}`);
-  } else if (alertType === "resolved") {
-    lines.push(`<b>${labels.time}:</b> ${time}`);
   }
   lines.push("</blockquote>");
 
@@ -506,7 +506,8 @@ async function processAlert(alert: OrefAlert): Promise<void> {
 
   markSent(alertType);
 
-  let message = formatMessage(alertType, areas);
+  const baseMessage = formatMessage(alertType, areas);
+  let message = baseMessage;
   const alertTs = Date.now();
 
   // ── Reply chain + carry-forward enrichment ──
@@ -558,10 +559,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
         // ── Resolved: switch existing session to resolved phase ──
         if (existingSession) {
           // Remove monitoring indicator from previous message
-          if (
-            bot &&
-            MONITORING_RE.test(existingSession.currentText)
-          ) {
+          if (bot && MONITORING_RE.test(existingSession.currentText)) {
             const cleaned = stripMonitoring(existingSession.currentText);
             try {
               if (existingSession.isCaption) {
@@ -592,6 +590,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
             latestAlertTs: alertTs,
             isCaption: sent.isCaption,
             currentText: message,
+            baseText: baseMessage,
           };
           await setActiveSession(updated);
           const delay = PHASE_ENRICH_DELAY_MS.resolved;
@@ -644,6 +643,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
             latestAlertTs: alertTs,
             isCaption: sent.isCaption,
             currentText: message,
+            baseText: baseMessage,
             alertAreas: alert.data,
           };
           await setActiveSession(updated);
@@ -669,6 +669,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
             chatId: config.chatId,
             isCaption: sent.isCaption,
             currentText: message,
+            baseText: baseMessage,
             alertAreas: alert.data,
           };
           await setActiveSession(session);
