@@ -65,7 +65,7 @@ const ruPack: LanguagePack = {
     timeToImpact: "Подлётное время",
     earlyEta: "~5–12 мин",
     sirenEta: "1.5 мин",
-    monitoring: "⏳ Сообщение обновляется...",
+    monitoring: '<tg-emoji emoji-id="5258052328455424397">⏳</tg-emoji> Сообщение обновляется...',
   },
 };
 
@@ -92,7 +92,7 @@ const enPack: LanguagePack = {
     timeToImpact: "Time to impact",
     earlyEta: "~5–12 min",
     sirenEta: "1.5 min",
-    monitoring: "⏳ Message updating...",
+    monitoring: '<tg-emoji emoji-id="5258052328455424397">⏳</tg-emoji> Message updating...',
   },
 };
 
@@ -119,7 +119,7 @@ const hePack: LanguagePack = {
     timeToImpact: "זמן מעוף",
     earlyEta: "~5–12 דקות",
     sirenEta: "1.5 דקות",
-    monitoring: "⏳ ההודעה מתעדכנת...",
+    monitoring: '<tg-emoji emoji-id="5258052328455424397">⏳</tg-emoji> ההודעה מתעדכנת...',
   },
 };
 
@@ -146,7 +146,7 @@ const arPack: LanguagePack = {
     timeToImpact: "وقت الوصول",
     earlyEta: "~5–12 دقيقة",
     sirenEta: "1.5 دقيقة",
-    monitoring: "⏳ الرسالة قيد التحديث...",
+    monitoring: '<tg-emoji emoji-id="5258052328455424397">⏳</tg-emoji> الرسالة قيد التحديث...',
   },
 };
 

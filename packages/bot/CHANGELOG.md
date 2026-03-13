@@ -1,5 +1,11 @@
 # easyoref
 
+## 1.18.2
+
+### Patch Changes
+
+- fix: use Telegram custom emoji for monitoring indicator
+
 ## 1.18.1
 
 ### Patch Changes
