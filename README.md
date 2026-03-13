@@ -7,8 +7,8 @@ Israeli Home Front Command alerts — delivered to your loved ones' Telegram cha
 [![CI](https://github.com/mikhailkogan17/EasyOref/actions/workflows/ci.yml/badge.svg)](https://github.com/mikhailkogan17/EasyOref/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![npm](https://img.shields.io/badge/npm-easyoref-CB3837?logo=npm)](https://www.npmjs.com/package/easyoref)
-[![LangGraph](https://img.shields.io/badge/LangGraph-agentic-blue)](https://langchain-ai.github.io/langgraphjs/)
-[![LangChain](https://img.shields.io/badge/LangChain-tools-green)](https://js.langchain.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-agentic-blue?logo=langgraph)](https://langchain-ai.github.io/langgraphjs/)
+[![LangChain](https://img.shields.io/badge/LangChain-tools-green?logo=langchain)](https://js.langchain.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 
 [עברית](docs/readme_he.md) · [Русский](docs/readme_ru.md)
