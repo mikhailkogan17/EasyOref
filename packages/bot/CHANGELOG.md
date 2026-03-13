@@ -1,5 +1,11 @@
 # easyoref
 
+## 1.18.1
+
+### Patch Changes
+
+- fix: simplify release pipeline to manual-only workflow_dispatch
+
 ## 1.18.0
 
 ### Minor Changes

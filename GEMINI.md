@@ -142,107 +142,125 @@ Unicode superscript citations (¹²³), absolute ETA (~HH:MM¹), inline key:valu
 
 ---
 
-## Release & Update Pipeline
+## Release & Deploy Pipeline (Manual Only)
 
-### Полный цикл: код → RPi production
+### Overview
+
+Release is **manual-only** via `workflow_dispatch`. There is NO automatic release on push to main.
 
 ```
-feature branch → PR → merge to main
-                          │
-                    release.yml (on push to main):
-                          │
-                    ┌─────┴──────┐
-                    │ changesets │──→ нет changeset? → check-publish
-                    └────────────┘
-                          │
-                    check-publish: LOCAL_VER vs npm view
-                          │ (если отличается)
-                    ┌─────┴──────────────────────┐
-                    │ npm publish --provenance    │  (OIDC, не ручной token)
-                    │ GitHub Release + tag        │
-                    │ Docker build+push (ghcr.io) │  linux/amd64 + linux/arm64
-                    └────────────────────────────┘
-                          │
-                    RPi: sudo npm update -g easyoref && easyoref restart
+feature branch → PR → CI passes → merge to main
+                                        │
+                          (manually) gh workflow run release.yml
+                                        │
+                                  check-publish:
+                                  LOCAL_VER vs npm view
+                                        │ (if different)
+                                  ┌─────┴──────────────────────┐
+                                  │ npm publish --provenance    │  OIDC
+                                  │ GitHub Release + tag        │
+                                  │ Docker build+push (ghcr.io) │  amd64+arm64
+                                  └────────────────────────────┘
+                                        │
+                                  RPi: npm update + restart
 ```
 
-### Шаг 1 — Версия
+### Post-Implementation Checklist (MANDATORY)
 
-Два варианта:
+After every fix, feature, or refactor — **always** execute the full pipeline:
 
-**A) Через changesets (автоматический):**
+1. **Version bump** — create changeset + apply it:
+   ```bash
+   npx changeset               # select patch / minor / major
+   npx changeset version       # bumps package.json + CHANGELOG.md
+   ```
+2. **Commit** — all changed files (code + version bump + CHANGELOG):
+   ```bash
+   git add -A && git commit -m "feat/fix: description"
+   ```
+3. **Push + PR** — push branch, create PR, wait for CI (`ci` status check):
+   ```bash
+   git push -u origin <branch>
+   gh pr create --title "..." --body "..."
+   ```
+4. **Merge** — squash merge after CI passes:
+   ```bash
+   gh pr merge <number> --squash --auto
+   ```
+5. **Trigger release** — manually run release.yml on main:
+   ```bash
+   gh workflow run release.yml --ref main
+   gh run list --workflow=release.yml -L1   # monitor
+   gh run view <run-id> --log               # check logs
+   ```
+6. **RPi update** — see detailed algorithm below
+
+### RPi Update Algorithm (Step-by-Step)
+
+**Host:** `raspberrypi.local` | **User:** `pi` | **Password:** `Darwin1809`
+
 ```bash
-npx changeset                    # выбрать patch/minor/major
-git add .changeset/ && git commit -m "chore: add changeset"
-# push → PR → merge → release.yml создаёт "Version Packages" PR
-# merge Version Packages PR → release.yml публикует
-```
+# 1. SSH into RPi
+ssh pi@raspberrypi.local
 
-**B) Ручной bump (быстрее):**
-```bash
-# Прямо на feature branch перед PR:
-# 1. Поменять version в packages/bot/package.json
-# 2. Обновить CHANGELOG.md
-# 3. Commit + push → PR → merge
-# release.yml сравнит LOCAL_VER vs npm → опубликует автоматически
-```
+# 2. Check current version BEFORE update
+easyoref --version
 
-### Шаг 2 — CI делает остальное
+# 3. Update the global npm package
+sudo npm update -g easyoref
 
-После merge в main, `release.yml` автоматически:
-1. **npm publish** — OIDC provenance, `NODE_AUTH_TOKEN` из trusted publisher
-2. **GitHub Release** — тег `vX.Y.Z`, auto-generated release notes
-3. **Docker push** — `ghcr.io/mikhailkogan17/easyoref:X.Y.Z` + `:latest`, multi-arch (amd64+arm64)
+# 4. Verify new version installed
+easyoref --version
+# Expected: should match the version you just published (e.g. 1.18.1)
 
-### Шаг 3 — RPi update
+# 5. Restart the systemd service
+easyoref restart
 
-```bash
-ssh pi@rpi
+# 6. Wait 5 seconds, then check service status
+sleep 5
+systemctl status easyoref
+# Expected: "active (running)"
+
+# 7. Check logs for healthy startup
+easyoref logs | head -30
+# Expected lines:
+#   "Bot initialized"
+#   "MTProto connected"
+#   "GramJS monitor started"
+#   No errors / no crash loops
+
+# 8. Health check via bot command (if /health exists)
+# Or verify by sending test alert or checking Telegram bot responds
+
+# 9. If version didn't update (npm cache issue):
+sudo npm cache clean --force
 sudo npm update -g easyoref
 easyoref restart
-easyoref logs                    # проверить что поднялся
 ```
 
-### Проверки после деплоя
+**Troubleshooting RPi:**
 
-```bash
-# На RPi:
-easyoref --version               # должна быть новая версия
-easyoref logs                    # проверить "Bot initialized", "MTProto connected"
-systemctl status easyoref        # active (running)
+| Symptom | Cause | Fix |
+|---|---|---|
+| `easyoref --version` shows old version | npm cache | `sudo npm cache clean --force && sudo npm update -g easyoref` |
+| `systemctl status easyoref` → failed | Config breaking change | `easyoref logs` → check error, fix `~/.easyoref/config.yaml` |
+| `easyoref restart` → "not found" | npm global bin not in PATH | `export PATH=$PATH:$(npm -g bin)` or reinstall with `sudo npm i -g easyoref` |
+| MTProto not connecting | session_string expired | Re-auth: `npx easyoref auth` or update session in config.yaml |
+| Redis connection refused | redis-server not running | `sudo systemctl start redis-server` |
 
-# Docker image (если нужно):
-docker manifest inspect ghcr.io/mikhailkogan17/easyoref:X.Y.Z
-```
+### General Troubleshooting
 
-### Troubleshooting
+| Problem | Cause | Fix |
+|---|---|---|
+| release.yml failed | Duplicate tag (manual `git tag` before CI) | Delete tag: `git push origin :refs/tags/vX.Y.Z`, re-run workflow |
+| npm 403 | OIDC token issue | Check trusted publisher on npmjs.com |
+| npm "already published" | CI already published on previous run | OK, skip |
+| Docker image not found | Release failed at Docker step | Re-run release workflow on GitHub |
 
-| Проблема                      | Причина                                | Решение                                                           |
-| ----------------------------- | -------------------------------------- | ----------------------------------------------------------------- |
-| release.yml failed            | Дубликат тега (ручной `git tag` до CI) | Удалить тег: `git push origin :refs/tags/vX.Y.Z`, re-run workflow |
-| npm 403                       | OIDC token issue                       | Проверить trusted publisher на npmjs.com                          |
-| npm "already published"       | CI уже опубликовал на предыдущем merge | Всё ок, пропустить                                                |
-| Docker image not found        | release failed на Docker step          | Re-run release workflow на GitHub                                 |
-| RPi: old version after update | npm cache                              | `sudo npm cache clean --force && sudo npm update -g easyoref`     |
-| RPi: bot не стартует          | Config breaking change                 | `easyoref logs` → проверить ошибку                                |
+### CRITICAL RULES
 
-## Post-Implementation Release Checklist
-
-После каждого фикса или новой фичи обязательно:
-
-1. **commit** — закоммитить изменения
-2. **PR** — создать Pull Request и дождаться CI
-3. **deploy** — дождаться мержа PR (CI release pipeline)
-4. **npmupdateeasyoref** — обновить RPi:
-      - `sudo npm update -g easyoref && easyoref restart`
-
-Это правило распространяется на любые изменения: багфиксы, новые фичи, рефакторинг.
-
-**ВАЖНО:** Не выполнять `npm publish` локально — публикация происходит только через CI.
-
-### ВАЖНО
-
-- **НЕ** делать `npm publish` локально — CI делает это автоматически
-- **НЕ** делать `git tag` вручную до merge — CI создаёт теги через GitHub Release
-- **НЕ** делать `docker build` локально для production — CI билдит multi-arch
-- Ручной `git tag` ДО merge приводит к конфликту тегов и failed release
+- **NEVER** run `npm publish` locally — CI does it via OIDC
+- **NEVER** run `git tag` manually before merge — CI creates tags via GitHub Release
+- **NEVER** run `docker build` locally for production — CI builds multi-arch
+- Manual `git tag` BEFORE merge causes tag conflict → failed release
+- RPi deploy is ALWAYS via `npm update -g` + systemd, NEVER via Docker or git clone
