@@ -523,7 +523,7 @@ describe("buildEnrichmentFromVote", () => {
   });
 
   it("sets injuries for resolved phase", () => {
-    const voted = makeVoted({ injuries: 3, injuries_confidence: 0.8 });
+    const voted = makeVoted({ injuries: 3, injuries_confidence: 0.95 });
     const data = buildEnrichmentFromVote(
       voted,
       emptyEnrichmentData(),
@@ -532,6 +532,17 @@ describe("buildEnrichmentFromVote", () => {
     );
     expect(data.injuries).toBe("3");
     expect(data.injuriesCites).toHaveLength(1);
+  });
+
+  it("shows uncertainty marker for injuries at sub-certain confidence", () => {
+    const voted = makeVoted({ injuries: 3, injuries_confidence: 0.8 });
+    const data = buildEnrichmentFromVote(
+      voted,
+      emptyEnrichmentData(),
+      "resolved",
+      alertTs,
+    );
+    expect(data.injuries).toBe("3 (?)");
   });
 
   it("records earlyWarningTime on first early_warning", () => {
