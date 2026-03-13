@@ -128,8 +128,8 @@ export const CERTAIN = 0.95;
 
 // ── Monitoring indicator ───────────────────────────────
 
-/** Strip "⏳ ..." monitoring line from message text */
-export const MONITORING_RE = /\n?⏳\s*[^\n]+$/;
+/** Strip custom-emoji monitoring line from message text */
+export const MONITORING_RE = /\n?<tg-emoji emoji-id="\d+">⏳<\/tg-emoji>\s*[^\n]+$/;
 
 export function stripMonitoring(text: string): string {
   return text.replace(MONITORING_RE, "");
