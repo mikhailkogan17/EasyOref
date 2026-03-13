@@ -2,7 +2,7 @@
   <img src="docs/assets/hero.png" alt="EasyOref" width="100%">
 </p>
 
-Smart Home Front Command notification — for your friends & family
+Smart Home Front Command notifications — for your friends & family
 
 [![CI](https://github.com/mikhailkogan17/EasyOref/actions/workflows/ci.yml/badge.svg)](https://github.com/mikhailkogan17/EasyOref/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
