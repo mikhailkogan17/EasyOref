@@ -23,7 +23,7 @@ alert_types:
 # ── Telegram ──────────────────────────────────────
 telegram:
   bot_token: ""        # from @BotFather (or mount Docker secret)
-  chat_id: ""          # negative for groups, e.g. "-1001234567890"
+  chat_id: ""          # string or list: "-100123" or ["-100123", "-100456"]
 
 # ── Language & GIF ────────────────────────────────
 # ru | en | he | ar

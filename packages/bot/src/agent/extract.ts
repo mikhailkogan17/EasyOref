@@ -196,6 +196,7 @@ Return ONLY valid JSON (no markdown, no explanation):
   "hits_confirmed": int|null,
   "hit_location": string|null,
   "hit_type": "direct"|"shrapnel"|null,
+  "hit_detail": string|null,
   "casualties": int|null,
   "injuries": int|null,
   "eta_refined_minutes": int|null,
@@ -212,7 +213,8 @@ Rules:
 - rocket_detail: If the source splits rocket count by region (e.g. "2 to the center, 3 to the north"), put the regional breakdown in rocket_detail and the TOTAL in rocket_count. If no regional split, set rocket_detail=null.
 - hit_location: If hits_confirmed > 0, specify the MACRO-REGION where impact occurred (e.g. "Center", "Gush Dan", "North"). Do NOT use specific town names. null if unknown or hits_confirmed == 0.
 - hit_type: "direct" (direct hit on structure/infrastructure) | "shrapnel" (debris/fragments/shrapnel). null if unknown or hits_confirmed == 0.
-- LANGUAGE: rocket_detail, hit_location MUST be written in the UI language (see context header). Translate from Hebrew/Arabic/English as needed. Do NOT output verbatim Hebrew if UI language is Russian, etc.
+- hit_detail: If hits_confirmed > 0, describe WHERE/HOW the impact occurred. Examples: "на открытой местности" (open area), "здание" (building), "в море" (sea), "без разрушений" (no damage). Must be written in UI language. Translate appropriately: "שטח פתוח" → "на открытой местности", "נפילה בשטח פתוח" → "на открытой местности". null if unknown or hits_confirmed == 0.
+- LANGUAGE: rocket_detail, hit_location, hit_detail MUST be written in the UI language (see context header). Translate from Hebrew/Arabic/English as needed. Do NOT output verbatim Hebrew if UI language is Russian, etc.
 - *_qual fields: use ONLY when NO exact count is given. If exact number present, set *_qual=null.
 - "none" qual is only valid if explicitly stated (e.g., "все перехвачены", "не упало в море").
 - For IDF (@idf_telegram) posts about ongoing operations (not this specific attack) → time_relevance=0.
@@ -223,7 +225,13 @@ Rules:
   (e.g., "перехвачены", "intercepted", "יירוט", "упали в море", "fell in the sea", "נפלו בים",
   "open area impact", "שטח פתוח"), trust these claims with source_trust >= 0.7 and confidence >= 0.7.
   Israeli Telegram channels often report interception results before official confirmation,
-  and these reports are typically accurate. Do NOT downgrade these just because they lack official source.`;
+  and these reports are typically accurate. Do NOT downgrade these just because they lack official source.
+- EXISTING ENRICHMENT CROSS-REFERENCE: If the context includes "EXISTING ENRICHMENT", previous phases
+  already established facts with high confidence. Cross-reference against them:
+  - If this post discusses a DIFFERENT country_origin than what’s established, be skeptical.
+    Security officials summarizing past operations or different events should get time_relevance=0.
+  - Only override existing enrichment if this post has DIRECT, specific information about the current attack.
+  - General security news that appeared right after a siren but doesn’t mention THIS specific attack = time_relevance=0.`;
 
 export interface ExtractContext {
   alertTs: number;
@@ -231,6 +239,8 @@ export interface ExtractContext {
   alertAreas: string[];
   alertId: string;
   language: string;
+  /** Existing enrichment from earlier phases — for cross-reference */
+  existingEnrichment?: import("./types.js").EnrichmentData;
 }
 
 /**
@@ -288,6 +298,21 @@ export async function extractPosts(
   const phaseInst = getPhaseInstructions(ctx.alertType);
   const systemPrompt = EXTRACT_SYSTEM_PROMPT + "\n\n" + phaseInst;
 
+  // Build existing enrichment context line for cross-reference
+  const enrichCtxParts: string[] = [];
+  if (ctx.existingEnrichment?.origin)
+    enrichCtxParts.push(`Origin: ${ctx.existingEnrichment.origin}`);
+  if (ctx.existingEnrichment?.rocketCount)
+    enrichCtxParts.push(`Rockets: ${ctx.existingEnrichment.rocketCount}`);
+  if (ctx.existingEnrichment?.intercepted)
+    enrichCtxParts.push(`Intercepted: ${ctx.existingEnrichment.intercepted}`);
+  const enrichCtxLine =
+    enrichCtxParts.length > 0
+      ? `EXISTING ENRICHMENT (from earlier phases): ${enrichCtxParts.join(
+          ", ",
+        )}\n`
+      : "";
+
   const newResults = await Promise.all(
     newPosts.map(async (post): Promise<ValidatedExtraction> => {
       const postTimeIL = toIsraelTime(post.timestamp);
@@ -304,7 +329,8 @@ export async function extractPosts(
         `Post time:  ${postTimeIL} (Israel) ${postAgeSuffix}\n` +
         `Current time: ${nowIL} (Israel)\n` +
         `Alert region: ${regionHint}\n` +
-        `UI language: ${ctx.language}\n`;
+        `UI language: ${ctx.language}\n` +
+        enrichCtxLine;
 
       try {
         const response = await llm.invoke([

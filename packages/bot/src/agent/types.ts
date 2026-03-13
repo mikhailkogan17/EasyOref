@@ -79,6 +79,8 @@ export interface ExtractionResult {
   hit_location?: string | null;
   /** Type of impact */
   hit_type?: "direct" | "shrapnel" | null;
+  /** Impact detail: where/how (e.g. "open area", "building", "sea", "no damage"). In UI language. */
+  hit_detail?: string | null;
   /** Casualties reported (injured/killed) — primarily resolved phase */
   casualties: number | null;
   injuries: number | null;
@@ -165,6 +167,8 @@ export interface VotedResult {
   hit_location: string | null;
   /** Type of impact: direct or shrapnel/debris */
   hit_type: "direct" | "shrapnel" | null;
+  /** Impact detail: where/how (e.g. "на открытой местности", "здание", "в море") */
+  hit_detail: string | null;
   /** Sources explicitly confirm NO impacts ("прилетов нет") */
   no_impacts: boolean;
   no_impacts_citations: number[];
@@ -224,6 +228,8 @@ export interface EnrichmentData {
   hitLocation: string | null;
   /** Type of impact: "direct" | "shrapnel" */
   hitType: string | null;
+  /** Impact detail: where/how (e.g. "на открытой местности", "здание") */
+  hitDetail: string | null;
   /** Explicitly confirmed no impacts */
   noImpacts: boolean;
   noImpactsCites: InlineCite[];
@@ -258,6 +264,7 @@ export function emptyEnrichmentData(): EnrichmentData {
     hitsCites: [],
     hitLocation: null,
     hitType: null,
+    hitDetail: null,
     noImpacts: false,
     noImpactsCites: [],
     rocketDetail: null,

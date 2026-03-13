@@ -31,6 +31,7 @@ import {
   getEnrichmentData,
   getLastUpdateTs,
   setLastUpdateTs,
+  type ChatMessage,
 } from "./store.js";
 import type {
   AlertType,
@@ -60,6 +61,9 @@ const AgentState = Annotation.Root({
   clarifyAttempted: Annotation<boolean>({ reducer: (_, b) => b }),
   previousEnrichment: Annotation<EnrichmentData>({ reducer: (_, b) => b }),
   monitoringLabel: Annotation<string | undefined>({ reducer: (_, b) => b }),
+  chatMessages: Annotation<ChatMessage[] | undefined>({
+    reducer: (_, b) => b,
+  }),
 });
 
 type AgentStateType = typeof AgentState.State;
@@ -148,6 +152,7 @@ async function extractNode(
     alertAreas: state.alertAreas,
     alertId: state.alertId,
     language: config.language,
+    existingEnrichment: state.previousEnrichment,
   };
   const raw = await extractPosts(postsToExtract, ctx);
 
@@ -221,6 +226,7 @@ async function editNode(
     chatId: state.chatId,
     messageId: state.messageId,
     isCaption: state.isCaption,
+    chatMessages: state.chatMessages,
     currentText: state.currentText,
     votedResult: state.votedResult,
     previousEnrichment: state.previousEnrichment ?? emptyEnrichmentData(),
@@ -303,6 +309,7 @@ export interface RunEnrichmentInput {
   chatId: string;
   messageId: number;
   isCaption: boolean;
+  chatMessages?: ChatMessage[];
   currentText: string;
   monitoringLabel?: string;
 }
@@ -317,6 +324,7 @@ export async function runEnrichment(input: RunEnrichmentInput): Promise<void> {
       chatId: input.chatId,
       messageId: input.messageId,
       isCaption: input.isCaption,
+      chatMessages: input.chatMessages,
       currentText: input.currentText,
       tracking: null,
       extractions: [],

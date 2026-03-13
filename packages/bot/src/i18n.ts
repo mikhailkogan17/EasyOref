@@ -65,7 +65,7 @@ const ruPack: LanguagePack = {
     timeToImpact: "Подлётное время",
     earlyEta: "~5–12 мин",
     sirenEta: "1.5 мин",
-    monitoring: "⏳ Мониторинг...",
+    monitoring: "⏳ Сообщение обновляется...",
   },
 };
 
@@ -92,7 +92,7 @@ const enPack: LanguagePack = {
     timeToImpact: "Time to impact",
     earlyEta: "~5–12 min",
     sirenEta: "1.5 min",
-    monitoring: "⏳ Monitoring...",
+    monitoring: "⏳ Message updating...",
   },
 };
 
@@ -119,7 +119,7 @@ const hePack: LanguagePack = {
     timeToImpact: "זמן מעוף",
     earlyEta: "~5–12 דקות",
     sirenEta: "1.5 דקות",
-    monitoring: "⏳ ניטור...",
+    monitoring: "⏳ ההודעה מתעדכנת...",
   },
 };
 
@@ -146,7 +146,7 @@ const arPack: LanguagePack = {
     timeToImpact: "وقت الوصول",
     earlyEta: "~5–12 دقيقة",
     sirenEta: "1.5 دقيقة",
-    monitoring: "⏳ مراقبة...",
+    monitoring: "⏳ الرسالة قيد التحديث...",
   },
 };
 

@@ -262,6 +262,9 @@ export function buildEnrichmentFromVote(
   if (r.hit_type && r.hits_confirmed !== null && r.hits_confirmed > 0) {
     data.hitType = r.hit_type;
   }
+  if (r.hit_detail && r.hits_confirmed !== null && r.hits_confirmed > 0) {
+    data.hitDetail = r.hit_detail;
+  }
 
   // Casualties
   if (
@@ -375,6 +378,7 @@ export function buildEnrichedMessage(
     };
     const qualifiers: string[] = [];
     if (enrichment.hitLocation) qualifiers.push(enrichment.hitLocation);
+    if (enrichment.hitDetail) qualifiers.push(enrichment.hitDetail);
     if (enrichment.hitType)
       qualifiers.push(
         HIT_TYPE_DISPLAY[enrichment.hitType] ?? enrichment.hitType,
@@ -438,6 +442,12 @@ export const insertBeforeTimeLine = insertBeforeBlockEnd;
 
 // ── Edit message ───────────────────────────────────────
 
+export interface ChatMessageTarget {
+  chatId: string;
+  messageId: number;
+  isCaption: boolean;
+}
+
 export interface EditMessageInput {
   alertId: string;
   alertTs: number;
@@ -445,6 +455,8 @@ export interface EditMessageInput {
   chatId: string;
   messageId: number;
   isCaption: boolean;
+  /** All chat targets for multi-chat broadcasting */
+  chatMessages?: ChatMessageTarget[];
   currentText: string;
   votedResult: VotedResult | null;
   previousEnrichment: EnrichmentData;
@@ -459,6 +471,15 @@ export async function editMessage(input: EditMessageInput): Promise<void> {
 
   const tgBot = new Bot(config.botToken);
   const prev = input.previousEnrichment ?? emptyEnrichmentData();
+
+  // Resolve targets: multi-chat or single fallback
+  const targets: ChatMessageTarget[] = input.chatMessages ?? [
+    {
+      chatId: input.chatId,
+      messageId: input.messageId,
+      isCaption: input.isCaption,
+    },
+  ];
 
   if (!input.votedResult) {
     // No new data — try carry-forward only
@@ -477,46 +498,43 @@ export async function editMessage(input: EditMessageInput): Promise<void> {
         return;
       }
 
-      try {
-        if (input.isCaption) {
-          await tgBot.api.editMessageCaption(input.chatId, input.messageId, {
-            caption: newText,
-            parse_mode: "HTML",
-          });
-        } else {
-          await tgBot.api.editMessageText(
-            input.chatId,
-            input.messageId,
-            newText,
-            { parse_mode: "HTML" },
-          );
-        }
-
-        prev.lastEditHash = hash;
-        await saveEnrichmentData(prev);
-
-        // Keep session.currentText in sync for monitoring removal
-        const sess = await getActiveSession();
-        if (sess) {
-          sess.currentText = newText;
-          await setActiveSession(sess);
-        }
-
-        logger.info("Agent: enriched (carry-forward)", {
-          alertId: input.alertId,
-        });
-      } catch (err) {
-        const errStr = String(err);
-        if (errStr.includes("message is not modified")) {
-          prev.lastEditHash = hash;
-          await saveEnrichmentData(prev);
-        } else {
-          logger.error("Agent: edit failed", {
-            alertId: input.alertId,
-            error: errStr,
-          });
+      for (const t of targets) {
+        try {
+          if (t.isCaption) {
+            await tgBot.api.editMessageCaption(t.chatId, t.messageId, {
+              caption: newText,
+              parse_mode: "HTML",
+            });
+          } else {
+            await tgBot.api.editMessageText(t.chatId, t.messageId, newText, {
+              parse_mode: "HTML",
+            });
+          }
+        } catch (err) {
+          const errStr = String(err);
+          if (!errStr.includes("message is not modified")) {
+            logger.error("Agent: edit failed", {
+              alertId: input.alertId,
+              chatId: t.chatId,
+              error: errStr,
+            });
+          }
         }
       }
+
+      prev.lastEditHash = hash;
+      await saveEnrichmentData(prev);
+
+      // Keep session.currentText in sync for monitoring removal
+      const sess = await getActiveSession();
+      if (sess) {
+        sess.currentText = newText;
+        await setActiveSession(sess);
+      }
+
+      logger.info("Agent: enriched (carry-forward)", {
+        alertId: input.alertId,
+      });
     } else {
       logger.info("Agent: no voted result — skipping", {
         alertId: input.alertId,
@@ -555,45 +573,45 @@ export async function editMessage(input: EditMessageInput): Promise<void> {
     });
   }
 
-  try {
-    if (input.isCaption) {
-      await tgBot.api.editMessageCaption(input.chatId, input.messageId, {
-        caption: newText,
-        parse_mode: "HTML",
-      });
-    } else {
-      await tgBot.api.editMessageText(input.chatId, input.messageId, newText, {
-        parse_mode: "HTML",
-      });
-    }
-
-    enrichment.lastEditHash = hash;
-    await saveEnrichmentData(enrichment);
-
-    // Keep session.currentText in sync for monitoring removal
-    const sess = await getActiveSession();
-    if (sess) {
-      sess.currentText = newText;
-      await setActiveSession(sess);
-    }
-
-    logger.info("Agent: enriched", {
-      alertId: input.alertId,
-      messageId: input.messageId,
-      confidence: input.votedResult.confidence,
-      sources: input.votedResult.sources_count,
-      phase: input.alertType,
-    });
-  } catch (err) {
-    const errStr = String(err);
-    if (errStr.includes("message is not modified")) {
-      enrichment.lastEditHash = hash;
-      await saveEnrichmentData(enrichment);
-    } else {
-      logger.error("Agent: edit failed", {
-        alertId: input.alertId,
-        error: errStr,
-      });
+  for (const t of targets) {
+    try {
+      if (t.isCaption) {
+        await tgBot.api.editMessageCaption(t.chatId, t.messageId, {
+          caption: newText,
+          parse_mode: "HTML",
+        });
+      } else {
+        await tgBot.api.editMessageText(t.chatId, t.messageId, newText, {
+          parse_mode: "HTML",
+        });
+      }
+    } catch (err) {
+      const errStr = String(err);
+      if (!errStr.includes("message is not modified")) {
+        logger.error("Agent: edit failed", {
+          alertId: input.alertId,
+          chatId: t.chatId,
+          error: errStr,
+        });
+      }
     }
   }
+
+  enrichment.lastEditHash = hash;
+  await saveEnrichmentData(enrichment);
+
+  // Keep session.currentText in sync for monitoring removal
+  const sess = await getActiveSession();
+  if (sess) {
+    sess.currentText = newText;
+    await setActiveSession(sess);
+  }
+
+  logger.info("Agent: enriched", {
+    alertId: input.alertId,
+    targets: targets.length,
+    confidence: input.votedResult.confidence,
+    sources: input.votedResult.sources_count,
+    phase: input.alertType,
+  });
 }

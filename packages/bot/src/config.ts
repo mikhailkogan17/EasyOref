@@ -36,7 +36,7 @@ interface ConfigYaml {
   };
   telegram?: {
     bot_token?: string;
-    chat_id?: string;
+    chat_id?: string | string[];
   };
   health_port?: number;
   poll_interval_ms?: number;
@@ -135,14 +135,26 @@ function parseAlertTypes(raw?: AlertTypeConfig[]): AlertTypeConfig[] {
 
 const yml = loadYaml();
 
+const parsedChatIds: string[] = (() => {
+  const raw = yml.telegram?.chat_id ?? process.env.CHAT_ID ?? "";
+  if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
+  return String(raw)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+})();
+
 export const config = {
   /** Telegram bot token */
   botToken:
     yml.telegram?.bot_token ??
     readSecret("BOT_TOKEN", ["/run/secrets/bot_token", "secrets/bot_token"]),
 
-  /** Telegram chat ID */
-  chatId: yml.telegram?.chat_id ?? process.env.CHAT_ID ?? "",
+  /** All Telegram chat IDs to broadcast to */
+  chatIds: parsedChatIds,
+
+  /** Primary Telegram chat ID (first in the list) */
+  chatId: parsedChatIds[0] ?? "",
 
   /** City IDs to monitor (resolved to Hebrew names at startup via cities.json) */
   cityIds: yml.city_ids ?? [],
@@ -234,6 +246,5 @@ export const config = {
 export {
   loadYaml as _loadYaml,
   parseAlertTypes as _parseAlertTypes,
-  type ConfigYaml
+  type ConfigYaml,
 };
-

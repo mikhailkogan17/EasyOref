@@ -196,12 +196,18 @@ export function vote(
       : allHitsSrcs.map((e) => e.idx);
   const hits_confidence = fieldConf(allHitsSrcs);
 
-  // Hit location & type: highest-confidence source with hits > 0
+  // Hit location & type & detail: highest-confidence source with hits > 0
   const hitsWithLoc = hitsSrcs
     .filter((e) => e.hit_location)
     .sort((a, b) => b.confidence - a.confidence);
   const hit_location = hitsWithLoc[0]?.hit_location ?? null;
   const hit_type = hitsWithLoc[0]?.hit_type ?? null;
+
+  // hit_detail: from highest-confidence source that has one
+  const hitsWithDetail = hitsSrcs
+    .filter((e) => e.hit_detail)
+    .sort((a, b) => b.confidence - a.confidence);
+  const hit_detail = hitsWithDetail[0]?.hit_detail ?? null;
 
   // No impacts: explicit confirmation from sources
   const noImpactSrcs = allHitsSrcs.filter(
@@ -273,6 +279,7 @@ export function vote(
     hits_confidence,
     hit_location,
     hit_type,
+    hit_detail,
     no_impacts,
     no_impacts_citations,
     intercepted_citations: interceptedSrcs.map((e) => e.idx),

@@ -46,6 +46,12 @@ export const PHASE_INITIAL_DELAY_MS: Record<AlertType, number> = {
 
 // ── Types ──────────────────────────────────────────────
 
+export interface ChatMessage {
+  chatId: string;
+  messageId: number;
+  isCaption: boolean;
+}
+
 export interface AlertMeta {
   alertId: string;
   messageId: number;
@@ -81,6 +87,8 @@ export interface ActiveSession {
   /** Original formatMessage output without enrichment — used for rebuild */
   baseText: string;
   alertAreas: string[];
+  /** Per-chat message tracking for multi-chat broadcasting */
+  chatMessages?: ChatMessage[];
 }
 
 // ── Alert Meta (per-alert) ─────────────────────────────

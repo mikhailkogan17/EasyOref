@@ -32,6 +32,7 @@ import {
   saveAlertMeta,
   setActiveSession,
   type ActiveSession,
+  type ChatMessage,
 } from "./agent/store.js";
 import { startEnrichWorker, stopEnrichWorker } from "./agent/worker.js";
 import { config, type AlertTypeConfig } from "./config.js";
@@ -327,12 +328,12 @@ function initBot(): Bot | null {
     logger.error("BOT_TOKEN not set — Telegram DISABLED");
     return null;
   }
-  if (!config.chatId) {
+  if (config.chatIds.length === 0) {
     logger.error("CHAT_ID not set — Telegram DISABLED");
     return null;
   }
   logger.info("Bot initialized", {
-    chat_id: config.chatId.slice(0, -4) + "****",
+    chat_ids: config.chatIds.map((id) => id.slice(0, -4) + "****"),
     language: config.language,
     areas: config.areas,
     gif_mode: config.gifMode,
@@ -383,14 +384,15 @@ function formatMessage(alertType: AlertType, areas: string): string {
 
 /** Send message and return {messageId, isCaption} for agent editing */
 async function sendTelegram(
+  chatId: string,
   alertType: AlertType,
   text: string,
   replyToMessageId?: number,
 ): Promise<{ messageId: number; isCaption: boolean } | null> {
-  if (!bot || !config.chatId) {
+  if (!bot || !chatId) {
     logger.error("Telegram unavailable", {
       bot_exists: !!bot,
-      chat_id: config.chatId,
+      chat_id: chatId,
     });
     return null;
   }
@@ -406,12 +408,13 @@ async function sendTelegram(
   // No GIF mode → send text only
   if (!gifUrl) {
     try {
-      const msg = await bot.api.sendMessage(config.chatId, text, {
+      const msg = await bot.api.sendMessage(chatId, text, {
         parse_mode: "HTML",
         ...replyOpts,
       });
       logger.info("Alert sent via Telegram (text)", {
         type: alertType,
+        chatId,
         reply_to: replyToMessageId,
       });
       return { messageId: msg.message_id, isCaption: false };
@@ -419,6 +422,7 @@ async function sendTelegram(
       logger.error("Telegram send failed", {
         error: String(err),
         type: alertType,
+        chatId,
       });
       return null;
     }
@@ -426,7 +430,7 @@ async function sendTelegram(
 
   // GIF mode → try animation, fall back to text
   try {
-    const msg = await bot.api.sendAnimation(config.chatId, gifUrl, {
+    const msg = await bot.api.sendAnimation(chatId, gifUrl, {
       caption: text,
       parse_mode: "HTML",
       ...replyOpts,
@@ -434,6 +438,7 @@ async function sendTelegram(
     logger.info("Alert sent via Telegram (GIF)", {
       type: alertType,
       gif_url: gifUrl,
+      chatId,
       reply_to: replyToMessageId,
     });
     return { messageId: msg.message_id, isCaption: true };
@@ -441,14 +446,16 @@ async function sendTelegram(
     logger.warn("GIF send failed, falling back to text", {
       error: String(err),
       gif_url: gifUrl,
+      chatId,
     });
     try {
-      const msg = await bot.api.sendMessage(config.chatId, text, {
+      const msg = await bot.api.sendMessage(chatId, text, {
         parse_mode: "HTML",
         ...replyOpts,
       });
       logger.info("Alert sent via Telegram (text fallback)", {
         type: alertType,
+        chatId,
         reply_to: replyToMessageId,
       });
       return { messageId: msg.message_id, isCaption: false };
@@ -456,8 +463,41 @@ async function sendTelegram(
       logger.error("Telegram send failed completely", {
         error: String(err2),
         type: alertType,
+        chatId,
       });
       return null;
+    }
+  }
+}
+
+/** Remove monitoring indicator from ALL chat messages in a session (best-effort) */
+async function removeMonitoringFromAll(
+  botInst: Bot,
+  session: ActiveSession,
+): Promise<void> {
+  if (!MONITORING_RE.test(session.currentText)) return;
+  const cleaned = stripMonitoring(session.currentText);
+  const targets: ChatMessage[] = session.chatMessages ?? [
+    {
+      chatId: session.chatId,
+      messageId: session.latestMessageId,
+      isCaption: session.isCaption,
+    },
+  ];
+  for (const cm of targets) {
+    try {
+      if (cm.isCaption) {
+        await botInst.api.editMessageCaption(cm.chatId, cm.messageId, {
+          caption: cleaned,
+          parse_mode: "HTML",
+        });
+      } else {
+        await botInst.api.editMessageText(cm.chatId, cm.messageId, cleaned, {
+          parse_mode: "HTML",
+        });
+      }
+    } catch {
+      // Best-effort: ignore edit failures
     }
   }
 }
@@ -511,14 +551,24 @@ async function processAlert(alert: OrefAlert): Promise<void> {
   const alertTs = Date.now();
 
   // ── Reply chain + carry-forward enrichment ──
-  let replyTo: number | undefined;
+  const replyToMap = new Map<string, number>();
   if (config.agent.enabled) {
     const existingForReply = await getActiveSession();
     const shouldReply =
       existingForReply &&
       (alertType === "resolved" || existingForReply.phase !== "resolved");
     if (shouldReply) {
-      replyTo = existingForReply.latestMessageId;
+      // Build per-chat reply targets
+      const cms: ChatMessage[] = existingForReply.chatMessages ?? [
+        {
+          chatId: existingForReply.chatId,
+          messageId: existingForReply.latestMessageId,
+          isCaption: existingForReply.isCaption,
+        },
+      ];
+      for (const cm of cms) {
+        replyToMap.set(cm.chatId, cm.messageId);
+      }
       const prevEnrichment = await getEnrichmentData();
       const hasData =
         prevEnrichment.origin ||
@@ -537,18 +587,33 @@ async function processAlert(alert: OrefAlert): Promise<void> {
   }
 
   try {
-    const sent = await sendTelegram(alertType, message, replyTo);
+    // ── Send to all configured chats ──
+    const chatMessages: ChatMessage[] = [];
+    for (const cid of config.chatIds) {
+      const replyTo = replyToMap.get(cid);
+      const sent = await sendTelegram(cid, alertType, message, replyTo);
+      if (sent) {
+        chatMessages.push({
+          chatId: cid,
+          messageId: sent.messageId,
+          isCaption: sent.isCaption,
+        });
+      }
+    }
+
+    if (chatMessages.length === 0) return;
+    const primary = chatMessages[0]!;
 
     // ── Session-based enrichment lifecycle ──
-    if (sent && config.agent.enabled && config.chatId) {
+    if (config.agent.enabled) {
       const existingSession = await getActiveSession();
 
-      // Save meta for this alert (always)
+      // Save meta for this alert (primary chat)
       await saveAlertMeta({
         alertId: alert.id,
-        messageId: sent.messageId,
-        chatId: config.chatId,
-        isCaption: sent.isCaption,
+        messageId: primary.messageId,
+        chatId: primary.chatId,
+        isCaption: primary.isCaption,
         alertTs,
         alertType,
         alertAreas: alert.data,
@@ -558,39 +623,20 @@ async function processAlert(alert: OrefAlert): Promise<void> {
       if (alertType === "resolved") {
         // ── Resolved: switch existing session to resolved phase ──
         if (existingSession) {
-          // Remove monitoring indicator from previous message
-          if (bot && MONITORING_RE.test(existingSession.currentText)) {
-            const cleaned = stripMonitoring(existingSession.currentText);
-            try {
-              if (existingSession.isCaption) {
-                await bot.api.editMessageCaption(
-                  existingSession.chatId,
-                  existingSession.latestMessageId,
-                  { caption: cleaned, parse_mode: "HTML" },
-                );
-              } else {
-                await bot.api.editMessageText(
-                  existingSession.chatId,
-                  existingSession.latestMessageId,
-                  cleaned,
-                  { parse_mode: "HTML" },
-                );
-              }
-            } catch {
-              // Best-effort: ignore edit failures
-            }
-          }
+          if (bot) await removeMonitoringFromAll(bot, existingSession);
 
           const updated: ActiveSession = {
             ...existingSession,
             phase: "resolved",
             phaseStartTs: Date.now(),
             latestAlertId: alert.id,
-            latestMessageId: sent.messageId,
+            latestMessageId: primary.messageId,
             latestAlertTs: alertTs,
-            isCaption: sent.isCaption,
+            chatId: primary.chatId,
+            isCaption: primary.isCaption,
             currentText: message,
             baseText: baseMessage,
+            chatMessages,
           };
           await setActiveSession(updated);
           const delay = PHASE_ENRICH_DELAY_MS.resolved;
@@ -608,43 +654,21 @@ async function processAlert(alert: OrefAlert): Promise<void> {
         // ── Early warning / Siren ──
         if (existingSession && existingSession.phase !== "resolved") {
           // Upgrade session phase (early → siren, or same-type refresh)
-          // Remove monitoring indicator from previous message
-          if (
-            bot &&
-            existingSession.latestMessageId !== sent.messageId &&
-            MONITORING_RE.test(existingSession.currentText)
-          ) {
-            const cleaned = stripMonitoring(existingSession.currentText);
-            try {
-              if (existingSession.isCaption) {
-                await bot.api.editMessageCaption(
-                  existingSession.chatId,
-                  existingSession.latestMessageId,
-                  { caption: cleaned, parse_mode: "HTML" },
-                );
-              } else {
-                await bot.api.editMessageText(
-                  existingSession.chatId,
-                  existingSession.latestMessageId,
-                  cleaned,
-                  { parse_mode: "HTML" },
-                );
-              }
-            } catch {
-              // Best-effort
-            }
-          }
+          if (bot) await removeMonitoringFromAll(bot, existingSession);
+
           const updated: ActiveSession = {
             ...existingSession,
             phase: alertType,
             phaseStartTs: Date.now(),
             latestAlertId: alert.id,
-            latestMessageId: sent.messageId,
+            latestMessageId: primary.messageId,
             latestAlertTs: alertTs,
-            isCaption: sent.isCaption,
+            chatId: primary.chatId,
+            isCaption: primary.isCaption,
             currentText: message,
             baseText: baseMessage,
             alertAreas: alert.data,
+            chatMessages,
           };
           await setActiveSession(updated);
           logger.info("Session: upgraded phase", {
@@ -664,18 +688,20 @@ async function processAlert(alert: OrefAlert): Promise<void> {
             phase: alertType,
             phaseStartTs: alertTs,
             latestAlertId: alert.id,
-            latestMessageId: sent.messageId,
+            latestMessageId: primary.messageId,
             latestAlertTs: alertTs,
-            chatId: config.chatId,
-            isCaption: sent.isCaption,
+            chatId: primary.chatId,
+            isCaption: primary.isCaption,
             currentText: message,
             baseText: baseMessage,
             alertAreas: alert.data,
+            chatMessages,
           };
           await setActiveSession(session);
           logger.info("Session: started", {
             sessionId: alert.id,
             phase: alertType,
+            chatCount: chatMessages.length,
           });
         }
 

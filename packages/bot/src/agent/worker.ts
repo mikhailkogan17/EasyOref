@@ -24,46 +24,52 @@ import {
   getActiveSession,
   isPhaseExpired,
   PHASE_ENRICH_DELAY_MS,
+  type ChatMessage,
 } from "./store.js";
 
 let _worker: Worker | null = null;
 
-/** Remove ⏳ monitoring indicator from the last message */
+/** Remove ⏳ monitoring indicator from all chat messages (best-effort) */
 async function removeMonitoringIndicator(session: {
   chatId: string;
   latestMessageId: number;
   isCaption: boolean;
   currentText: string;
+  chatMessages?: ChatMessage[];
 }): Promise<void> {
   if (!config.botToken || !MONITORING_RE.test(session.currentText)) return;
   const cleaned = stripMonitoring(session.currentText);
-  try {
-    const tgBot = new Bot(config.botToken);
-    if (session.isCaption) {
-      await tgBot.api.editMessageCaption(
-        session.chatId,
-        session.latestMessageId,
-        { caption: cleaned, parse_mode: "HTML" },
-      );
-    } else {
-      await tgBot.api.editMessageText(
-        session.chatId,
-        session.latestMessageId,
-        cleaned,
-        { parse_mode: "HTML" },
-      );
-    }
-    logger.info("Removed monitoring indicator", {
+  const tgBot = new Bot(config.botToken);
+  const targets: ChatMessage[] = session.chatMessages ?? [
+    {
+      chatId: session.chatId,
       messageId: session.latestMessageId,
-    });
-  } catch (err) {
-    const errStr = String(err);
-    if (!errStr.includes("message is not modified")) {
-      logger.error("Failed to remove monitoring indicator", {
-        error: errStr,
-      });
+      isCaption: session.isCaption,
+    },
+  ];
+  for (const cm of targets) {
+    try {
+      if (cm.isCaption) {
+        await tgBot.api.editMessageCaption(cm.chatId, cm.messageId, {
+          caption: cleaned,
+          parse_mode: "HTML",
+        });
+      } else {
+        await tgBot.api.editMessageText(cm.chatId, cm.messageId, cleaned, {
+          parse_mode: "HTML",
+        });
+      }
+    } catch (err) {
+      const errStr = String(err);
+      if (!errStr.includes("message is not modified")) {
+        logger.error("Failed to remove monitoring indicator", {
+          error: errStr,
+          chatId: cm.chatId,
+        });
+      }
     }
   }
+  logger.info("Removed monitoring indicator", { targets: targets.length });
 }
 
 export function startEnrichWorker(): void {
@@ -109,6 +115,7 @@ export function startEnrichWorker(): void {
         chatId: session.chatId,
         messageId: session.latestMessageId,
         isCaption: session.isCaption,
+        chatMessages: session.chatMessages,
         currentText: session.baseText ?? session.currentText,
         monitoringLabel: langPack.labels.monitoring,
       });
