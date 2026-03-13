@@ -1,5 +1,19 @@
 # easyoref
 
+## 1.18.0
+
+### Minor Changes
+
+- feat: multi-chat posting, hit_detail display, source cross-reference, monitoring label
+
+  - Support broadcasting alerts to multiple Telegram chats simultaneously (`chat_id` accepts string or YAML array)
+  - Track per-chat messageIds via `ChatMessage[]` in session for enrichment edits
+  - Add `hit_detail` field: LLM extracts free-text impact context (e.g. "на открытой местности", "здание")
+  - Display qualifiers now show `(location, detail, type)` instead of just location
+  - Pass existing enrichment to extraction prompt for source cross-reference scoring
+  - Posts about different events get `time_relevance=0` when enrichment already established
+  - Change monitoring label to "Сообщение обновляется..." in all 4 languages
+
 ## 1.17.1
 
 ### Patch Changes
