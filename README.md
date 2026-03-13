@@ -2,29 +2,32 @@
   <img src="docs/assets/hero.png" alt="EasyOref" width="100%">
 </p>
 
-Smart Home Front Command notifications — for your friends & family
+Israeli Home Front Command alerts — delivered to your loved ones' Telegram chat.
 
 [![CI](https://github.com/mikhailkogan17/EasyOref/actions/workflows/ci.yml/badge.svg)](https://github.com/mikhailkogan17/EasyOref/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![npm](https://img.shields.io/badge/npm-easyoref-CB3837?logo=npm)](https://www.npmjs.com/package/easyoref)
+[![LangGraph](https://img.shields.io/badge/LangGraph-agentic-blue)](https://langchain-ai.github.io/langgraphjs/)
+[![LangChain](https://img.shields.io/badge/LangChain-tools-green)](https://js.langchain.com/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 
- [עברית](docs/readme_he.md) · [Русский](docs/readme_ru.md)
+[עברית](docs/readme_he.md) · [Русский](docs/readme_ru.md)
 
 > [!CAUTION]
 > EasyOref **does not replace** official Home Front Command alerts.
-> It **supplements** them — keeping your contacts informed.
+> It **supplements** them — keeping your loved ones abroad informed.
 > Always follow Home Front Command instructions!
 
 ## Why
 
-During a rocket attack, your family abroad sees "MISSILES HIT NETANYA" on the news.
+During a rocket attack, your loved ones abroad see "MISSILES HIT TEL AVIV" on news.
 
 They don't know:
 - Is it your neighborhood or 200 km away?
 - Are you safe?
 - Should they worry?
 
-**Nothing solves this today.**
+**Nothing solves this for them today.**
 Alert apps with area filtering — for you in Israel.
 Cell Broadcast alerts — for you in Israel.
 
@@ -96,6 +99,34 @@ npx easyoref
 
 > The bot needs to run 24/7 — on a Raspberry Pi, server, or always-on computer.
 > Guides: [RPi](docs/rpi.md) · [Local](docs/local.md)
+
+## How it works
+
+EasyOref runs two layers:
+
+**Core layer** — always on, <1s latency
+- Polls Pikud HaOref API every 2 seconds
+- Filters alerts by city ID (Iron Dome zone-aware)
+- Delivers to Telegram instantly
+
+**Agentic enrichment layer** — LangGraph pipeline per alert
+
+```
+collectAndFilter → extract → vote → [clarify → revote] → editMessage
+```
+
+1. **collectAndFilter** — fetches channel posts, deterministic noise filter, channel tracking
+2. **extract** — two-stage LLM: cheap channel relevance pre-filter → expensive structured extraction (rocket count, intercepts, impact zone, country origin)
+3. **vote** — consensus across multiple extractions, confidence scoring
+4. **clarify** *(conditional)* — triggered on low confidence or suspicious single-source claims; LLM invokes tools to resolve:
+   - `read_telegram_sources` — live MTProto fetch from IDF/news channels
+   - `alert_history` — verifies claims against Pikud HaOref history API
+   - `resolve_area` — Iron Dome zone proximity check
+   - `betterstack_log` — queries enrichment pipeline logs
+5. **revote** — re-runs consensus with clarified data
+6. **editMessage** — in-place Telegram edit with citations
+
+LangGraph `MemorySaver` checkpoints state per `alertId`. Graceful degradation: `ai.enabled: false` → deterministic delivery only, zero LLM dependency.
 
 ## Configuration
 
