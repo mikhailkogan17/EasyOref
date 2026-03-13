@@ -9,7 +9,6 @@ permissions:
   id-token: write # npm OIDC provenance
   contents: write # create tags + GitHub Releases
   packages: write # push Docker to GHCR
-  pull-requests: write # changesets PR
 
 env:
   REGISTRY: ghcr.io
@@ -17,7 +16,7 @@ env:
 
 jobs:
   release:
-    name: Version & Publish
+    name: Publish
     runs-on: ubuntu-latest
 
     steps:
@@ -32,18 +31,7 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - run: npm ci
-
-      # If there are changesets → open/update "Version Packages" PR
-      # If that PR was just merged (no changesets left) → build + detect publish
-      - uses: changesets/action@v1
-        id: changesets
-        with:
-          title: "chore: version packages"
-          commit: "chore: version packages"
-          version: npm run version-bump
-          publish: npm run build
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: npm run build
 
       # ── Check if we need to publish ──────────────────────
       - name: Check unpublished version
@@ -57,7 +45,8 @@ jobs:
             echo "📦 Will publish easyoref@$LOCAL_VER (npm has $NPM_VER)"
           else
             echo "should_publish=false" >> $GITHUB_OUTPUT
-            echo "✅ easyoref@$LOCAL_VER already on npm"
+            echo "version=$LOCAL_VER" >> $GITHUB_OUTPUT
+            echo "✅ easyoref@$LOCAL_VER already on npm — skipping publish"
           fi
 
       # ── NPM Publish ──────────────────────────────────────
