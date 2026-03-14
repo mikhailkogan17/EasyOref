@@ -84,9 +84,11 @@ export function inlineCitesFromData(cites: InlineCite[]): string {
 export function buildGlobalCiteMap(
   enrichment: EnrichmentData,
 ): Map<string, number> {
+  // Order matches visual render order in buildEnrichedMessage:
+  // ETA (inline replacement first), then appended fields top-to-bottom.
   const allCites: InlineCite[] = [
-    ...enrichment.originCites,
     ...enrichment.etaCites,
+    ...enrichment.originCites,
     ...enrichment.rocketCites,
     ...enrichment.interceptedCites,
     ...enrichment.hitsCites,
@@ -129,7 +131,8 @@ export const CERTAIN = 0.95;
 // ── Monitoring indicator ───────────────────────────────
 
 /** Strip custom-emoji monitoring line from message text */
-export const MONITORING_RE = /\n?<tg-emoji emoji-id="\d+">⏳<\/tg-emoji>\s*[^\n]+$/;
+export const MONITORING_RE =
+  /\n?<tg-emoji emoji-id="\d+">⏳<\/tg-emoji>\s*[^\n]+$/;
 
 export function stripMonitoring(text: string): string {
   return text.replace(MONITORING_RE, "");
@@ -271,7 +274,7 @@ export function buildEnrichmentFromVote(
   if (
     r.casualties !== null &&
     r.casualties > 0 &&
-    r.casualties_confidence >= CERTAIN  // 0.95 — never show unconfirmed deaths
+    r.casualties_confidence >= CERTAIN // 0.95 — never show unconfirmed deaths
   ) {
     // No uncertainty marker for deaths — either confirmed or not shown
     data.casualties = `${r.casualties}`;
@@ -280,7 +283,11 @@ export function buildEnrichmentFromVote(
 
   // Injuries — show only if confidence >= UNCERTAIN (not SKIP)
   // Retractions: if new vote has injuries=0 and confidence >= UNCERTAIN, clear previous data
-  if (r.injuries !== null && r.injuries > 0 && r.injuries_confidence >= UNCERTAIN) {
+  if (
+    r.injuries !== null &&
+    r.injuries > 0 &&
+    r.injuries_confidence >= UNCERTAIN
+  ) {
     const u = r.injuries_confidence < CERTAIN ? " (?)" : "";
     data.injuries = `${r.injuries}${u}`;
     data.injuriesCites = extractCites(r.injuries_citations, r.citedSources);
