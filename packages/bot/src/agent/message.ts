@@ -204,8 +204,13 @@ export function buildEnrichmentFromVote(
     data.etaCites = extractCites(r.eta_citations, r.citedSources);
   }
 
-  // Rocket count
-  if (r.rocket_count_min !== null && r.rocket_count_max !== null) {
+  // Rocket count — show even at lower confidence (high-value intel)
+  // >= 0.55: show with (?); >= UNCERTAIN (0.75): show without marker
+  if (
+    r.rocket_count_min !== null &&
+    r.rocket_count_max !== null &&
+    r.rocket_confidence >= 0.55
+  ) {
     const u = r.rocket_confidence < UNCERTAIN ? " (?)" : "";
     data.rocketCount =
       r.rocket_count_min === r.rocket_count_max
@@ -289,7 +294,14 @@ export function buildEnrichmentFromVote(
     r.injuries_confidence >= UNCERTAIN
   ) {
     const u = r.injuries_confidence < CERTAIN ? " (?)" : "";
-    data.injuries = `${r.injuries}${u}`;
+    const causeSuffix =
+      r.injuries_cause === "rushing_to_shelter"
+        ? " (по дороге в укрытие)"
+        : r.injuries_cause === "rocket"
+        ? " (от ракеты)"
+        : "";
+    data.injuries = `${r.injuries}${u}${causeSuffix}`;
+    data.injuriesCause = r.injuries_cause;
     data.injuriesCites = extractCites(r.injuries_citations, r.citedSources);
   } else if (
     r.injuries !== null &&
@@ -299,6 +311,7 @@ export function buildEnrichmentFromVote(
   ) {
     // Explicit retraction: source says "no injured" — clear previous report
     data.injuries = null;
+    data.injuriesCause = null;
     data.injuriesCites = [];
   }
 
@@ -421,9 +434,15 @@ export function buildEnrichedMessage(
   }
   if (enrichment.injuries && alertType === "resolved") {
     const citeStr = renderCitesGlobal(enrichment.injuriesCites, citeMap);
+    const causeLabel =
+      enrichment.injuriesCause === "rushing_to_shelter"
+        ? " (на пути в укрытие)"
+        : enrichment.injuriesCause === "rocket"
+        ? " (от ракеты)"
+        : "";
     text = insertBeforeBlockEnd(
       text,
-      `<b>Пострадавшие:</b> ${enrichment.injuries}${citeStr}`,
+      `<b>Пострадавшие:</b> ${enrichment.injuries}${causeLabel}${citeStr}`,
     );
   }
 

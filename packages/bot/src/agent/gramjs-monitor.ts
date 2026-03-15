@@ -17,8 +17,26 @@ import { config } from "../config.js";
 import * as logger from "../logger.js";
 import { getActiveAlert, pushChannelPost } from "./store.js";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyOpts = Record<string, any>;
+const SOCKS5_TYPE = 5 as const;
+
+type TelegramCtorOpts = ConstructorParameters<typeof TelegramClient>[3];
+
+type TelegramClientOpts = {
+  connectionRetries: number;
+  retryDelay: number;
+  autoReconnect: boolean;
+  deviceModel: string;
+  appVersion: string;
+  systemVersion: string;
+  langCode: string;
+  proxy?: {
+    socksType: typeof SOCKS5_TYPE;
+    ip: string;
+    port: number;
+    username?: string;
+    password?: string;
+  };
+};
 
 let _client: TelegramClient | null = null;
 
@@ -85,7 +103,7 @@ export async function startMonitor(): Promise<void> {
 
   const session = new StringSession(sessionString || "");
 
-  const clientOpts: AnyOpts = {
+  const clientOpts = {
     connectionRetries: 5,
     retryDelay: 2000,
     autoReconnect: true,
@@ -93,14 +111,15 @@ export async function startMonitor(): Promise<void> {
     appVersion: "1.0.0",
     systemVersion: "macOS 14",
     langCode: "en",
-  };
+    proxy: undefined as TelegramClientOpts["proxy"],
+  } satisfies TelegramClientOpts;
 
   // SOCKS5 proxy support
   if (config.agent.socks5Proxy) {
     try {
       const proxyUrl = new URL(config.agent.socks5Proxy);
       clientOpts.proxy = {
-        socksType: 5,
+        socksType: SOCKS5_TYPE,
         ip: proxyUrl.hostname,
         port: Number(proxyUrl.port),
         username: proxyUrl.username || undefined,
@@ -114,8 +133,7 @@ export async function startMonitor(): Promise<void> {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _client = new TelegramClient(session, apiId, apiHash, clientOpts as any);
+  _client = new TelegramClient(session, apiId, apiHash, clientOpts);
 
   if (!sessionString) {
     logger.warn(

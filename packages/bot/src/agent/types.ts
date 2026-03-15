@@ -84,6 +84,8 @@ export interface ExtractionResult {
   /** Casualties reported (injured/killed) — primarily resolved phase */
   casualties: number | null;
   injuries: number | null;
+  /** Cause of injuries: rocket fragment/direct hit vs panic/rushing to shelter */
+  injuries_cause: "rocket" | "rushing_to_shelter" | null;
   eta_refined_minutes: number | null;
   /** Verbatim per-region rocket breakdown (e.g. "2 center, 3 north") */
   rocket_detail: string | null;
@@ -180,6 +182,7 @@ export interface VotedResult {
   casualties_confidence: number;
 
   injuries: number | null;
+  injuries_cause: "rocket" | "rushing_to_shelter" | null;
   injuries_citations: number[];
   injuries_confidence: number;
 
@@ -239,6 +242,8 @@ export interface EnrichmentData {
   casualties: string | null;
   casualtiesCites: InlineCite[];
   injuries: string | null;
+  /** Cause display string — set only if injuries came from rushing to shelter */
+  injuriesCause: "rocket" | "rushing_to_shelter" | null;
   injuriesCites: InlineCite[];
   /** Time early_warning was received (for siren "Раннее: было в HH:MM") */
   earlyWarningTime: string | null;
@@ -271,6 +276,7 @@ export function emptyEnrichmentData(): EnrichmentData {
     casualties: null,
     casualtiesCites: [],
     injuries: null,
+    injuriesCause: null,
     injuriesCites: [],
     earlyWarningTime: null,
     lastEditHash: null,

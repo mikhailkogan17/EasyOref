@@ -80,19 +80,29 @@ export function vote(
     .sort((a, b) => b.confidence - a.confidence);
   const bestEta = withEta[0] ?? null;
 
-  // Country: group unique values
-  const countryMap = new Map<string, number[]>();
+  // Country: group unique values (case-insensitive dedup, preserve first casing)
+  const countryMap = new Map<
+    string,
+    { canonical: string; citations: number[] }
+  >();
   for (const e of indexed) {
     if (e.country_origin) {
-      const list = countryMap.get(e.country_origin) ?? [];
-      list.push(e.idx);
-      countryMap.set(e.country_origin, list);
+      const key = e.country_origin.toLowerCase();
+      const entry = countryMap.get(key);
+      if (entry) {
+        entry.citations.push(e.idx);
+      } else {
+        countryMap.set(key, {
+          canonical: e.country_origin,
+          citations: [e.idx],
+        });
+      }
     }
   }
   const country_origins =
     countryMap.size > 0
-      ? Array.from(countryMap.entries()).map(([name, citations]) => ({
-          name,
+      ? Array.from(countryMap.values()).map(({ canonical, citations }) => ({
+          name: canonical,
           citations,
         }))
       : null;
@@ -244,6 +254,21 @@ export function vote(
   const injuries_citations = injurySrcs.map((e) => e.idx);
   const injuries_confidence = fieldConf(injurySrcs);
 
+  // Injuries cause: majority vote — "rocket" beats "rushing_to_shelter" if tie
+  const injuryCauseVals = injurySrcs
+    .map((e) => e.injuries_cause)
+    .filter((v): v is "rocket" | "rushing_to_shelter" => v !== null);
+  const rocketCauseCount = injuryCauseVals.filter((v) => v === "rocket").length;
+  const shelterCauseCount = injuryCauseVals.filter(
+    (v) => v === "rushing_to_shelter",
+  ).length;
+  const injuries_cause =
+    injuryCauseVals.length === 0
+      ? null
+      : rocketCauseCount >= shelterCauseCount
+      ? "rocket"
+      : "rushing_to_shelter";
+
   // Overall weighted confidence
   const totalWeight = indexed.reduce(
     (s, e) => s + e.source_trust * e.confidence,
@@ -287,6 +312,7 @@ export function vote(
     casualties_citations,
     casualties_confidence,
     injuries,
+    injuries_cause,
     injuries_citations,
     injuries_confidence,
     confidence: Math.round(weightedConf * 100) / 100,

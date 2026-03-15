@@ -199,6 +199,7 @@ Return ONLY valid JSON (no markdown, no explanation):
   "hit_detail": string|null,
   "casualties": int|null,
   "injuries": int|null,
+  "injuries_cause": "rocket"|"rushing_to_shelter"|null,
   "eta_refined_minutes": int|null,
   "rocket_detail": string|null,
   "confidence": float
@@ -211,7 +212,7 @@ Rules:
 - Only extract concrete numbers explicitly stated in the text. Never guess.
 - NEVER invent specific interception numbers. If source says "all intercepted" without a count, use intercepted=null, intercepted_qual="all". If source says "no impacts" without specifying interceptions, set hits_confirmed=0 and intercepted=null.
 - rocket_detail: If the source splits rocket count by region (e.g. "2 to the center, 3 to the north"), put the regional breakdown in rocket_detail and the TOTAL in rocket_count. If no regional split, set rocket_detail=null.
-- hit_location: If hits_confirmed > 0, specify the MACRO-REGION where impact occurred (e.g. "Center", "Gush Dan", "North"). Do NOT use specific town names. null if unknown or hits_confirmed == 0.
+- hit_location: If hits_confirmed > 0, prefer SPECIFIC city/town names over macro-regions (e.g. "Рамле" > "Центр", "Ришон-ле-Цион" > "Гуш-Дан"). Use macro-region ONLY if no specific city is mentioned. null if unknown or hits_confirmed == 0.
 - hit_type: "direct" (direct hit on structure/infrastructure) | "shrapnel" (debris/fragments/shrapnel). null if unknown or hits_confirmed == 0.
 - hit_detail: If hits_confirmed > 0, describe WHERE/HOW the impact occurred. Examples: "на открытой местности" (open area), "здание" (building), "в море" (sea), "без разрушений" (no damage). Must be written in UI language. Translate appropriately: "שטח פתוח" → "на открытой местности", "נפילה בשטח פתוח" → "на открытой местности". null if unknown or hits_confirmed == 0.
 - LANGUAGE: rocket_detail, hit_location, hit_detail MUST be written in the UI language (see context header). Translate from Hebrew/Arabic/English as needed. Do NOT output verbatim Hebrew if UI language is Russian, etc.
@@ -225,8 +226,10 @@ Rules:
   confidence for casualties MUST be >= 0.95 or set to null.
 - INJURY RETRACTIONS: If a source explicitly states "no injured", "false report of injury",
   "ложное сообщение о раненом", "אין פצועים", set injuries=0 with high confidence (>= 0.8).
-  This overrides earlier injury reports.
-- GEO-RELEVANCE FOR HITS: hits_confirmed, hit_location, hit_detail and hit_type must refer to
+  This overrides earlier injury reports.- INJURIES CAUSE: injuries_cause distinguishes:
+  - "rocket" = injured by rocket fragment, blast, or structural damage from impact
+  - "rushing_to_shelter" = injured while running to shelter (fell, stampede, heart attack, panic)
+  - null = unknown or no injuries. ALWAYS set this when injuries > 0.- GEO-RELEVANCE FOR HITS: hits_confirmed, hit_location, hit_detail and hit_type must refer to
   the CONFIGURED ALERT ZONE only. If the source describes damage/debris in a DIFFERENT city
   or area (e.g., Rishon LeZion when the zone is Tel Aviv South), set hit_location to that city
   name with a note, set region_relevance proportionally lower, and describe the actual location
@@ -246,7 +249,12 @@ Rules:
   - If this post discusses a DIFFERENT country_origin than what’s established, be skeptical.
     Security officials summarizing past operations or different events should get time_relevance=0.
   - Only override existing enrichment if this post has DIRECT, specific information about the current attack.
-  - General security news that appeared right after a siren but doesn’t mention THIS specific attack = time_relevance=0.`;
+  - General security news that appeared right after a siren but doesn't mention THIS specific attack = time_relevance=0.
+- OFFICIAL PHASE ANNOUNCEMENTS ≠ INCIDENT DATA: Messages from IDF / Home Front Command (Pikud HaOref)
+  that announce alert phases — "siren issued", "alert in effect", "can leave the shelter", "all clear" —
+  are ADMINISTRATIVE NOTICES. They say nothing about rocket count, country of origin, interceptions,
+  hits, casualties, or damage. Extract NO data fields from these messages. Set time_relevance=0 and
+  all data fields to null.`;
 
 export interface ExtractContext {
   alertTs: number;
@@ -399,6 +407,7 @@ export async function extractPosts(
           hits_confirmed: null,
           casualties: null,
           injuries: null,
+          injuries_cause: null,
           eta_refined_minutes: null,
           rocket_detail: null,
           confidence: 0,
@@ -445,8 +454,17 @@ export function postFilter(
     if (ext.time_relevance < 0.5) {
       return { ...ext, valid: false, reject_reason: "stale_post" };
     }
-    // V1: region relevance
-    if (ext.region_relevance < 0.5) {
+    // V1: region relevance — relaxed for rocket_count-only posts (national totals are valid)
+    const regionThreshold =
+      ext.rocket_count !== null &&
+      ext.intercepted === null &&
+      ext.intercepted_qual === null &&
+      ext.hits_confirmed === null &&
+      ext.casualties === null &&
+      ext.injuries === null
+        ? 0.3
+        : 0.5;
+    if (ext.region_relevance < regionThreshold) {
       return { ...ext, valid: false, reject_reason: "region_irrelevant" };
     }
     // V2: source trust
@@ -472,7 +490,9 @@ export function postFilter(
       return { ...ext, valid: false, reject_reason: "no_data" };
     }
     // V5: overall confidence floor
-    if (ext.confidence < 0.3) {
+    // Rocket count posts get a lower floor (0.2) — national totals are high-value even if uncertain
+    const confidenceFloor = ext.rocket_count !== null ? 0.2 : 0.3;
+    if (ext.confidence < confidenceFloor) {
       return { ...ext, valid: false, reject_reason: "low_confidence" };
     }
 
