@@ -95,16 +95,16 @@ function buildChannelTracking(
     if (latest.length > 0) {
       channelsWithUpdates.push({
         channel,
-        prev_tracked_messages: previous.sort((a, b) => a.timestamp - b.timestamp),
-        last_tracked_messages: latest.sort((a, b) => a.timestamp - b.timestamp),
+        prevTrackedMessages: previous.sort((a, b) => a.timestamp - b.timestamp),
+        lastTrackedMessages: latest.sort((a, b) => a.timestamp - b.timestamp),
       });
     }
   }
 
   return {
-    track_start_timestamp: sessionStartTs,
-    last_update_timestamp: lastUpdateTs,
-    channels_with_updates: channelsWithUpdates,
+    trackStartTimestamp: sessionStartTs,
+    lastUpdateTimestamp: lastUpdateTs,
+    channelsWithUpdates: channelsWithUpdates,
   };
 }
 
@@ -126,10 +126,10 @@ export const filterNode = async (
 
   logger.info("Agent: channel tracking", {
     alertId: state.alertId,
-    total_posts: posts.length,
-    channels_with_updates: tracking.channels_with_updates.length,
-    total_new_posts: tracking.channels_with_updates.reduce(
-      (total, channel) => total + channel.last_tracked_messages.length,
+    totalPosts: posts.length,
+    channelsWithUpdates: tracking.channelsWithUpdates.length,
+    totalNewPosts: tracking.channelsWithUpdates.reduce(
+      (total, channel) => total + channel.lastTrackedMessages.length,
       0,
     ),
   });

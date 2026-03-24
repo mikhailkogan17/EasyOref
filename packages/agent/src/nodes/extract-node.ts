@@ -65,48 +65,48 @@ export const postFilter = (
   alertId: string,
 ): ValidatedExtraction[] => {
   const validated = extractions.map((ext): ValidatedExtraction => {
-    if (ext.time_relevance < 0.5) {
-      return { ...ext, valid: false, reject_reason: "stale_post" };
+    if (ext.timeRelevance < 0.5) {
+      return { ...ext, valid: false, rejectReason: "stale_post" };
     }
 
     const regionThreshold =
-      ext.rocket_count != undefined &&
+      ext.rocketCount != undefined &&
       ext.intercepted == undefined &&
-      ext.intercepted_qual == undefined &&
-      ext.hits_confirmed == undefined &&
+      ext.interceptedQual == undefined &&
+      ext.hitsConfirmed == undefined &&
       ext.casualties == undefined &&
       ext.injuries == undefined
         ? 0.3
         : 0.5;
-    if (ext.region_relevance < regionThreshold) {
-      return { ...ext, valid: false, reject_reason: "region_irrelevant" };
+    if (ext.regionRelevance < regionThreshold) {
+      return { ...ext, valid: false, rejectReason: "region_irrelevant" };
     }
 
-    if (ext.source_trust < 0.4) {
-      return { ...ext, valid: false, reject_reason: "untrusted_source" };
+    if (ext.sourceTrust < 0.4) {
+      return { ...ext, valid: false, rejectReason: "untrusted_source" };
     }
 
     if (ext.tone === "alarmist") {
-      return { ...ext, valid: false, reject_reason: "alarmist_tone" };
+      return { ...ext, valid: false, rejectReason: "alarmist_tone" };
     }
 
     const hasData =
-      ext.country_origin != undefined ||
-      ext.rocket_count != undefined ||
-      ext.is_cassette != undefined ||
+      ext.countryOrigin != undefined ||
+      ext.rocketCount != undefined ||
+      ext.isCassette != undefined ||
       ext.intercepted != undefined ||
-      ext.intercepted_qual != undefined ||
-      ext.hits_confirmed != undefined ||
+      ext.interceptedQual != undefined ||
+      ext.hitsConfirmed != undefined ||
       ext.casualties != undefined ||
       ext.injuries != undefined ||
-      ext.eta_refined_minutes != undefined;
+      ext.etaRefinedMinutes != undefined;
     if (!hasData) {
-      return { ...ext, valid: false, reject_reason: "no_data" };
+      return { ...ext, valid: false, rejectReason: "no_data" };
     }
 
-    const confidenceFloor = ext.rocket_count != undefined ? 0.2 : 0.3;
+    const confidenceFloor = ext.rocketCount != undefined ? 0.2 : 0.3;
     if (ext.confidence < confidenceFloor) {
-      return { ...ext, valid: false, reject_reason: "low_confidence" };
+      return { ...ext, valid: false, rejectReason: "low_confidence" };
     }
 
     return { ...ext, valid: true };
@@ -119,7 +119,7 @@ export const postFilter = (
     alertId,
     passed: passed.length,
     rejected: rejected.length,
-    reasons: rejected.map((ext) => `${ext.channel}:${ext.reject_reason}`),
+    reasons: rejected.map((ext) => `${ext.channel}:${ext.rejectReason}`),
   });
 
   return validated;
@@ -128,20 +128,20 @@ export const postFilter = (
 export const extractNode = async (
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> => {
-  if (!state.tracking || state.tracking.channels_with_updates.length === 0) {
+  if (!state.tracking || state.tracking.channelsWithUpdates.length === 0) {
     logger.info("Agent: no channels with updates", { alertId: state.alertId });
     return { extractions: [] };
   }
 
-  const channels = state.tracking.channels_with_updates;
+  const channels = state.tracking.channelsWithUpdates;
   const channelSummaries = channels
     .map((channel) => {
-      const messages = channel.last_tracked_messages
+      const messages = channel.lastTrackedMessages
         .map((message) => {
           return `  [${toIsraelTime(message.timestamp)}] ${message.text.slice(0, 200)}`;
         })
         .join("\n");
-      return `${channel.channel} (${channel.last_tracked_messages.length} new):\n${messages}`;
+      return `${channel.channel} (${channel.lastTrackedMessages.length} new):\n${messages}`;
     })
     .join("\n\n");
 
@@ -152,7 +152,7 @@ export const extractNode = async (
   let relevantChannels: string[] = [];
   try {
     const result = await filterAgent.invoke({ messages: [userPrompt] });
-    relevantChannels = result.structuredResponse?.relevant_channels ?? [];
+    relevantChannels = result.structuredResponse?.relevantChannels ?? [];
   } catch {
     relevantChannels = channels.map((c) => c.channel);
   }
@@ -170,7 +170,7 @@ export const extractNode = async (
         `@${rc}` === channel.channel,
     );
     if (match) {
-      postsToExtract.push(...channel.last_tracked_messages);
+      postsToExtract.push(...channel.lastTrackedMessages);
     }
   }
 
@@ -253,19 +253,19 @@ export const extractNode = async (
           ...extracted,
           channel: post.channel,
           messageUrl: post.url,
-          time_relevance: extracted?.time_relevance ?? 0.5,
+          timeRelevance: extracted?.timeRelevance ?? 0.5,
           valid: true,
         } as ValidatedExtraction;
       } catch {
         return {
           channel: post.channel,
-          region_relevance: 0,
-          source_trust: 0,
+          regionRelevance: 0,
+          sourceTrust: 0,
           tone: "neutral" as const,
-          time_relevance: 0,
+          timeRelevance: 0,
           confidence: 0,
           valid: false,
-          reject_reason: "extraction_error",
+          rejectReason: "extraction_error",
         };
       }
     }),

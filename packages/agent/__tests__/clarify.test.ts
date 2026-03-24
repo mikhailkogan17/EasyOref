@@ -65,25 +65,25 @@ vi.mock("@easyoref/gramjs", () => ({
 
 function makeVotedResult(overrides: Partial<VotedResult> = {}): VotedResult {
   return VotedResultSchema.parse({
-    eta_refined_minutes: undefined,
+    etaRefinedMinutes: undefined,
     eta_citations: [],
-    country_origins: [{ name: "Lebanon", citations: [1] }],
-    rocket_count_min: 10,
-    rocket_count_max: 15,
+    countryOrigins: [{ name: "Lebanon", citations: [1] }],
+    rocketCountMin: 10,
+    rocketCountMax: 15,
     rocket_citations: [1, 2],
     rocket_confidence: 0.7,
-    is_cassette: undefined,
-    is_cassette_confidence: 0,
+    isCassette: undefined,
+    isCassette_confidence: 0,
     intercepted: 8,
-    intercepted_qual: undefined,
-    intercepted_confidence: 0.6,
-    sea_impact: undefined,
-    sea_impact_qual: undefined,
+    interceptedQual: undefined,
+    interceptedConfidence: 0.6,
+    seaImpact: undefined,
+    seaImpactQual: undefined,
     sea_confidence: 0,
-    open_area_impact: undefined,
-    open_area_impact_qual: undefined,
+    openAreaImpact: undefined,
+    openAreaImpactQual: undefined,
     open_area_confidence: 0,
-    hits_confirmed: 1,
+    hitsConfirmed: 1,
     hits_citations: [2],
     hits_confidence: 0.4,
     casualties: undefined,
@@ -93,7 +93,7 @@ function makeVotedResult(overrides: Partial<VotedResult> = {}): VotedResult {
     injuries_citations: [],
     injuries_confidence: 0,
     confidence: 0.45,
-    sources_count: 2,
+    sourcesCount: 2,
     citedSources: [
       { index: 1, channel: "@idf_telegram", messageUrl: undefined },
       { index: 2, channel: "@N12LIVE", messageUrl: undefined },
@@ -107,23 +107,23 @@ function makeExtraction(
 ): ValidatedExtraction {
   return {
     channel: "@idf_telegram",
-    region_relevance: 0.9,
-    source_trust: 0.8,
+    regionRelevance: 0.9,
+    sourceTrust: 0.8,
     tone: "calm",
-    time_relevance: 0.9,
-    country_origin: "Lebanon",
-    rocket_count: 12,
-    is_cassette: undefined,
+    timeRelevance: 0.9,
+    countryOrigin: "Lebanon",
+    rocketCount: 12,
+    isCassette: undefined,
     intercepted: 8,
-    intercepted_qual: undefined,
-    sea_impact: undefined,
-    sea_impact_qual: undefined,
-    open_area_impact: undefined,
-    open_area_impact_qual: undefined,
-    hits_confirmed: 1,
+    interceptedQual: undefined,
+    seaImpact: undefined,
+    seaImpactQual: undefined,
+    openAreaImpact: undefined,
+    openAreaImpactQual: undefined,
+    hitsConfirmed: 1,
     casualties: undefined,
     injuries: undefined,
-    eta_refined_minutes: undefined,
+    etaRefinedMinutes: undefined,
     confidence: 0.7,
     valid: true,
     ...overrides,
@@ -439,41 +439,41 @@ describe("contradiction detection", () => {
     voted: VotedResult,
   ): string {
     const issues: string[] = [];
-    if (voted.country_origins && voted.country_origins.length > 1) {
-      const names = voted.country_origins.map((c) => c.name).join(", ");
+    if (voted.countryOrigins && voted.countryOrigins.length > 1) {
+      const names = voted.countryOrigins.map((c) => c.name).join(", ");
       issues.push(`Multiple origin countries reported: ${names}`);
     }
     if (
-      voted.rocket_count_min !== undefined &&
-      voted.rocket_count_max !== undefined &&
-      voted.rocket_count_max - voted.rocket_count_min > 3
+      voted.rocketCountMin !== undefined &&
+      voted.rocketCountMax !== undefined &&
+      voted.rocketCountMax - voted.rocketCountMin > 3
     ) {
       issues.push(
-        `Wide rocket count range: ${voted.rocket_count_min}–${voted.rocket_count_max}`,
+        `Wide rocket count range: ${voted.rocketCountMin}–${voted.rocketCountMax}`,
       );
     }
-    if (voted.intercepted_confidence < 0.5 && voted.intercepted !== undefined) {
+    if (voted.interceptedConfidence < 0.5 && voted.intercepted !== undefined) {
       issues.push(
         `Intercepted count (${
           voted.intercepted
-        }) has low confidence: ${voted.intercepted_confidence.toFixed(2)}`,
+        }) has low confidence: ${voted.interceptedConfidence.toFixed(2)}`,
       );
     }
-    if (voted.hits_confidence < 0.5 && voted.hits_confirmed !== undefined) {
+    if (voted.hitsConfidence < 0.5 && voted.hitsConfirmed !== undefined) {
       issues.push(
         `Hits confirmed (${
-          voted.hits_confirmed
-        }) has low confidence: ${voted.hits_confidence.toFixed(2)}`,
+          voted.hitsConfirmed
+        }) has low confidence: ${voted.hitsConfidence.toFixed(2)}`,
       );
     }
     issues.push(`Overall confidence: ${voted.confidence}`);
-    issues.push(`Sources count: ${voted.sources_count}`);
+    issues.push(`Sources count: ${voted.sourcesCount}`);
     return issues.join("\n");
   }
 
   it("detects multiple country origins", () => {
     const voted = makeVotedResult({
-      country_origins: [
+      countryOrigins: [
         { name: "Lebanon", citations: [1] },
         { name: "Iran", citations: [2] },
       ],
@@ -486,8 +486,8 @@ describe("contradiction detection", () => {
 
   it("detects wide rocket count range", () => {
     const voted = makeVotedResult({
-      rocket_count_min: 5,
-      rocket_count_max: 20,
+      rocketCountMin: 5,
+      rocketCountMax: 20,
     });
     const result = describeContradictions([], voted);
     expect(result).toContain("Wide rocket count range: 5–20");
@@ -496,7 +496,7 @@ describe("contradiction detection", () => {
   it("detects low intercepted confidence", () => {
     const voted = makeVotedResult({
       intercepted: 5,
-      intercepted_confidence: 0.3,
+      interceptedConfidence: 0.3,
     });
     const result = describeContradictions([], voted);
     expect(result).toContain("Intercepted count (5) has low confidence: 0.30");
@@ -504,8 +504,8 @@ describe("contradiction detection", () => {
 
   it("detects low hits confidence", () => {
     const voted = makeVotedResult({
-      hits_confirmed: 2,
-      hits_confidence: 0.25,
+      hitsConfirmed: 2,
+      hitsConfidence: 0.25,
     });
     const result = describeContradictions([], voted);
     expect(result).toContain("Hits confirmed (2) has low confidence: 0.25");
@@ -513,15 +513,15 @@ describe("contradiction detection", () => {
 
   it("does not flag narrow rocket count range", () => {
     const voted = makeVotedResult({
-      rocket_count_min: 10,
-      rocket_count_max: 12,
+      rocketCountMin: 10,
+      rocketCountMax: 12,
     });
     const result = describeContradictions([], voted);
     expect(result).not.toContain("Wide rocket count range");
   });
 
   it("always includes overall confidence and sources count", () => {
-    const voted = makeVotedResult({ confidence: 0.45, sources_count: 3 });
+    const voted = makeVotedResult({ confidence: 0.45, sourcesCount: 3 });
     const result = describeContradictions([], voted);
     expect(result).toContain("Overall confidence: 0.45");
     expect(result).toContain("Sources count: 3");

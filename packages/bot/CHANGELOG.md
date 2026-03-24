@@ -11,9 +11,9 @@
   - Add `injuries_cause` field ("rocket" | "rushing_to_shelter") — now shown in resolved message as "Пострадавшие: 4 (на пути в укрытие)"
   - Fix duplicate country origins (case-insensitive dedup: "Iran" + "iran" → one entry)
   - hit_location now prefers specific city names over macro-regions (LLM prompt rule)
-  - Lower rocket count post-filter thresholds: region_relevance 0.5→0.3, confidence 0.3→0.2 for rocket-only posts
+  - Lower rocket count post-filter thresholds: regionRelevance 0.5→0.3, confidence 0.3→0.2 for rocket-only posts
   - Rocket display: require confidence ≥ 0.55, show (?) below CERTAIN
-  - Administrative phase notices (all-clear, shelter-leave) from IDF/Home Front Command: set time_relevance=0, extract no data
+  - Administrative phase notices (all-clear, shelter-leave) from IDF/Home Front Command: set timeRelevance=0, extract no data
 
 ## 1.18.4
 
@@ -30,7 +30,7 @@
   - **Geo-filter for debris hits**: extraction prompt now requires hits/damage to be attributed to the
     configured alert zone. If the source describes damage in a _different_ city, the actual city with
     its distance is added to `hit_detail` (e.g. `"Ришон-ле-Цион (~20km)"`) and the alert-zone
-    `hits_confirmed` flag is not set.
+    `hitsConfirmed` flag is not set.
   - **Resolved phase timing**: update interval 3 min → 2.5 min (`150 000 ms`), initial delay 1 min →
     1.5 min (`90 000 ms`), total window remains 10 min.
 
@@ -51,7 +51,7 @@
   - **Geo-filter for debris hits**: extraction prompt now requires hits/damage to be attributed to the
     configured alert zone. If the source describes damage in a _different_ city, the actual city with
     its distance is added to `hit_detail` (e.g. `"Ришон-ле-Цион (~20km)"`) and the alert-zone
-    `hits_confirmed` flag is not set.
+    `hitsConfirmed` flag is not set.
   - **Resolved phase timing**: update interval 3 min → 2.5 min (`150 000 ms`), initial delay 1 min →
     1.5 min (`90 000 ms`), total window remains 10 min.
 
@@ -78,7 +78,7 @@
   - Add `hit_detail` field: LLM extracts free-text impact context (e.g. "на открытой местности", "здание")
   - Display qualifiers now show `(location, detail, type)` instead of just location
   - Pass existing enrichment to extraction prompt for source cross-reference scoring
-  - Posts about different events get `time_relevance=0` when enrichment already established
+  - Posts about different events get `timeRelevance=0` when enrichment already established
   - Change monitoring label to "Сообщение обновляется..." in all 4 languages
 
 ## 1.17.1
@@ -169,7 +169,7 @@
   - Fix Lebanon bug: stale posts from previous attacks no longer contaminate current session
   - Phase-specific extraction prompts (early_warning/siren/resolved)
   - Time-bounded pre-filter with TIME_WINDOW_MS per phase
-  - LLM time_relevance scoring, post-filter rejects < 0.5
+  - LLM timeRelevance scoring, post-filter rejects < 0.5
   - Carry-forward enrichment data via Redis across phases
   - Inline [[1]](url) citations (no superscripts, no footer)
   - Edit dedup via textHash

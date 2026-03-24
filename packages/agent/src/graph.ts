@@ -86,9 +86,9 @@ import {
 } from "@langchain/langgraph";
 import { z } from "zod";
 import { clarifyNode } from "./nodes/clarify-node.js";
+import { editNode } from "./nodes/edit-node.js";
 import { extractNode } from "./nodes/extract-node.js";
 import { filterNode } from "./nodes/filter-node.js";
-import { editNode } from "./nodes/message-node.js";
 import { voteNode } from "./nodes/vote-node.js";
 
 export const AgentState = new StateSchema({
@@ -127,11 +127,11 @@ const shouldClarify = (state: AgentStateType): "clarify" | "edit" => {
     return "clarify";
   }
 
-  const origins = state.votedResult.country_origins;
+  const origins = state.votedResult.countryOrigins;
   if (
     origins &&
     origins.length === 1 &&
-    state.votedResult.sources_count === 1
+    state.votedResult.sourcesCount === 1
   ) {
     if (
       origins[0]!.name === "Lebanon" &&

@@ -38,13 +38,13 @@ export type TrackedMessage = z.infer<typeof TrackedMessageSchema>;
 
 export const ChannelWithUpdatesSchema = z.object({
   channel: z.string().min(1),
-  prev_tracked_messages: z
+  prevTrackedMessages: z
     .array(TrackedMessageSchema)
     .default([])
     .describe(
       "Posts from session start to last enrichment job (already processed)",
     ),
-  last_tracked_messages: z
+  lastTrackedMessages: z
     .array(TrackedMessageSchema)
     .default([])
     .describe("Posts since last enrichment job (new, need processing)"),
@@ -52,9 +52,9 @@ export const ChannelWithUpdatesSchema = z.object({
 export type ChannelWithUpdates = z.infer<typeof ChannelWithUpdatesSchema>;
 
 export const ChannelTrackingSchema = z.object({
-  track_start_timestamp: z.number().int().min(0),
-  last_update_timestamp: z.number().int().min(0),
-  channels_with_updates: z.array(ChannelWithUpdatesSchema).default([]),
+  trackStartTimestamp: z.number().int().min(0),
+  lastUpdateTimestamp: z.number().int().min(0),
+  channelsWithUpdates: z.array(ChannelWithUpdatesSchema).default([]),
 });
 export type ChannelTracking = z.infer<typeof ChannelTrackingSchema>;
 
@@ -77,7 +77,9 @@ export type RelevanceCheck = z.infer<typeof RelevanceCheckSchema>;
 // ─────────────────────────────────────────────────────────
 
 export const FilterOutputSchema = z.object({
-  relevant_channels: z.array(z.string()).describe("Channels with important intel"),
+  relevantChannels: z
+    .array(z.string())
+    .describe("Channels with important intel"),
 });
 export type FilterOutput = z.infer<typeof FilterOutputSchema>;
 
@@ -87,54 +89,51 @@ export type FilterOutput = z.infer<typeof FilterOutputSchema>;
 
 export const ExtractionResultSchema = z.object({
   channel: z.string().min(1).describe("Source Telegram channel name"),
-  region_relevance: z
+  regionRelevance: z
     .number()
     .min(0)
     .max(1)
     .describe(
       "V1: region relevance (0-1) — does post mention our alert region?",
     ),
-  source_trust: z
+  sourceTrust: z
     .number()
     .min(0)
     .max(1)
     .describe("V2: source trust (0-1) — factual reporting vs rumors/panic?"),
-  country_origin: z.string().optional().describe("Extracted data"),
-  rocket_count: z.number().int().min(0).optional(),
-  is_cassette: z.boolean().optional(),
+  countryOrigin: z.string().optional().describe("Extracted data"),
+  rocketCount: z.number().int().min(0).optional(),
+  isCassette: z.boolean().optional(),
   intercepted: z
     .number()
     .int()
     .min(0)
     .optional()
     .describe("Rocket breakdown: intercepted by Iron Dome"),
-  intercepted_qual: QualCountSchema.optional().describe(
+  interceptedQual: QualCountSchema.optional().describe(
     "Qualitative descriptor when no exact number is stated (undefined if exact number given)",
   ),
-  sea_impact: z
+  seaImpact: z
     .number()
     .int()
     .min(0)
     .optional()
     .describe("Rocket breakdown: fell in sea/empty area"),
-  sea_impact_qual: QualCountSchema.optional(),
-  open_area_impact: z
+  seaImpactQual: QualCountSchema.optional(),
+  openAreaImpact: z
     .number()
     .int()
     .min(0)
     .optional()
     .describe("Rocket breakdown: hit open/populated ground"),
-  open_area_impact_qual: QualCountSchema.optional(),
-  hits_confirmed: z.number().int().min(0).optional(),
-  hit_location: z
+  openAreaImpactQual: QualCountSchema.optional(),
+  hitsConfirmed: z.number().int().min(0).optional(),
+  hitLocation: z
     .string()
     .optional()
     .describe("Region where impact occurred (in UI language)"),
-  hit_type: z
-    .enum(["direct", "shrapnel"])
-    .optional()
-    .describe("Type of impact"),
-  hit_detail: z
+  hitType: z.enum(["direct", "shrapnel"]).optional().describe("Type of impact"),
+  hitDetail: z
     .string()
     .optional()
     .describe(
@@ -149,14 +148,14 @@ export const ExtractionResultSchema = z.object({
       "Casualties reported (injured/killed) — primarily resolved phase",
     ),
   injuries: z.number().int().min(0).optional(),
-  injuries_cause: z
+  injuriesCause: z
     .enum(["rocket", "rushing_to_shelter"])
     .optional()
     .describe(
       "Cause of injuries: rocket fragment/direct hit vs panic/rushing to shelter",
     ),
-  eta_refined_minutes: z.number().int().min(0).optional(),
-  rocket_detail: z
+  etaRefinedMinutes: z.number().int().min(0).optional(),
+  rocketDetail: z
     .string()
     .optional()
     .describe(
@@ -170,12 +169,12 @@ export const ExtractionResultSchema = z.object({
     .min(0)
     .max(1)
     .describe("Overall extraction confidence (0-1)"),
-  time_relevance: z
+  timeRelevance: z
     .number()
     .min(0)
     .max(1)
     .describe(
-      "Time relevance (0-1) — does this post discuss the CURRENT attack? LLM sets: 0 = clearly about a previous/different event, 1 = current event. Post-filter rejects posts with time_relevance < 0.5.",
+      "Time relevance (0-1) — does this post discuss the CURRENT attack? LLM sets: 0 = clearly about a previous/different event, 1 = current event. Post-filter rejects posts with timeRelevance < 0.5.",
     ),
 });
 export type ExtractionResult = z.infer<typeof ExtractionResultSchema>;
@@ -186,9 +185,8 @@ export type ExtractionResult = z.infer<typeof ExtractionResultSchema>;
 
 export const ValidatedExtractionSchema = ExtractionResultSchema.extend({
   valid: z.boolean().describe("Passed all three validators?"),
-  reject_reason: z.string().optional().describe("Reason if rejected"),
+  rejectReason: z.string().optional().describe("Reason if rejected"),
   messageUrl: z
-    .string()
     .url()
     .optional()
     .describe("Link to original Telegram post (from ChannelPost.messageUrl)"),
@@ -212,31 +210,31 @@ export const CountryOriginSchema = z.object({
 });
 
 export const VotedResultSchema = z.object({
-  eta_refined_minutes: z
+  etaRefinedMinutes: z
     .number()
     .int()
     .min(0)
     .optional()
     .describe("ETA in minutes (highest-confidence source)"),
-  eta_citations: z
+  etaCitations: z
     .array(z.number().int().min(1))
     .default([])
     .describe("Citation indices that provided ETA"),
 
-  country_origins: z
+  countryOrigins: z
     .array(CountryOriginSchema)
     .default([])
     .describe("Unique origin countries with per-country citation indices"),
 
-  rocket_count_min: z
+  rocketCountMin: z
     .number()
     .int()
     .min(0)
     .optional()
     .describe("Rocket count range across sources (min == max → exact)"),
-  rocket_count_max: z.number().int().min(0).optional(),
-  rocket_citations: z.array(z.number().int().min(1)).default([]),
-  rocket_confidence: z
+  rocketCountMax: z.number().int().min(0).optional(),
+  rocketCitations: z.array(z.number().int().min(1)).default([]),
+  rocketConfidence: z
     .number()
     .min(0)
     .max(1)
@@ -244,15 +242,15 @@ export const VotedResultSchema = z.object({
     .describe(
       "Avg weighted confidence of sources reporting rocket count (for uncertainty marker)",
     ),
-  rocket_detail: z
+  rocketDetail: z
     .string()
     .optional()
     .describe(
       "Verbatim per-region rocket breakdown if sources split by region",
     ),
 
-  is_cassette: z.boolean().optional(),
-  is_cassette_confidence: z
+  isCassette: z.boolean().optional(),
+  isCassetteConfidence: z
     .number()
     .min(0)
     .max(1)
@@ -269,68 +267,68 @@ export const VotedResultSchema = z.object({
     .describe(
       "Rocket breakdown (median values; undefined if no sources reported)",
     ),
-  intercepted_qual: QualCountSchema.optional(),
-  intercepted_confidence: z
+  interceptedQual: QualCountSchema.optional(),
+  interceptedConfidence: z
     .number()
     .min(0)
     .max(1)
     .default(0)
     .describe("Avg weighted confidence of sources reporting intercepted count"),
-  sea_impact: z.number().int().min(0).optional(),
-  sea_impact_qual: QualCountSchema.optional(),
-  sea_confidence: z.number().min(0).max(1).default(0),
-  open_area_impact: z.number().int().min(0).optional(),
-  open_area_impact_qual: QualCountSchema.optional(),
-  open_area_confidence: z.number().min(0).max(1).default(0),
+  seaImpact: z.number().int().min(0).optional(),
+  seaImpactQual: QualCountSchema.optional(),
+  seaConfidence: z.number().min(0).max(1).default(0),
+  openAreaImpact: z.number().int().min(0).optional(),
+  openAreaImpactQual: QualCountSchema.optional(),
+  openAreaConfidence: z.number().min(0).max(1).default(0),
 
-  hits_confirmed: z.number().int().min(0).optional(),
-  hits_citations: z
+  hitsConfirmed: z.number().int().min(0).optional(),
+  hitsCitations: z
     .array(z.number().int().min(1))
     .default([])
     .describe("Citation indices that provided hits data"),
-  hits_confidence: z
+  hitsConfidence: z
     .number()
     .min(0)
     .max(1)
     .default(0)
     .describe("Avg weighted confidence of sources reporting confirmed hits"),
-  hit_location: z
+  hitLocation: z
     .string()
     .optional()
     .describe(
       "Region where impact occurred (in UI language, from highest-confidence source)",
     ),
-  hit_type: z
+  hitType: z
     .enum(["direct", "shrapnel"])
     .optional()
     .describe("Type of impact: direct or shrapnel/debris"),
-  hit_detail: z
+  hitDetail: z
     .string()
     .optional()
     .describe(
       'Impact detail: where/how (e.g. "на открытой местности", "здание", "в море")',
     ),
-  no_impacts: z
+  noImpacts: z
     .boolean()
     .default(false)
     .describe('Sources explicitly confirm NO impacts ("прилетов нет")'),
-  no_impacts_citations: z.array(z.number().int().min(1)).default([]),
-  intercepted_citations: z
+  noImpactsCitations: z.array(z.number().int().min(1)).default([]),
+  interceptedCitations: z
     .array(z.number().int().min(1))
     .default([])
     .describe("Citation indices for intercepted data"),
 
   casualties: z.number().int().min(0).optional(),
-  casualties_citations: z.array(z.number().int().min(1)).default([]),
-  casualties_confidence: z.number().min(0).max(1).default(0),
+  casualtiesCitations: z.array(z.number().int().min(1)).default([]),
+  casualtiesConfidence: z.number().min(0).max(1).default(0),
 
   injuries: z.number().int().min(0).optional(),
-  injuries_cause: z.enum(["rocket", "rushing_to_shelter"]).optional(),
-  injuries_citations: z.array(z.number().int().min(1)).default([]),
-  injuries_confidence: z.number().min(0).max(1).default(0),
+  injuriesCause: z.enum(["rocket", "rushing_to_shelter"]).optional(),
+  injuriesCitations: z.array(z.number().int().min(1)).default([]),
+  injuriesConfidence: z.number().min(0).max(1).default(0),
 
   confidence: z.number().min(0).max(1).default(0),
-  sources_count: z.number().int().min(0).default(0),
+  sourcesCount: z.number().int().min(0).default(0),
   citedSources: z
     .array(CitedSourceSchema)
     .default([])

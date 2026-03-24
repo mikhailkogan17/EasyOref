@@ -11,13 +11,13 @@
  * The API key is read from config.yaml automatically if present.
  */
 
-import { describe, expect, it } from "vitest";
 import {
   emptyEnrichmentData,
   type CitedSource,
   type ValidatedExtraction,
   type VotedResult,
 } from "@easyoref/shared";
+import { describe, expect, it } from "vitest";
 
 // ── Load config for API key ────────────────────────────
 
@@ -104,17 +104,14 @@ vi.mock("../agent/clarify.js", () => ({
 }));
 
 // Import AFTER mocks
+import { config, textHash, toIsraelTime } from "@easyoref/shared";
+import { extractAgent, postFilter } from "../src/nodes/extract-node.js";
 import {
   buildEnrichedMessage,
   buildEnrichmentFromVote,
   inlineCites,
   inlineCitesFromData,
-} from "../src/nodes/message-node.js";
-import { textHash, toIsraelTime, config } from "@easyoref/shared";
-import {
-  extractAgent,
-  postFilter,
-} from "../src/nodes/extract-node.js";
+} from "../src/nodes/message.js";
 import { vote } from "../src/nodes/vote-node.js";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -183,111 +180,111 @@ describe("textHash", () => {
 // ── Post-filter ────────────────────────────────────────
 
 describe("postFilter", () => {
-  it("rejects stale posts (time_relevance < 0.5)", () => {
+  it("rejects stale posts (timeRelevance < 0.5)", () => {
     const ext: ValidatedExtraction = {
       channel: "@idf_telegram",
-      region_relevance: 0.9,
-      source_trust: 0.9,
+      regionRelevance: 0.9,
+      sourceTrust: 0.9,
       tone: "calm",
-      time_relevance: 0.2, // ← stale!
-      country_origin: "Lebanon",
-      rocket_count: undefined,
-      is_cassette: undefined,
+      timeRelevance: 0.2, // ← stale!
+      countryOrigin: "Lebanon",
+      rocketCount: undefined,
+      isCassette: undefined,
       intercepted: undefined,
-      intercepted_qual: undefined,
-      sea_impact: undefined,
-      sea_impact_qual: undefined,
-      open_area_impact: undefined,
-      open_area_impact_qual: undefined,
-      hits_confirmed: undefined,
+      interceptedQual: undefined,
+      seaImpact: undefined,
+      seaImpactQual: undefined,
+      openAreaImpact: undefined,
+      openAreaImpactQual: undefined,
+      hitsConfirmed: undefined,
       casualties: undefined,
       injuries: undefined,
-      eta_refined_minutes: undefined,
+      etaRefinedMinutes: undefined,
       confidence: 0.9,
       valid: true,
     };
 
     const result = postFilter([ext], "test");
     expect(result[0]!.valid).toBe(false);
-    expect(result[0]!.reject_reason).toBe("stale_post");
+    expect(result[0]!.rejectReason).toBe("stale_post");
   });
 
   it("rejects region-irrelevant posts", () => {
     const ext: ValidatedExtraction = {
       channel: "@N12LIVE",
-      region_relevance: 0.2,
-      source_trust: 0.9,
+      regionRelevance: 0.2,
+      sourceTrust: 0.9,
       tone: "calm",
-      time_relevance: 1.0,
-      country_origin: "Iran",
-      rocket_count: 10,
-      is_cassette: undefined,
+      timeRelevance: 1.0,
+      countryOrigin: "Iran",
+      rocketCount: 10,
+      isCassette: undefined,
       intercepted: undefined,
-      intercepted_qual: undefined,
-      sea_impact: undefined,
-      sea_impact_qual: undefined,
-      open_area_impact: undefined,
-      open_area_impact_qual: undefined,
-      hits_confirmed: undefined,
+      interceptedQual: undefined,
+      seaImpact: undefined,
+      seaImpactQual: undefined,
+      openAreaImpact: undefined,
+      openAreaImpactQual: undefined,
+      hitsConfirmed: undefined,
       casualties: undefined,
       injuries: undefined,
-      eta_refined_minutes: undefined,
+      etaRefinedMinutes: undefined,
       confidence: 0.9,
       valid: true,
     };
 
     const result = postFilter([ext], "test");
-    expect(result[0]!.reject_reason).toBe("region_irrelevant");
+    expect(result[0]!.rejectReason).toBe("region_irrelevant");
   });
 
   it("rejects no-data posts", () => {
     const ext: ValidatedExtraction = {
       channel: "@N12LIVE",
-      region_relevance: 0.9,
-      source_trust: 0.9,
+      regionRelevance: 0.9,
+      sourceTrust: 0.9,
       tone: "calm",
-      time_relevance: 1.0,
-      country_origin: undefined,
-      rocket_count: undefined,
-      is_cassette: undefined,
+      timeRelevance: 1.0,
+      countryOrigin: undefined,
+      rocketCount: undefined,
+      isCassette: undefined,
       intercepted: undefined,
-      intercepted_qual: undefined,
-      sea_impact: undefined,
-      sea_impact_qual: undefined,
-      open_area_impact: undefined,
-      open_area_impact_qual: undefined,
-      hits_confirmed: undefined,
+      interceptedQual: undefined,
+      seaImpact: undefined,
+      seaImpactQual: undefined,
+      openAreaImpact: undefined,
+      openAreaImpactQual: undefined,
+      hitsConfirmed: undefined,
       casualties: undefined,
       injuries: undefined,
-      eta_refined_minutes: undefined,
+      etaRefinedMinutes: undefined,
       confidence: 0.9,
       valid: true,
     };
 
     const result = postFilter([ext], "test");
-    expect(result[0]!.reject_reason).toBe("no_data");
+    expect(result[0]!.rejectReason).toBe("no_data");
   });
 
   it("passes valid extraction with all checks", () => {
     const ext: ValidatedExtraction = {
       channel: "@N12LIVE",
-      region_relevance: 0.9,
-      source_trust: 0.9,
+      regionRelevance: 0.9,
+      sourceTrust: 0.9,
       tone: "calm",
-      time_relevance: 1.0,
-      country_origin: "Iran",
-      rocket_count: 10,
-      is_cassette: undefined,
+      timeRelevance: 1.0,
+      countryOrigin: "Iran",
+      rocketCount: 10,
+      isCassette: undefined,
       intercepted: undefined,
-      intercepted_qual: undefined,
-      sea_impact: undefined,
-      sea_impact_qual: undefined,
-      open_area_impact: undefined,
-      open_area_impact_qual: undefined,
-      hits_confirmed: undefined,
+      interceptedQual: undefined,
+      seaImpact: undefined,
+      seaImpactQual: undefined,
+      openAreaImpact: undefined,
+      openAreaImpactQual: undefined,
+      hitsConfirmed: undefined,
       casualties: undefined,
       injuries: undefined,
-      eta_refined_minutes: undefined,
+      etaRefinedMinutes: undefined,
       confidence: 0.8,
       valid: true,
     };
@@ -308,26 +305,26 @@ describe("vote", () => {
   it("returns undefined when all extractions are invalid", () => {
     const ext: ValidatedExtraction = {
       channel: "@N12LIVE",
-      region_relevance: 0.9,
-      source_trust: 0.9,
+      regionRelevance: 0.9,
+      sourceTrust: 0.9,
       tone: "calm",
-      time_relevance: 0.1,
-      country_origin: "Iran",
-      rocket_count: undefined,
-      is_cassette: undefined,
+      timeRelevance: 0.1,
+      countryOrigin: "Iran",
+      rocketCount: undefined,
+      isCassette: undefined,
       intercepted: undefined,
-      intercepted_qual: undefined,
-      sea_impact: undefined,
-      sea_impact_qual: undefined,
-      open_area_impact: undefined,
-      open_area_impact_qual: undefined,
-      hits_confirmed: undefined,
+      interceptedQual: undefined,
+      seaImpact: undefined,
+      seaImpactQual: undefined,
+      openAreaImpact: undefined,
+      openAreaImpactQual: undefined,
+      hitsConfirmed: undefined,
       casualties: undefined,
       injuries: undefined,
-      eta_refined_minutes: undefined,
+      etaRefinedMinutes: undefined,
       confidence: 0.8,
       valid: false,
-      reject_reason: "stale_post",
+      rejectReason: "stale_post",
     };
     const result = vote([ext], "test");
     expect(result).toBeUndefined();
@@ -336,23 +333,23 @@ describe("vote", () => {
   it("aggregates country origins from multiple sources", () => {
     const ext1: ValidatedExtraction = {
       channel: "@N12LIVE",
-      region_relevance: 0.9,
-      source_trust: 0.9,
+      regionRelevance: 0.9,
+      sourceTrust: 0.9,
       tone: "calm",
-      time_relevance: 1.0,
-      country_origin: "Iran",
-      rocket_count: 15,
-      is_cassette: undefined,
+      timeRelevance: 1.0,
+      countryOrigin: "Iran",
+      rocketCount: 15,
+      isCassette: undefined,
       intercepted: undefined,
-      intercepted_qual: undefined,
-      sea_impact: undefined,
-      sea_impact_qual: undefined,
-      open_area_impact: undefined,
-      open_area_impact_qual: undefined,
-      hits_confirmed: undefined,
+      interceptedQual: undefined,
+      seaImpact: undefined,
+      seaImpactQual: undefined,
+      openAreaImpact: undefined,
+      openAreaImpactQual: undefined,
+      hitsConfirmed: undefined,
       casualties: undefined,
       injuries: undefined,
-      eta_refined_minutes: undefined,
+      etaRefinedMinutes: undefined,
       confidence: 0.9,
       valid: true,
       messageUrl: "https://t.me/N12LIVE/167775",
@@ -360,8 +357,8 @@ describe("vote", () => {
     const ext2: ValidatedExtraction = {
       ...ext1,
       channel: "@yediotnews25",
-      country_origin: "Iran",
-      rocket_count: 12,
+      countryOrigin: "Iran",
+      rocketCount: 12,
       confidence: 0.85,
       messageUrl: "https://t.me/yediotnews25/88901",
     };
@@ -370,34 +367,34 @@ describe("vote", () => {
     const voted = result!;
 
     expect(voted).not.toBeUndefined();
-    expect(voted.country_origins).toHaveLength(1);
-    expect(voted.country_origins![0]!.name).toBe("Iran");
-    expect(voted.country_origins![0]!.citations).toEqual([1, 2]);
-    expect(voted.rocket_count_min).toBe(12);
-    expect(voted.rocket_count_max).toBe(15);
-    expect(voted.sources_count).toBe(2);
+    expect(voted.countryOrigins).toHaveLength(1);
+    expect(voted.countryOrigins![0]!.name).toBe("Iran");
+    expect(voted.countryOrigins![0]!.citations).toEqual([1, 2]);
+    expect(voted.rocketCountMin).toBe(12);
+    expect(voted.rocketCountMax).toBe(15);
+    expect(voted.sourcesCount).toBe(2);
   });
 
   it("handles casualties in resolved phase", () => {
     const ext: ValidatedExtraction = {
       channel: "@N12LIVE",
-      region_relevance: 0.9,
-      source_trust: 0.9,
+      regionRelevance: 0.9,
+      sourceTrust: 0.9,
       tone: "calm",
-      time_relevance: 1.0,
-      country_origin: "Iran",
-      rocket_count: 15,
-      is_cassette: undefined,
+      timeRelevance: 1.0,
+      countryOrigin: "Iran",
+      rocketCount: 15,
+      isCassette: undefined,
       intercepted: 12,
-      intercepted_qual: undefined,
-      sea_impact: 2,
-      sea_impact_qual: undefined,
-      open_area_impact: undefined,
-      open_area_impact_qual: undefined,
-      hits_confirmed: 1,
+      interceptedQual: undefined,
+      seaImpact: 2,
+      seaImpactQual: undefined,
+      openAreaImpact: undefined,
+      openAreaImpactQual: undefined,
+      hitsConfirmed: 1,
       casualties: 0,
       injuries: 3,
-      eta_refined_minutes: undefined,
+      etaRefinedMinutes: undefined,
       confidence: 0.9,
       valid: true,
       messageUrl: "https://t.me/N12LIVE/167790",
@@ -407,8 +404,8 @@ describe("vote", () => {
     const voted = result!;
 
     expect(voted.intercepted).toBe(12);
-    expect(voted.sea_impact).toBe(2);
-    expect(voted.hits_confirmed).toBe(1);
+    expect(voted.seaImpact).toBe(2);
+    expect(voted.hitsConfirmed).toBe(1);
     expect(voted.injuries).toBe(3);
     expect(voted.casualties).toBeUndefined(); // 0 is not > 0
   });
@@ -427,39 +424,39 @@ describe("buildEnrichmentFromVote", () => {
 
     // Siren vote has interception data but no origin
     const sirenVote: VotedResult = {
-      eta_refined_minutes: undefined,
-      eta_citations: [],
-      country_origins: [],
-      rocket_count_min: undefined,
-      rocket_count_max: undefined,
-      rocket_citations: [],
-      rocket_confidence: 0,
-      is_cassette: undefined,
-      is_cassette_confidence: 0,
+      etaRefinedMinutes: undefined,
+      etaCitations: [],
+      countryOrigins: [],
+      rocketCountMin: undefined,
+      rocketCountMax: undefined,
+      rocketCitations: [],
+      rocketConfidence: 0,
+      isCassette: undefined,
+      isCassetteConfidence: 0,
       intercepted: 8,
-      intercepted_qual: undefined,
-      intercepted_confidence: 0.8,
-      sea_impact: undefined,
-      sea_impact_qual: undefined,
-      sea_confidence: 0,
-      open_area_impact: undefined,
-      open_area_impact_qual: undefined,
-      open_area_confidence: 0,
-      hits_confirmed: undefined,
-      hits_citations: [],
-      hits_confidence: 0,
-      no_impacts: false,
-      no_impacts_citations: [],
-      intercepted_citations: [1],
-      rocket_detail: undefined,
+      interceptedQual: undefined,
+      interceptedConfidence: 0.8,
+      seaImpact: undefined,
+      seaImpactQual: undefined,
+      seaConfidence: 0,
+      openAreaImpact: undefined,
+      openAreaImpactQual: undefined,
+      openAreaConfidence: 0,
+      hitsConfirmed: undefined,
+      hitsCitations: [],
+      hitsConfidence: 0,
+      noImpacts: false,
+      noImpactsCitations: [],
+      interceptedCitations: [1],
+      rocketDetail: undefined,
       casualties: undefined,
-      casualties_citations: [],
-      casualties_confidence: 0,
+      casualtiesCitations: [],
+      casualtiesConfidence: 0,
       injuries: undefined,
-      injuries_citations: [],
-      injuries_confidence: 0,
+      injuriesCitations: [],
+      injuriesConfidence: 0,
       confidence: 0.8,
-      sources_count: 1,
+      sourcesCount: 1,
       citedSources: [
         {
           index: 1,
@@ -688,9 +685,12 @@ describe.skipIf(!HAS_API)("LLM extraction (real API)", () => {
     const regionHint = ALERT_AREAS.join(", ");
 
     const phaseInstructions = {
-      early_warning: "PHASE: EARLY WARNING. Focus on country_origin, eta_refined_minutes, rocket_count, is_cassette.",
-      siren: "PHASE: SIREN. Focus on country_origin, rocket_count, intercepted, sea_impact, open_area_impact.",
-      resolved: "PHASE: RESOLVED. All fields valid. Prioritize confirmed official reports.",
+      early_warning:
+        "PHASE: EARLY WARNING. Focus on countryOrigin, eta_refined_minutes, rocketCount, isCassette.",
+      siren:
+        "PHASE: SIREN. Focus on countryOrigin, rocketCount, intercepted, seaImpact, open_area_impact.",
+      resolved:
+        "PHASE: RESOLVED. All fields valid. Prioritize confirmed official reports.",
     }[alertType];
 
     const context = `${phaseInstructions}
@@ -741,18 +741,18 @@ ${post.text}`;
   it("correctly identifies Iran as origin from N12 launch report", async () => {
     const result = await extractPost(POST_IRAN_LAUNCH);
 
-    expect(result.country_origin).toMatch(/iran|иран/i);
-    expect(result.time_relevance).toBeGreaterThanOrEqual(0.7);
-    expect(result.region_relevance).toBeGreaterThanOrEqual(0.5);
+    expect(result.countryOrigin).toMatch(/iran|иран/i);
+    expect(result.timeRelevance).toBeGreaterThanOrEqual(0.7);
+    expect(result.regionRelevance).toBeGreaterThanOrEqual(0.5);
     expect(result.confidence).toBeGreaterThanOrEqual(0.5);
   }, 30_000);
 
-  it("REJECTS stale IDF Lebanon ops post (time_relevance < 0.5)", async () => {
+  it("REJECTS stale IDF Lebanon ops post (timeRelevance < 0.5)", async () => {
     const result = await extractPost(POST_LEBANON_STALE);
 
     // This is THE LEBANON BUG — the LLM should recognize this post is
     // from 2.5 hours before the alert and NOT about the current attack
-    expect(result.time_relevance).toBeLessThan(0.5);
+    expect(result.timeRelevance).toBeLessThan(0.5);
   }, 30_000);
 
   it(
@@ -760,14 +760,17 @@ ${post.text}`;
     { timeout: 60_000 },
     async () => {
       const result = await extractPost(POST_INTERCEPTION, "siren");
-      console.log("DEBUG interception result:", JSON.stringify(result, null, 2));
+      console.log(
+        "DEBUG interception result:",
+        JSON.stringify(result, null, 2),
+      );
 
-      expect(result.time_relevance).toBeGreaterThanOrEqual(0.7);
-      expect(result.country_origin).toMatch(/iran|иран/i);
+      expect(result.timeRelevance).toBeGreaterThanOrEqual(0.7);
+      expect(result.countryOrigin).toMatch(/iran|иран/i);
       // Should have some interception data
       expect(
         result.intercepted !== undefined ||
-          result.intercepted_qual !== undefined,
+          result.interceptedQual !== undefined,
       ).toBe(true);
     },
   );
@@ -775,14 +778,16 @@ ${post.text}`;
   it("extracts full damage report in resolved phase", async () => {
     const result = await extractPost(POST_RESOLVED, "resolved");
 
-    expect(result.time_relevance).toBeGreaterThanOrEqual(0.7);
-    expect(result.country_origin).toMatch(/iran|иран/i);
-    expect(result.rocket_count).toBeDefined();
-    // LLM may include interception info in rocket_detail or as separate fields
+    expect(result.timeRelevance).toBeGreaterThanOrEqual(0.7);
+    expect(result.countryOrigin).toMatch(/iran|иран/i);
+    expect(result.rocketCount).toBeDefined();
+    // LLM may include interception info in rocketDetail or as separate fields
     const hasInterception =
       result.intercepted !== undefined ||
-      result.intercepted_qual !== undefined ||
-      (result.rocket_detail as string | undefined)?.includes("intercepted");
+      result.interceptedQual !== undefined ||
+      result.seaImpact !== undefined ||
+      result.openAreaImpact !== undefined ||
+      (result.rocketDetail as string | undefined)?.includes("intercepted");
     expect(hasInterception).toBe(true);
   }, 30_000);
 
@@ -843,7 +848,7 @@ describe.skipIf(!HAS_API)("Lebanon bug regression (real API)", () => {
         ...result.structuredResponse,
         channel: post.channel,
         messageUrl: post.messageUrl,
-        time_relevance: result.structuredResponse?.time_relevance ?? 0.5,
+        timeRelevance: result.structuredResponse?.timeRelevance ?? 0.5,
         valid: true,
       } as ValidatedExtraction);
     }
@@ -852,11 +857,14 @@ describe.skipIf(!HAS_API)("Lebanon bug regression (real API)", () => {
     const voted = vote(filtered, "test-regression");
 
     if (voted) {
-      const origins = voted.country_origins;
+      const origins = voted.countryOrigins;
       if (origins && origins.length > 0) {
         const hasLebanon = origins.some((o) => o.name === "Lebanon");
         const hasIran = origins.some((o) => o.name === "Iran");
-        expect(hasIran || !hasLebanon, "Regression: Lebanon appeared as origin instead of Iran").toBe(true);
+        expect(
+          hasIran || !hasLebanon,
+          "Regression: Lebanon appeared as origin instead of Iran",
+        ).toBe(true);
       }
     }
   }, 60_000);

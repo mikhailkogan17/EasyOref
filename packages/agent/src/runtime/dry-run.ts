@@ -29,45 +29,45 @@ const MOCK_EXTRACTIONS = [
   {
     channel: "@newsflashhhj",
     messageUrl: "https://t.me/newsflashhhj/12340",
-    region_relevance: 0.9,
-    source_trust: 0.85,
+    regionRelevance: 0.9,
+    sourceTrust: 0.85,
     tone: "calm" as const,
-    country_origin: "Iran",
-    rocket_count: 6,
-    is_cassette: false,
-    hits_confirmed: undefined,
+    countryOrigin: "Iran",
+    rocketCount: 6,
+    isCassette: false,
+    hitsConfirmed: undefined,
     hit_detail: undefined,
-    eta_refined_minutes: 8,
+    etaRefinedMinutes: 8,
     confidence: 0.88,
     valid: true,
   },
   {
     channel: "@israelsecurity",
     messageUrl: "https://t.me/israelsecurity/5521",
-    region_relevance: 0.85,
-    source_trust: 0.78,
+    regionRelevance: 0.85,
+    sourceTrust: 0.78,
     tone: "neutral" as const,
-    country_origin: "Lebanon",
-    rocket_count: 7,
-    is_cassette: true,
-    hits_confirmed: undefined,
+    countryOrigin: "Lebanon",
+    rocketCount: 7,
+    isCassette: true,
+    hitsConfirmed: undefined,
     hit_detail: undefined,
-    eta_refined_minutes: 9,
+    etaRefinedMinutes: 9,
     confidence: 0.75,
     valid: true,
   },
   {
     channel: "@N12LIVE",
     messageUrl: "https://t.me/N12LIVE/8802",
-    region_relevance: 0.7,
-    source_trust: 0.9,
+    regionRelevance: 0.7,
+    sourceTrust: 0.9,
     tone: "calm" as const,
-    country_origin: "Iran",
-    rocket_count: 5,
-    is_cassette: undefined,
-    hits_confirmed: 2,
+    countryOrigin: "Iran",
+    rocketCount: 5,
+    isCassette: undefined,
+    hitsConfirmed: 2,
     hit_detail: "на открытой местности",
-    eta_refined_minutes: undefined,
+    etaRefinedMinutes: undefined,
     confidence: 0.82,
     valid: true,
   },
@@ -109,20 +109,20 @@ function vote(extractions: typeof MOCK_EXTRACTIONS) {
 
   // ETA: highest-confidence source
   const withEta = indexed
-    .filter((e) => e.eta_refined_minutes !== undefined)
+    .filter((e) => e.etaRefinedMinutes !== undefined)
     .sort((a, b) => b.confidence - a.confidence);
   const bestEta = withEta[0] ?? undefined;
 
   // Countries: group, collect citations
   const countryMap = new Map<string, number[]>();
   for (const e of indexed) {
-    if (e.country_origin) {
-      const list = countryMap.get(e.country_origin) ?? [];
+    if (e.countryOrigin) {
+      const list = countryMap.get(e.countryOrigin) ?? [];
       list.push(e.idx);
-      countryMap.set(e.country_origin, list);
+      countryMap.set(e.countryOrigin, list);
     }
   }
-  const country_origins =
+  const countryOrigins =
     countryMap.size > 0
       ? Array.from(countryMap.entries()).map(([name, citations]) => ({
           name,
@@ -131,55 +131,55 @@ function vote(extractions: typeof MOCK_EXTRACTIONS) {
       : undefined;
 
   // Rocket range
-  const rocketSrcs = indexed.filter((e) => e.rocket_count !== undefined);
-  const rocketVals = rocketSrcs.map((e) => e.rocket_count as number);
-  const rocket_count_min =
+  const rocketSrcs = indexed.filter((e) => e.rocketCount !== undefined);
+  const rocketVals = rocketSrcs.map((e) => e.rocketCount as number);
+  const rocketCountMin =
     rocketVals.length > 0 ? Math.min(...rocketVals) : undefined;
-  const rocket_count_max =
+  const rocketCountMax =
     rocketVals.length > 0 ? Math.max(...rocketVals) : undefined;
   const rocket_citations = rocketSrcs.map((e) => e.idx);
 
   // Cassette: majority
   const cassVals = indexed
-    .filter((e) => e.is_cassette !== undefined)
-    .map((e) => e.is_cassette as boolean);
-  const is_cassette =
+    .filter((e) => e.isCassette !== undefined)
+    .map((e) => e.isCassette as boolean);
+  const isCassette =
     cassVals.length > 0
       ? cassVals.filter(Boolean).length > cassVals.length / 2
       : undefined;
 
   // Hits: median
   const hitsVals = indexed
-    .filter((e) => e.hits_confirmed !== undefined)
-    .map((e) => e.hits_confirmed as number)
+    .filter((e) => e.hitsConfirmed !== undefined)
+    .map((e) => e.hitsConfirmed as number)
     .sort((a, b) => a - b);
-  const hits_confirmed =
+  const hitsConfirmed =
     hitsVals.length > 0 ? hitsVals[Math.floor(hitsVals.length / 2)] : undefined;
 
   // Hits citations
   const hitsSrcs = indexed.filter(
-    (e) => e.hits_confirmed !== undefined && e.hits_confirmed > 0,
+    (e) => e.hitsConfirmed !== undefined && e.hitsConfirmed > 0,
   );
   const hits_citations = hitsSrcs.map((e) => e.idx);
 
   // Weighted confidence
   const totalWeight = indexed.reduce(
-    (s, e) => s + e.source_trust * e.confidence,
+    (s, e) => s + e.sourceTrust * e.confidence,
     0,
   );
 
   return {
-    eta_refined_minutes: bestEta?.eta_refined_minutes ?? undefined,
+    etaRefinedMinutes: bestEta?.etaRefinedMinutes ?? undefined,
     eta_citations: bestEta ? [bestEta.idx] : [],
-    country_origins,
-    rocket_count_min,
-    rocket_count_max,
-    is_cassette,
+    countryOrigins,
+    rocketCountMin,
+    rocketCountMax,
+    isCassette,
     rocket_citations,
-    hits_confirmed,
+    hitsConfirmed,
     hits_citations,
     confidence: Math.round((totalWeight / indexed.length) * 100) / 100,
-    sources_count: indexed.length,
+    sourcesCount: indexed.length,
     citedSources,
   };
 }
@@ -231,17 +231,17 @@ function buildEnrichedMessage(
 ): string {
   let text = currentText;
 
-  if (r.eta_refined_minutes !== undefined && r.eta_citations.length > 0) {
+  if (r.etaRefinedMinutes !== undefined && r.eta_citations.length > 0) {
     text = refineEtaInPlace(
       text,
-      r.eta_refined_minutes,
+      r.etaRefinedMinutes,
       alertTs,
       r.eta_citations,
     );
   }
 
-  if (r.country_origins && r.country_origins.length > 0) {
-    const parts = r.country_origins.map((c) => {
+  if (r.countryOrigins && r.countryOrigins.length > 0) {
+    const parts = r.countryOrigins.map((c) => {
       const ru = COUNTRY_RU[c.name] ?? c.name;
       return `${ru}${sup(c.citations)}`;
     });
@@ -249,20 +249,20 @@ function buildEnrichedMessage(
     text = insertBeforeBlockEnd(text, `\n<b>Откуда:</b> ${parts.join(" + ")}`);
   }
 
-  if (r.rocket_count_min !== undefined && r.rocket_count_max !== undefined) {
+  if (r.rocketCountMin !== undefined && r.rocketCountMax !== undefined) {
     const countStr =
-      r.rocket_count_min === r.rocket_count_max
-        ? `${r.rocket_count_min}`
-        : `~${r.rocket_count_min}-${r.rocket_count_max}`;
-    const cassette = r.is_cassette ? " (кассет.)" : "";
+      r.rocketCountMin === r.rocketCountMax
+        ? `${r.rocketCountMin}`
+        : `~${r.rocketCountMin}-${r.rocketCountMax}`;
+    const cassette = r.isCassette ? " (кассет.)" : "";
     text = insertBeforeBlockEnd(text, `<b>Ракет:</b> ${countStr}${cassette}`);
   }
 
-  if (r.hits_confirmed !== undefined && r.hits_confirmed > 0) {
+  if (r.hitsConfirmed !== undefined && r.hitsConfirmed > 0) {
     const hitsCite = r.hits_citations.length > 0 ? sup(r.hits_citations) : "";
     text = insertBeforeBlockEnd(
       text,
-      `<b>Попадания (Дан центр):</b> ${r.hits_confirmed}${hitsCite}`,
+      `<b>Попадания (Дан центр):</b> ${r.hitsConfirmed}${hitsCite}`,
     );
   }
 
@@ -299,5 +299,5 @@ console.log(
 
 console.log(`\n=== STATS ===`);
 console.log(`Confidence: ${voted.confidence}`);
-console.log(`Sources:    ${voted.sources_count}`);
+console.log(`Sources:    ${voted.sourcesCount}`);
 console.log(`Chars:      ${enriched.length} (TG caption limit: 1024)`);

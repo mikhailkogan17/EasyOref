@@ -152,7 +152,7 @@ function aggregateVote(
       ? modeQualification(interceptedQualSources, "interceptedQual")
       : undefined;
   const interceptedQualNumber = interceptedQual
-    ? medianQualificationNumber(interceptedQualSources, "interceptedQualNum")
+    ? medianQualificationNumber(interceptedQualSources, "interceptedQual_num")
     : undefined;
   const interceptedConfidence = weightedConfidence(
     interceptedSources.length > 0 ? interceptedSources : interceptedQualSources,
@@ -176,7 +176,7 @@ function aggregateVote(
       ? modeQualification(seaQualSources, "seaImpactQual")
       : undefined;
   const seaImpactQualNumber = seaImpactQual
-    ? medianQualificationNumber(seaQualSources, "seaImpactQualNum")
+    ? medianQualificationNumber(seaQualSources, "seaImpactQual_num")
     : undefined;
   const seaConfidence = weightedConfidence(
     seaSources.length > 0 ? seaSources : seaQualSources,
@@ -200,7 +200,7 @@ function aggregateVote(
       ? modeQualification(openQualSources, "openAreaImpactQual")
       : undefined;
   const openAreaImpactQualNumber = openAreaImpactQual
-    ? medianQualificationNumber(openQualSources, "openAreaImpactQualNum")
+    ? medianQualificationNumber(openQualSources, "openAreaImpactQual_num")
     : undefined;
   const openAreaConfidence = weightedConfidence(
     openSources.length > 0 ? openSources : openQualSources,

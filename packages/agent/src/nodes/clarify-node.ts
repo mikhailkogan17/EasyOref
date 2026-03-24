@@ -48,47 +48,47 @@ export const clarifyAgent = createAgent({
 const describeContradictions = (
   extractions: ValidatedExtraction[],
   voted: {
-    country_origins?: { name: string }[];
-    rocket_count_min?: number;
-    rocket_count_max?: number;
-    intercepted_confidence?: number;
+    countryOrigins?: { name: string }[];
+    rocketCountMin?: number;
+    rocketCountMax?: number;
+    interceptedConfidence?: number;
     intercepted?: number;
-    hits_confidence?: number;
-    hits_confirmed?: number;
+    hitsConfidence?: number;
+    hitsConfirmed?: number;
     confidence: number;
-    sources_count: number;
+    sourcesCount: number;
   },
 ): string => {
   const issues: string[] = [];
 
-  if (voted.country_origins && voted.country_origins.length > 1) {
-    const names = voted.country_origins.map((c) => c.name).join(", ");
+  if (voted.countryOrigins && voted.countryOrigins.length > 1) {
+    const names = voted.countryOrigins.map((c) => c.name).join(", ");
     issues.push(`Multiple origin countries reported: ${names}`);
   }
 
   if (
-    voted.rocket_count_min &&
-    voted.rocket_count_max &&
-    voted.rocket_count_max - voted.rocket_count_min > 3
+    voted.rocketCountMin &&
+    voted.rocketCountMax &&
+    voted.rocketCountMax - voted.rocketCountMin > 3
   ) {
     issues.push(
-      `Wide rocket count range: ${voted.rocket_count_min}–${voted.rocket_count_max}`,
+      `Wide rocket count range: ${voted.rocketCountMin}–${voted.rocketCountMax}`,
     );
   }
 
   if (
-    (voted.intercepted_confidence ?? 0) < 0.5 &&
+    (voted.interceptedConfidence ?? 0) < 0.5 &&
     voted.intercepted !== undefined
   ) {
     issues.push(
       `Intercepted count (${voted.intercepted}) has low confidence: ${(
-        voted.intercepted_confidence ?? 0
+        voted.interceptedConfidence ?? 0
       ).toFixed(2)}`,
     );
   }
 
   issues.push(`Overall confidence: ${voted.confidence}`);
-  issues.push(`Sources count: ${voted.sources_count}`);
+  issues.push(`Sources count: ${voted.sourcesCount}`);
 
   return issues.join("\n");
 };
@@ -135,8 +135,8 @@ export const clarifyNode = async (
         .filter((e) => e.valid)
         .map(
           (e) =>
-            `  [${e.channel}] country=${e.country_origin}, rockets=${e.rocket_count}, ` +
-            `intercepted=${e.intercepted}, hits=${e.hits_confirmed}, conf=${e.confidence}`,
+            `  [${e.channel}] country=${e.countryOrigin}, rockets=${e.rocketCount}, ` +
+            `intercepted=${e.intercepted}, hits=${e.hitsConfirmed}, conf=${e.confidence}`,
         )
         .join("\n") +
       `\n\nDecide: would fetching more data from authoritative channels resolve these issues?`;

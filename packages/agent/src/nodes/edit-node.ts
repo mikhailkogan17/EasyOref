@@ -172,7 +172,7 @@ function qualDisplay(
  * Returns updated EnrichmentData for Redis persistence.
  */
 export function buildEnrichmentFromVote(
-  r: VotedResult,
+  result: VotedResult,
   prev: EnrichmentData,
   alertType: AlertType,
   alertTs: number,
@@ -180,122 +180,122 @@ export function buildEnrichmentFromVote(
   const data: EnrichmentData = { ...prev };
 
   // Origin
-  if (r.country_origins && r.country_origins.length > 0) {
-    data.origin = r.country_origins
+  if (result.countryOrigins && result.countryOrigins.length > 0) {
+    data.origin = result.countryOrigins
       .map((c: { name: string }) => COUNTRY_RU[c.name] ?? c.name)
       .join(" + ");
-    data.originCites = r.country_origins.flatMap((c: { citations: number[] }) =>
-      extractCites(c.citations, r.citedSources),
+    data.originCites = result.countryOrigins.flatMap((c: { citations: number[] }) =>
+      extractCites(c.citations, result.citedSources),
     );
   }
 
   // ETA — only for early_warning/siren
   if (
-    r.eta_refined_minutes &&
+    result.etaRefinedMinutes &&
     (alertType === "early_warning" || alertType === "siren")
   ) {
     const absTime = new Date(
-      alertTs + r.eta_refined_minutes * 60_000,
+      alertTs + result.etaRefinedMinutes * 60_000,
     ).toLocaleTimeString("he-IL", {
       hour: "2-digit",
       minute: "2-digit",
       timeZone: "Asia/Jerusalem",
     });
     data.etaAbsolute = `~${absTime}`;
-    data.etaCites = extractCites(r.eta_citations, r.citedSources);
+    data.etaCites = extractCites(result.etaCitations, result.citedSources);
   }
 
   // Rocket count — show even at lower confidence (high-value intel)
   // >= 0.55: show with (?); >= UNCERTAIN (0.75): show without marker
   if (
-    r.rocket_count_min !== undefined &&
-    r.rocket_count_max !== undefined &&
-    r.rocket_confidence >= 0.55
+    result.rocketCountMin !== undefined &&
+    result.rocketCountMax !== undefined &&
+    result.rocketConfidence >= 0.55
   ) {
-    const u = r.rocket_confidence < UNCERTAIN ? " (?)" : "";
+    const u = result.rocketConfidence < UNCERTAIN ? " (?)" : "";
     data.rocketCount =
-      r.rocket_count_min === r.rocket_count_max
-        ? `${r.rocket_count_min}${u}`
-        : `~${r.rocket_count_min}–${r.rocket_count_max}${u}`;
-    data.rocketCites = extractCites(r.rocket_citations, r.citedSources);
+      result.rocketCountMin === result.rocketCountMax
+        ? `${result.rocketCountMin}${u}`
+        : `~${result.rocketCountMin}–${result.rocketCountMax}${u}`;
+    data.rocketCites = extractCites(result.rocketCitations, result.citedSources);
   }
 
   // Cassette
-  if (r.is_cassette !== undefined && r.is_cassette_confidence >= SKIP) {
-    data.isCassette = r.is_cassette;
+  if (result.isCassette !== undefined && result.isCassetteConfidence >= SKIP) {
+    data.isCassette = result.isCassette;
   }
 
   // Intercepted
-  if (r.intercepted !== undefined && r.intercepted_confidence >= SKIP) {
-    const u = r.intercepted_confidence < UNCERTAIN ? " (?)" : "";
-    data.intercepted = `${r.intercepted}${u}`;
+  if (result.intercepted !== undefined && result.interceptedConfidence >= SKIP) {
+    const u = result.interceptedConfidence < UNCERTAIN ? " (?)" : "";
+    data.intercepted = `${result.intercepted}${u}`;
     data.interceptedCites = extractCites(
-      r.intercepted_citations,
-      r.citedSources,
+      result.interceptedCitations,
+      result.citedSources,
     );
-  } else if (r.intercepted_qual && r.intercepted_confidence >= SKIP) {
-    const qs = qualDisplay(r.intercepted_qual, r.intercepted_confidence);
+  } else if (result.interceptedQual && result.interceptedConfidence >= SKIP) {
+    const qs = qualDisplay(result.interceptedQual, result.interceptedConfidence);
     if (qs) data.intercepted = qs;
   }
 
   // Hits
-  if (r.hits_confirmed && r.hits_confirmed > 0 && r.hits_confidence >= SKIP) {
-    const u = r.hits_confidence < UNCERTAIN ? " (?)" : "";
-    data.hitsConfirmed = `${r.hits_confirmed}${u}`;
-    data.hitsCites = extractCites(r.hits_citations, r.citedSources);
+  if (result.hitsConfirmed && result.hitsConfirmed > 0 && result.hitsConfidence >= SKIP) {
+    const u = result.hitsConfidence < UNCERTAIN ? " (?)" : "";
+    data.hitsConfirmed = `${result.hitsConfirmed}${u}`;
+    data.hitsCites = extractCites(result.hitsCitations, result.citedSources);
   }
 
   // No impacts: sources explicitly confirm zero hits
-  if (r.no_impacts && r.hits_confidence >= SKIP) {
+  if (result.noImpacts && result.hitsConfidence >= SKIP) {
     data.noImpacts = true;
-    data.noImpactsCites = extractCites(r.no_impacts_citations, r.citedSources);
+    data.noImpactsCites = extractCites(result.noImpactsCitations, result.citedSources);
   }
 
   // Rocket detail (per-region breakdown)
-  if (r.rocket_detail) {
-    data.rocketDetail = r.rocket_detail;
+  if (result.rocketDetail) {
+    data.rocketDetail = result.rocketDetail;
   }
 
   // Hit location & type
-  if (r.hit_location && r.hits_confirmed && r.hits_confirmed > 0) {
-    data.hitLocation = r.hit_location;
+  if (result.hitLocation && result.hitsConfirmed && result.hitsConfirmed > 0) {
+    data.hitLocation = result.hitLocation;
   }
-  if (r.hit_type && r.hits_confirmed && r.hits_confirmed > 0) {
-    data.hitType = r.hit_type;
+  if (result.hitType && result.hitsConfirmed && result.hitsConfirmed > 0) {
+    data.hitType = result.hitType;
   }
-  if (r.hit_detail && r.hits_confirmed && r.hits_confirmed > 0) {
-    data.hitDetail = r.hit_detail;
+  if (result.hitDetail && result.hitsConfirmed && result.hitsConfirmed > 0) {
+    data.hitDetail = result.hitDetail;
   }
 
   // Casualties — CRITICAL: only report at near-certain confidence
   // Requires explicit mention of killed/dead in source (נהרג/מת/killed/dead/убит/погиб)
   if (
-    r.casualties &&
-    r.casualties > 0 &&
-    r.casualties_confidence >= CERTAIN // 0.95 — never show unconfirmed deaths
+    result.casualties &&
+    result.casualties > 0 &&
+    result.casualtiesConfidence >= CERTAIN // 0.95 — never show unconfirmed deaths
   ) {
     // No uncertainty marker for deaths — either confirmed or not shown
-    data.casualties = `${r.casualties}`;
-    data.casualtiesCites = extractCites(r.casualties_citations, r.citedSources);
+    data.casualties = `${result.casualties}`;
+    data.casualtiesCites = extractCites(result.casualtiesCitations, result.citedSources);
   }
 
   // Injuries — show only if confidence >= UNCERTAIN (not SKIP)
   // Retractions: if new vote has injuries=0 and confidence >= UNCERTAIN, clear previous data
-  if (r.injuries && r.injuries > 0 && r.injuries_confidence >= UNCERTAIN) {
-    const u = r.injuries_confidence < CERTAIN ? " (?)" : "";
+  if (result.injuries && result.injuries > 0 && result.injuriesConfidence >= UNCERTAIN) {
+    const u = result.injuriesConfidence < CERTAIN ? " (?)" : "";
     const causeSuffix =
-      r.injuries_cause === "rushing_to_shelter"
+      result.injuriesCause === "rushing_to_shelter"
         ? " (по дороге в укрытие)"
-        : r.injuries_cause === "rocket"
+        : result.injuriesCause === "rocket"
         ? " (от ракеты)"
         : "";
-    data.injuries = `${r.injuries}${u}${causeSuffix}`;
-    data.injuriesCause = r.injuries_cause;
-    data.injuriesCites = extractCites(r.injuries_citations, r.citedSources);
+    data.injuries = `${result.injuries}${u}${causeSuffix}`;
+    data.injuriesCause = result.injuriesCause;
+    data.injuriesCites = extractCites(result.injuriesCitations, result.citedSources);
   } else if (
-    r.injuries &&
-    r.injuries === 0 &&
-    r.injuries_confidence >= UNCERTAIN &&
+    result.injuries &&
+    result.injuries === 0 &&
+    result.injuriesConfidence >= UNCERTAIN &&
     prev.injuries
   ) {
     // Explicit retraction: source says "no injured" — clear previous report
@@ -638,7 +638,7 @@ export const editTelegramMessage = async (
     alertId: input.alertId,
     targets: targets.length,
     confidence: input.votedResult.confidence,
-    sources: input.votedResult.sources_count,
+    sources: input.votedResult.sourcesCount,
     phase: input.alertType,
   });
 };

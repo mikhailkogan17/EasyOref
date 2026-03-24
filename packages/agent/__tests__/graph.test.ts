@@ -8,15 +8,14 @@
  * Run with integration: OPENROUTER_API_KEY=sk-or-... npm test
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   emptyEnrichmentData,
   type CitedSource,
-  type ExtractionResult,
   type InlineCite,
   type ValidatedExtraction,
   type VotedResult,
 } from "@easyoref/shared";
+import { describe, expect, it, vi } from "vitest";
 
 // ── Mocks — minimal, only for config & logger ─────────
 
@@ -69,6 +68,7 @@ vi.mock("@easyoref/monitoring", () => ({
 // ── Imports (after mocks are hoisted) ──────────────────
 
 import { textHash, toIsraelTime } from "@easyoref/shared";
+import { postFilter } from "../src/nodes/extract-node.js";
 import {
   buildEnrichedMessage,
   buildEnrichmentFromVote,
@@ -82,8 +82,7 @@ import {
   renderCitesGlobal,
   SKIP,
   UNCERTAIN,
-} from "../src/nodes/message-node.js";
-import { postFilter } from "../src/nodes/extract-node.js";
+} from "../src/nodes/message.js";
 import { vote } from "../src/nodes/vote-node.js";
 
 // ═══════════════════════════════════════════════════════
@@ -123,24 +122,24 @@ describe("postFilter", () => {
   ): ValidatedExtraction {
     return {
       channel: "@test",
-      region_relevance: 0.9,
-      source_trust: 0.8,
+      regionRelevance: 0.9,
+      sourceTrust: 0.8,
       tone: "calm" as const,
-      time_relevance: 0.9,
-      country_origin: "Iran",
-      rocket_count: 10,
-      is_cassette: undefined,
+      timeRelevance: 0.9,
+      countryOrigin: "Iran",
+      rocketCount: 10,
+      isCassette: undefined,
       intercepted: undefined,
-      intercepted_qual: undefined,
-      sea_impact: undefined,
-      sea_impact_qual: undefined,
-      open_area_impact: undefined,
-      open_area_impact_qual: undefined,
-      hits_confirmed: undefined,
+      interceptedQual: undefined,
+      seaImpact: undefined,
+      seaImpactQual: undefined,
+      openAreaImpact: undefined,
+      openAreaImpactQual: undefined,
+      hitsConfirmed: undefined,
       casualties: undefined,
       injuries: undefined,
-      eta_refined_minutes: undefined,
-      rocket_detail: undefined,
+      etaRefinedMinutes: undefined,
+      rocketDetail: undefined,
       confidence: 0.7,
       valid: true,
       ...overrides,
@@ -152,72 +151,69 @@ describe("postFilter", () => {
     expect(result[0].valid).toBe(true);
   });
 
-  it("rejects stale posts (time_relevance < 0.5)", () => {
+  it("rejects stale posts (timeRelevance < 0.5)", () => {
     const result = postFilter(
-      [makeExtraction({ time_relevance: 0.3 })],
+      [makeExtraction({ timeRelevance: 0.3 })],
       "test-1",
     );
     expect(result[0].valid).toBe(false);
-    expect(result[0].reject_reason).toBe("stale_post");
+    expect(result[0].rejectReason).toBe("stale_post");
   });
 
   it("rejects region_irrelevant posts", () => {
     const result = postFilter(
-      [makeExtraction({ region_relevance: 0.2 })],
+      [makeExtraction({ regionRelevance: 0.2 })],
       "test-1",
     );
     expect(result[0].valid).toBe(false);
-    expect(result[0].reject_reason).toBe("region_irrelevant");
+    expect(result[0].rejectReason).toBe("region_irrelevant");
   });
 
   it("rejects untrusted sources", () => {
-    const result = postFilter(
-      [makeExtraction({ source_trust: 0.2 })],
-      "test-1",
-    );
+    const result = postFilter([makeExtraction({ sourceTrust: 0.2 })], "test-1");
     expect(result[0].valid).toBe(false);
-    expect(result[0].reject_reason).toBe("untrusted_source");
+    expect(result[0].rejectReason).toBe("untrusted_source");
   });
 
   it("rejects alarmist tone", () => {
     const result = postFilter([makeExtraction({ tone: "alarmist" })], "test-1");
     expect(result[0].valid).toBe(false);
-    expect(result[0].reject_reason).toBe("alarmist_tone");
+    expect(result[0].rejectReason).toBe("alarmist_tone");
   });
 
   it("rejects extraction with no data fields", () => {
     const result = postFilter(
       [
         makeExtraction({
-          country_origin: undefined,
-          rocket_count: undefined,
-          is_cassette: undefined,
+          countryOrigin: undefined,
+          rocketCount: undefined,
+          isCassette: undefined,
           intercepted: undefined,
-          intercepted_qual: undefined,
-          hits_confirmed: undefined,
+          interceptedQual: undefined,
+          hitsConfirmed: undefined,
           casualties: undefined,
           injuries: undefined,
-          eta_refined_minutes: undefined,
+          etaRefinedMinutes: undefined,
         }),
       ],
       "test-1",
     );
     expect(result[0].valid).toBe(false);
-    expect(result[0].reject_reason).toBe("no_data");
+    expect(result[0].rejectReason).toBe("no_data");
   });
 
   it("rejects low confidence", () => {
     const result = postFilter([makeExtraction({ confidence: 0.1 })], "test-1");
     expect(result[0].valid).toBe(false);
-    expect(result[0].reject_reason).toBe("low_confidence");
+    expect(result[0].rejectReason).toBe("low_confidence");
   });
 
-  it("time_relevance is checked FIRST (before region)", () => {
+  it("timeRelevance is checked FIRST (before region)", () => {
     const result = postFilter(
-      [makeExtraction({ time_relevance: 0.1, region_relevance: 0.1 })],
+      [makeExtraction({ timeRelevance: 0.1, regionRelevance: 0.1 })],
       "test-1",
     );
-    expect(result[0].reject_reason).toBe("stale_post");
+    expect(result[0].rejectReason).toBe("stale_post");
   });
 });
 
@@ -229,24 +225,24 @@ describe("vote", () => {
   ): ValidatedExtraction {
     return {
       channel: "@test",
-      region_relevance: 0.9,
-      source_trust: 0.8,
+      regionRelevance: 0.9,
+      sourceTrust: 0.8,
       tone: "calm" as const,
-      time_relevance: 0.9,
-      country_origin: "Iran",
-      rocket_count: 10,
-      is_cassette: undefined,
+      timeRelevance: 0.9,
+      countryOrigin: "Iran",
+      rocketCount: 10,
+      isCassette: undefined,
       intercepted: undefined,
-      intercepted_qual: undefined,
-      sea_impact: undefined,
-      sea_impact_qual: undefined,
-      open_area_impact: undefined,
-      open_area_impact_qual: undefined,
-      hits_confirmed: undefined,
+      interceptedQual: undefined,
+      seaImpact: undefined,
+      seaImpactQual: undefined,
+      openAreaImpact: undefined,
+      openAreaImpactQual: undefined,
+      hitsConfirmed: undefined,
       casualties: undefined,
       injuries: undefined,
-      eta_refined_minutes: undefined,
-      rocket_detail: undefined,
+      etaRefinedMinutes: undefined,
+      rocketDetail: undefined,
       confidence: 0.8,
       valid: true,
       messageUrl: "https://t.me/test/1",
@@ -264,34 +260,34 @@ describe("vote", () => {
       [
         makeValidExtraction({
           channel: "@a",
-          country_origin: "Iran",
+          countryOrigin: "Iran",
           messageUrl: "https://t.me/a/1",
         }),
         makeValidExtraction({
           channel: "@b",
-          country_origin: "Iran",
+          countryOrigin: "Iran",
           messageUrl: "https://t.me/b/1",
         }),
       ],
       "test-1",
     );
     expect(result).not.toBeNull();
-    expect(result!.country_origins).toHaveLength(1);
-    expect(result!.country_origins![0].name).toBe("Iran");
-    expect(result!.country_origins![0].citations).toHaveLength(2);
+    expect(result!.countryOrigins).toHaveLength(1);
+    expect(result!.countryOrigins![0].name).toBe("Iran");
+    expect(result!.countryOrigins![0].citations).toHaveLength(2);
   });
 
   it("computes rocket count range", () => {
     const result = vote(
       [
-        makeValidExtraction({ rocket_count: 10 }),
-        makeValidExtraction({ rocket_count: 15 }),
+        makeValidExtraction({ rocketCount: 10 }),
+        makeValidExtraction({ rocketCount: 15 }),
       ],
       "test-1",
     );
-    expect(result!.rocket_count_min).toBe(10);
-    expect(result!.rocket_count_max).toBe(15);
-    expect(result!.rocket_citations).toHaveLength(2);
+    expect(result!.rocketCountMin).toBe(10);
+    expect(result!.rocketCountMax).toBe(15);
+    expect(result!.rocketCitations).toHaveLength(2);
   });
 
   it("median injuries from multiple sources", () => {
@@ -304,7 +300,7 @@ describe("vote", () => {
       "test-1",
     );
     expect(result!.injuries).toBe(5);
-    expect(result!.injuries_citations).toHaveLength(3);
+    expect(result!.injuriesCitations).toHaveLength(3);
   });
 
   it("sets citedSources with 1-based indices", () => {
@@ -438,39 +434,39 @@ describe("buildEnrichmentFromVote", () => {
 
   function makeVoted(overrides: Partial<VotedResult> = {}): VotedResult {
     return {
-      eta_refined_minutes: undefined,
-      eta_citations: [],
-      country_origins: [{ name: "Iran", citations: [1] }],
-      rocket_count_min: 10,
-      rocket_count_max: 15,
-      rocket_citations: [1, 2],
-      rocket_confidence: 0.8,
-      is_cassette: undefined,
-      is_cassette_confidence: 0,
+      etaRefinedMinutes: undefined,
+      etaCitations: [],
+      countryOrigins: [{ name: "Iran", citations: [1] }],
+      rocketCountMin: 10,
+      rocketCountMax: 15,
+      rocketCitations: [1, 2],
+      rocketConfidence: 0.8,
+      isCassette: undefined,
+      isCassetteConfidence: 0,
       intercepted: 8,
-      intercepted_qual: undefined,
-      intercepted_confidence: 0.7,
-      sea_impact: undefined,
-      sea_impact_qual: undefined,
-      sea_confidence: 0,
-      open_area_impact: undefined,
-      open_area_impact_qual: undefined,
-      open_area_confidence: 0,
-      hits_confirmed: 1,
-      hits_citations: [2],
-      hits_confidence: 0.7,
-      no_impacts: false,
-      no_impacts_citations: [],
-      intercepted_citations: [1],
-      rocket_detail: undefined,
+      interceptedQual: undefined,
+      interceptedConfidence: 0.7,
+      seaImpact: undefined,
+      seaImpactQual: undefined,
+      seaConfidence: 0,
+      openAreaImpact: undefined,
+      openAreaImpactQual: undefined,
+      openAreaConfidence: 0,
+      hitsConfirmed: 1,
+      hitsCitations: [2],
+      hitsConfidence: 0.7,
+      noImpacts: false,
+      noImpactsCitations: [],
+      interceptedCitations: [1],
+      rocketDetail: undefined,
       casualties: undefined,
-      casualties_citations: [],
-      casualties_confidence: 0,
+      casualtiesCitations: [],
+      casualtiesConfidence: 0,
       injuries: 3,
-      injuries_citations: [1],
-      injuries_confidence: 0.7,
+      injuriesCitations: [1],
+      injuriesConfidence: 0.7,
       confidence: 0.75,
-      sources_count: 2,
+      sourcesCount: 2,
       citedSources: [
         { index: 1, channel: "@a", messageUrl: "https://t.me/a/1" },
         { index: 2, channel: "@b", messageUrl: "https://t.me/b/2" },
@@ -479,7 +475,7 @@ describe("buildEnrichmentFromVote", () => {
     };
   }
 
-  it("sets origin from voted country_origins", () => {
+  it("sets origin from voted countryOrigins", () => {
     const data = buildEnrichmentFromVote(
       makeVoted(),
       emptyEnrichmentData,
@@ -496,14 +492,14 @@ describe("buildEnrichmentFromVote", () => {
     prev.origin = "Йемен";
     prev.originCites = [{ url: "https://t.me/old/1", channel: "@old" }];
 
-    const voted = makeVoted({ country_origins: undefined });
+    const voted = makeVoted({ countryOrigins: undefined });
     const data = buildEnrichmentFromVote(voted, prev, "siren", alertTs);
     expect(data.origin).toBe("Йемен");
     expect(data.originCites).toHaveLength(1);
   });
 
   it("sets ETA for early_warning", () => {
-    const voted = makeVoted({ eta_refined_minutes: 5 });
+    const voted = makeVoted({ etaRefinedMinutes: 5 });
     const data = buildEnrichmentFromVote(
       voted,
       emptyEnrichmentData,
@@ -514,7 +510,7 @@ describe("buildEnrichmentFromVote", () => {
   });
 
   it("sets injuries for resolved phase", () => {
-    const voted = makeVoted({ injuries: 3, injuries_confidence: 0.95 });
+    const voted = makeVoted({ injuries: 3, injuriesConfidence: 0.95 });
     const data = buildEnrichmentFromVote(
       voted,
       emptyEnrichmentData,
@@ -526,7 +522,7 @@ describe("buildEnrichmentFromVote", () => {
   });
 
   it("shows uncertainty marker for injuries at sub-certain confidence", () => {
-    const voted = makeVoted({ injuries: 3, injuries_confidence: 0.8 });
+    const voted = makeVoted({ injuries: 3, injuriesConfidence: 0.8 });
     const data = buildEnrichmentFromVote(
       voted,
       emptyEnrichmentData,
@@ -663,4 +659,3 @@ describe("confidence thresholds", () => {
     expect(CERTAIN).toBe(0.95);
   });
 });
-
