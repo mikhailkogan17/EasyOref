@@ -109,14 +109,13 @@ import {
   buildEnrichmentFromVote,
   inlineCites,
   inlineCitesFromData,
-} from "../src/nodes/message.js";
+} from "../src/nodes/message-node.js";
 import { textHash, toIsraelTime, config } from "@easyoref/shared";
 import {
   extractAgent,
-  filterAgent,
   postFilter,
-} from "../src/extract.js";
-import { vote } from "../src/nodes/vote.js";
+} from "../src/nodes/extract-node.js";
+import { vote } from "../src/nodes/vote-node.js";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Fixtures — real posts from the March 9, 2026 incident

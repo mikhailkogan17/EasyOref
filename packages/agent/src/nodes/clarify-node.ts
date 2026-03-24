@@ -13,7 +13,7 @@ import {
 import { ChatOpenRouter } from "@langchain/openrouter";
 import { createAgent, toolStrategy } from "langchain";
 import type { AgentStateType } from "../graph.js";
-import { clarifyTools } from "../tools.js";
+import { clarifyTools } from "../tools/index.js";
 
 const clarifyModel = new ChatOpenRouter({
   apiKey: config.agent.apiKey,

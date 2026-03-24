@@ -1,14 +1,12 @@
 /**
- * LLM extraction — two-tier: cheap pre-filter + expensive extraction.
+ * Extract Node — LLM extraction from relevant channels.
  */
 
 import * as logger from "@easyoref/monitoring";
 import {
-  FilterOutputSchema,
   ExtractionResultSchema,
+  FilterOutputSchema,
   type AlertType,
-  type ChannelTracking,
-  type EnrichmentData,
   type TrackedMessage,
   type ValidatedExtraction,
 } from "@easyoref/shared";
@@ -16,18 +14,13 @@ import {
   config,
   getCachedExtractions,
   saveCachedExtractions,
+  setLastUpdateTs,
   textHash,
   toIsraelTime,
 } from "@easyoref/shared";
 import { createAgent, providerStrategy } from "langchain";
 import { ChatOpenRouter } from "@langchain/openrouter";
-
-const filterModel = new ChatOpenRouter({
-  apiKey: config.agent.apiKey,
-  model: config.agent.filterModel,
-  temperature: 0,
-  maxTokens: 200,
-});
+import type { AgentStateType } from "../graph.js";
 
 const extractModel = new ChatOpenRouter({
   apiKey: config.agent.apiKey,
@@ -36,23 +29,18 @@ const extractModel = new ChatOpenRouter({
   maxTokens: 500,
 });
 
+const filterModel = new ChatOpenRouter({
+  apiKey: config.agent.apiKey,
+  model: config.agent.filterModel,
+  temperature: 0,
+  maxTokens: 200,
+});
+
 export const filterAgent = createAgent({
   model: filterModel,
   responseFormat: providerStrategy(FilterOutputSchema),
   systemPrompt: `You pre-filter Telegram channels for an Israeli missile alert system.
-Given channels with their latest messages, identify which contain IMPORTANT military intel:
-- Country of origin (where rockets/missiles launched from)
-- Impact location (where they hit)
-- Warhead type / cassette munitions
-- Damage / destruction reports
-- Interception reports (Iron Dome, David's Sling)
-- Casualty / injury reports
-
-IGNORE channels that only contain:
-- Panic, speculation, or unverified rumors
-- Rehashes of official alerts without new data
-- General commentary without actionable facts
-
+Given channels with their latest messages, identify which contain IMPORTANT military intel.
 Return relevant channel names.`,
 });
 
@@ -91,189 +79,6 @@ const getPhaseInstructions = (alertType: AlertType): string => {
     case "resolved":
       return `PHASE: RESOLVED. All fields valid. Prioritize confirmed official reports.`;
   }
-};
-
-export const filterChannelsCheap = async (
-  tracking: ChannelTracking,
-  alertAreas: string[],
-  alertTs: number,
-  alertType: AlertType,
-): Promise<string[]> => {
-  const channels = tracking.channels_with_updates;
-  if (channels.length === 0) return [];
-
-  const channelSummaries = channels
-    .map((channel) => {
-      const messages = channel.last_tracked_messages
-        .map((message) => {
-          return `  [${toIsraelTime(message.timestamp)}] ${message.text.slice(0, 200)}`;
-        })
-        .join("\n");
-      return `${channel.channel} (${channel.last_tracked_messages.length} new):\n${messages}`;
-    })
-    .join("\n\n");
-
-  const regionHint = alertAreas.length > 0 ? alertAreas.join(", ") : "Israel";
-
-  const userPrompt =
-    `Alert: ${regionHint} at ${toIsraelTime(alertTs)}, phase: ${alertType}\n\nChannels:\n${channelSummaries}`;
-
-  try {
-    const result = await filterAgent.invoke({ messages: [userPrompt] });
-    const relevantChannels = result.structuredResponse?.relevant_channels ?? [];
-
-    logger.info("Agent: cheap pre-filter", {
-      total_channels: channels.length,
-      relevant: relevantChannels.length,
-      relevant_channels: relevantChannels,
-    });
-
-    return relevantChannels;
-  } catch (err) {
-    logger.warn("Agent: cheap pre-filter failed, passing all channels", {
-      error: String(err),
-    });
-    return channels.map((channel) => channel.channel);
-  }
-};
-
-export interface ExtractContext {
-  alertTs: number;
-  alertType: AlertType;
-  alertAreas: string[];
-  alertId: string;
-  language: string;
-  existingEnrichment?: EnrichmentData;
-}
-
-export const extractPosts = async (
-  posts: TrackedMessage[],
-  ctx: ExtractContext,
-): Promise<ValidatedExtraction[]> => {
-  if (posts.length === 0) return [];
-
-  const postHashMap = new Map<string, TrackedMessage>();
-  for (const post of posts) {
-    const hash = textHash(post.channel + "|" + post.text.slice(0, 800));
-    postHashMap.set(hash, post);
-  }
-
-  const allHashes = [...postHashMap.keys()];
-  const cached = await getCachedExtractions(allHashes);
-
-  const cachedResults: ValidatedExtraction[] = [];
-  const newPosts: TrackedMessage[] = [];
-
-  for (const [hash, post] of postHashMap) {
-    const cachedJson = cached.get(hash);
-    if (cachedJson) {
-      cachedResults.push(JSON.parse(cachedJson) as ValidatedExtraction);
-    } else {
-      newPosts.push(post);
-    }
-  }
-
-  logger.info("Agent: extraction dedup", {
-    alertId: ctx.alertId,
-    total: posts.length,
-    cached: cachedResults.length,
-    new: newPosts.length,
-  });
-
-  if (newPosts.length === 0) {
-    return cachedResults;
-  }
-
-  const regionHint =
-    ctx.alertAreas.length > 0
-      ? ctx.alertAreas.join(", ")
-      : Object.keys(config.agent.areaLabels).join(", ") || "Israel";
-  const alertTimeIL = toIsraelTime(ctx.alertTs);
-  const nowIL = toIsraelTime(Date.now());
-  const phaseInstructions = getPhaseInstructions(ctx.alertType);
-
-  const enrichCtxParts: string[] = [];
-  if (ctx.existingEnrichment?.origin)
-    enrichCtxParts.push(`Origin: ${ctx.existingEnrichment.origin}`);
-  if (ctx.existingEnrichment?.rocketCount)
-    enrichCtxParts.push(`Rockets: ${ctx.existingEnrichment.rocketCount}`);
-  if (ctx.existingEnrichment?.intercepted)
-    enrichCtxParts.push(`Intercepted: ${ctx.existingEnrichment.intercepted}`);
-  const enrichCtxLine =
-    enrichCtxParts.length > 0
-      ? `EXISTING ENRICHMENT: ${enrichCtxParts.join(", ")}\n`
-      : "";
-
-  const newResults = await Promise.all(
-    newPosts.map(async (post): Promise<ValidatedExtraction> => {
-      const postTimeIL = toIsraelTime(post.timestamp);
-      const postAgeMin = Math.round((ctx.alertTs - post.timestamp) / 60_000);
-      const postAgeSuffix =
-        postAgeMin > 0
-          ? `(${postAgeMin} min BEFORE alert)`
-          : postAgeMin < 0
-            ? `(${Math.abs(postAgeMin)} min AFTER alert)`
-            : "(same time as alert)";
-
-      const contextHeader =
-        `${phaseInstructions}\n\n` +
-        `Alert time: ${alertTimeIL} (Israel)\n` +
-        `Post time:  ${postTimeIL} (Israel) ${postAgeSuffix}\n` +
-        `Current time: ${nowIL} (Israel)\n` +
-        `Alert region: ${regionHint}\n` +
-        `UI language: ${ctx.language}\n` +
-        enrichCtxLine;
-
-      try {
-        const result = await extractAgent.invoke({
-          messages: [`${contextHeader}Channel: ${post.channel}\n\nMessage:\n${post.text.slice(0, 800)}`],
-        });
-
-        const extracted = result.structuredResponse;
-
-        return {
-          ...extracted,
-          channel: post.channel,
-          messageUrl: post.url,
-          time_relevance: extracted?.time_relevance ?? 0.5,
-          valid: true,
-        } as ValidatedExtraction;
-      } catch (err) {
-        logger.warn("Agent: extraction failed", {
-          channel: post.channel,
-          error: String(err),
-        });
-        return {
-          channel: post.channel,
-          region_relevance: 0,
-          source_trust: 0,
-          tone: "neutral" as const,
-          time_relevance: 0,
-          confidence: 0,
-          valid: false,
-          reject_reason: "extraction_error",
-        };
-      }
-    }),
-  );
-
-  const cacheEntries: Record<string, string> = {};
-  newPosts.forEach((post, i) => {
-    const hash = textHash(post.channel + "|" + post.text.slice(0, 800));
-    cacheEntries[hash] = JSON.stringify(newResults[i]);
-  });
-  await saveCachedExtractions(cacheEntries);
-
-  const results = [...cachedResults, ...newResults];
-
-  logger.info("Agent: extracted", {
-    alertId: ctx.alertId,
-    count: results.length,
-    newLLMCalls: newResults.length,
-    cachedReused: cachedResults.length,
-  });
-
-  return results;
 };
 
 export const postFilter = (
@@ -341,8 +146,169 @@ export const postFilter = (
   return validated;
 };
 
+export const extractNode = async (
+  state: AgentStateType,
+): Promise<Partial<AgentStateType>> => {
+  if (!state.tracking || state.tracking.channels_with_updates.length === 0) {
+    logger.info("Agent: no channels with updates", { alertId: state.alertId });
+    return { extractions: [] };
+  }
+
+  const channels = state.tracking.channels_with_updates;
+  const channelSummaries = channels
+    .map((channel) => {
+      const messages = channel.last_tracked_messages
+        .map((message) => {
+          return `  [${toIsraelTime(message.timestamp)}] ${message.text.slice(0, 200)}`;
+        })
+        .join("\n");
+      return `${channel.channel} (${channel.last_tracked_messages.length} new):\n${messages}`;
+    })
+    .join("\n\n");
+
+  const regionHint = state.alertAreas.length > 0 ? state.alertAreas.join(", ") : "Israel";
+  const alertTime = toIsraelTime(state.alertTs);
+  const userPrompt = `Alert: ${regionHint} at ${alertTime}, phase: ${state.alertType}\n\nChannels:\n${channelSummaries}`;
+
+  let relevantChannels: string[] = [];
+  try {
+    const result = await filterAgent.invoke({ messages: [userPrompt] });
+    relevantChannels = result.structuredResponse?.relevant_channels ?? [];
+  } catch {
+    relevantChannels = channels.map((c) => c.channel);
+  }
+
+  if (relevantChannels.length === 0) {
+    return { extractions: [] };
+  }
+
+  const postsToExtract: TrackedMessage[] = [];
+  for (const channel of channels) {
+    const match = relevantChannels.some(
+      (rc: string) =>
+        rc === channel.channel ||
+        rc === `@${channel.channel}` ||
+        `@${rc}` === channel.channel,
+    );
+    if (match) {
+      postsToExtract.push(...channel.last_tracked_messages);
+    }
+  }
+
+  if (postsToExtract.length === 0) {
+    return { extractions: [] };
+  }
+
+  const postHashMap = new Map<string, TrackedMessage>();
+  for (const post of postsToExtract) {
+    const hash = textHash(post.channel + "|" + post.text.slice(0, 800));
+    postHashMap.set(hash, post);
+  }
+
+  const allHashes = [...postHashMap.keys()];
+  const cached = await getCachedExtractions(allHashes);
+
+  const cachedResults: ValidatedExtraction[] = [];
+  const newPosts: TrackedMessage[] = [];
+
+  for (const [hash, post] of postHashMap) {
+    const cachedJson = cached.get(hash);
+    if (cachedJson) {
+      cachedResults.push(JSON.parse(cachedJson) as ValidatedExtraction);
+    } else {
+      newPosts.push(post);
+    }
+  }
+
+  if (newPosts.length === 0) {
+    const filtered = postFilter(cachedResults, state.alertId);
+    return { extractions: filtered };
+  }
+
+  const alertTimeIL = toIsraelTime(state.alertTs);
+  const nowIL = toIsraelTime(Date.now());
+  const phaseInstructions = getPhaseInstructions(state.alertType);
+
+  const enrichCtxParts: string[] = [];
+  if (state.previousEnrichment?.origin) {
+    enrichCtxParts.push(`Origin: ${state.previousEnrichment.origin}`);
+  }
+  if (state.previousEnrichment?.rocketCount) {
+    enrichCtxParts.push(`Rockets: ${state.previousEnrichment.rocketCount}`);
+  }
+  if (state.previousEnrichment?.intercepted) {
+    enrichCtxParts.push(`Intercepted: ${state.previousEnrichment.intercepted}`);
+  }
+  const enrichCtxLine = enrichCtxParts.length > 0
+    ? `EXISTING ENRICHMENT: ${enrichCtxParts.join(", ")}\n`
+    : "";
+
+  const newResults = await Promise.all(
+    newPosts.map(async (post): Promise<ValidatedExtraction> => {
+      const postTimeIL = toIsraelTime(post.timestamp);
+      const postAgeMin = Math.round((state.alertTs - post.timestamp) / 60_000);
+      const postAgeSuffix =
+        postAgeMin > 0
+          ? `(${postAgeMin} min BEFORE alert)`
+          : postAgeMin < 0
+            ? `(${Math.abs(postAgeMin)} min AFTER alert)`
+            : "(same time as alert)";
+
+      const contextHeader =
+        `${phaseInstructions}\n\n` +
+        `Alert time: ${alertTimeIL} (Israel)\n` +
+        `Post time:  ${postTimeIL} (Israel) ${postAgeSuffix}\n` +
+        `Current time: ${nowIL} (Israel)\n` +
+        `Alert region: ${regionHint}\n` +
+        `UI language: ${config.language}\n` +
+        enrichCtxLine;
+
+      try {
+        const result = await extractAgent.invoke({
+          messages: [`${contextHeader}Channel: ${post.channel}\n\nMessage:\n${post.text.slice(0, 800)}`],
+        });
+
+        const extracted = result.structuredResponse;
+
+        return {
+          ...extracted,
+          channel: post.channel,
+          messageUrl: post.url,
+          time_relevance: extracted?.time_relevance ?? 0.5,
+          valid: true,
+        } as ValidatedExtraction;
+      } catch {
+        return {
+          channel: post.channel,
+          region_relevance: 0,
+          source_trust: 0,
+          tone: "neutral" as const,
+          time_relevance: 0,
+          confidence: 0,
+          valid: false,
+          reject_reason: "extraction_error",
+        };
+      }
+    }),
+  );
+
+  const cacheEntries: Record<string, string> = {};
+  newPosts.forEach((post, i) => {
+    const hash = textHash(post.channel + "|" + post.text.slice(0, 800));
+    cacheEntries[hash] = JSON.stringify(newResults[i]);
+  });
+  await saveCachedExtractions(cacheEntries);
+
+  const results = [...cachedResults, ...newResults];
+  const filtered = postFilter(results, state.alertId);
+
+  await setLastUpdateTs(Date.now());
+
+  return { extractions: filtered };
+};
+
 export const _test = {
-  filterAgent,
   extractAgent,
+  filterAgent,
   postFilter,
 } as const;

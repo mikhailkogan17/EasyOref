@@ -82,11 +82,9 @@ import {
   renderCitesGlobal,
   SKIP,
   UNCERTAIN,
-} from "../src/nodes/message.js";
-import {
-  postFilter,
-} from "../src/extract.js";
-import { vote } from "../src/nodes/vote.js";
+} from "../src/nodes/message-node.js";
+import { postFilter } from "../src/nodes/extract-node.js";
+import { vote } from "../src/nodes/vote-node.js";
 
 // ═══════════════════════════════════════════════════════
 // PART 1: UNIT TESTS (pure functions, no LLM)

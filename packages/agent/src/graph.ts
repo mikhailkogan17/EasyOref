@@ -85,11 +85,11 @@ import {
   StateSchema,
 } from "@langchain/langgraph";
 import { z } from "zod";
-import { clarifyNode } from "./nodes/clarify.js";
-import { editNode } from "./nodes/edit.js";
-import { extractNode } from "./nodes/extract.js";
-import { filterNode } from "./nodes/filters.js";
-import { voteNode } from "./nodes/vote.js";
+import { clarifyNode } from "./nodes/clarify-node.js";
+import { extractNode } from "./nodes/extract-node.js";
+import { filterNode } from "./nodes/filter-node.js";
+import { editNode } from "./nodes/message-node.js";
+import { voteNode } from "./nodes/vote-node.js";
 
 export const AgentState = new StateSchema({
   alertId: z.string(),

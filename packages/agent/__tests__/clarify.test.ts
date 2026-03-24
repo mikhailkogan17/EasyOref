@@ -135,12 +135,12 @@ function makeExtraction(
 // ═════════════════════════════════════════════════════════
 
 describe("readSourcesTool", () => {
-  let readSourcesTool: typeof import("../src/tools.js").readSourcesTool;
+  let readSourcesTool: typeof import("../src/tools/index.js").readSourcesTool;
   let fetchRecentChannelPosts: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     vi.resetModules();
-    const toolsMod = await import("../src/tools.js");
+    const toolsMod = await import("../src/tools/index.js");
     readSourcesTool = toolsMod.readSourcesTool;
     const gramjsMod = await import("@easyoref/gramjs");
     fetchRecentChannelPosts = gramjsMod.fetchRecentChannelPosts as ReturnType<
@@ -247,12 +247,12 @@ describe("readSourcesTool", () => {
 // ═════════════════════════════════════════════════════════
 
 describe("alertHistoryTool", () => {
-  let alertHistoryTool: typeof import("../src/tools.js").alertHistoryTool;
+  let alertHistoryTool: typeof import("../src/tools/index.js").alertHistoryTool;
   const originalFetch = globalThis.fetch;
 
   beforeEach(async () => {
     vi.resetModules();
-    const toolsMod = await import("../src/tools.js");
+    const toolsMod = await import("../src/tools/index.js");
     alertHistoryTool = toolsMod.alertHistoryTool;
   });
 
@@ -568,12 +568,12 @@ describe("clarify output contract", () => {
 
 describe("clarifyTools export", () => {
   it("exports exactly 4 tools", async () => {
-    const { clarifyTools } = await import("../src/tools.js");
+    const { clarifyTools } = await import("../src/tools/index.js");
     expect(clarifyTools).toHaveLength(4);
   });
 
   it("has correct tool names", async () => {
-    const { clarifyTools } = await import("../src/tools.js");
+    const { clarifyTools } = await import("../src/tools/index.js");
     const names = clarifyTools.map((t) => t.name);
     expect(names).toContain("read_telegram_sources");
     expect(names).toContain("alert_history");
@@ -582,7 +582,7 @@ describe("clarifyTools export", () => {
   });
 
   it("does not include old MCP-prefixed tool names", async () => {
-    const { clarifyTools } = await import("../src/tools.js");
+    const { clarifyTools } = await import("../src/tools/index.js");
     const names = clarifyTools.map((t) => t.name);
     expect(names).not.toContain("telegram_mtproto_mcp_read_sources");
     expect(names).not.toContain("pikud_haoref_mcp");
@@ -595,11 +595,11 @@ describe("clarifyTools export", () => {
 // ═════════════════════════════════════════════════════════
 
 describe("resolveAreaTool", () => {
-  let resolveAreaTool: typeof import("../src/tools.js").resolveAreaTool;
+  let resolveAreaTool: typeof import("../src/tools/index.js").resolveAreaTool;
 
   beforeEach(async () => {
     vi.resetModules();
-    const toolsMod = await import("../src/tools.js");
+    const toolsMod = await import("../src/tools/index.js");
     resolveAreaTool = toolsMod.resolveAreaTool;
   });
 
@@ -637,11 +637,11 @@ describe("resolveAreaTool", () => {
 // ═════════════════════════════════════════════════════════
 
 describe("resolveAreaProximity", () => {
-  let resolveAreaProximity: typeof import("../src/tools.js")._resolveAreaProximity;
+  let resolveAreaProximity: typeof import("../src/tools/index.js")._resolveAreaProximity;
 
   beforeEach(async () => {
     vi.resetModules();
-    const toolsMod = await import("../src/tools.js");
+    const toolsMod = await import("../src/tools/index.js");
     resolveAreaProximity = toolsMod._resolveAreaProximity;
   });
 
@@ -702,13 +702,13 @@ describe("resolveAreaProximity", () => {
 
 describe("formatOrefDate", () => {
   it("formats date as DD.MM.YYYY", async () => {
-    const { _formatOrefDate } = await import("../src/tools.js");
+    const { _formatOrefDate } = await import("../src/tools/index.js");
     const d = new Date("2024-03-09T12:00:00Z");
     expect(_formatOrefDate(d)).toBe("09.03.2024");
   });
 
   it("pads single digit day and month", async () => {
-    const { _formatOrefDate } = await import("../src/tools.js");
+    const { _formatOrefDate } = await import("../src/tools/index.js");
     const d = new Date("2024-01-05T00:00:00Z");
     expect(_formatOrefDate(d)).toBe("05.01.2024");
   });
@@ -719,12 +719,12 @@ describe("formatOrefDate", () => {
 // ═════════════════════════════════════════════════════════
 
 describe("betterstackLogTool", () => {
-  let betterstackLogTool: typeof import("../src/tools.js").betterstackLogTool;
+  let betterstackLogTool: typeof import("../src/tools/index.js").betterstackLogTool;
   const originalFetch = globalThis.fetch;
 
   beforeEach(async () => {
     vi.resetModules();
-    const toolsMod = await import("../src/tools.js");
+    const toolsMod = await import("../src/tools/index.js");
     betterstackLogTool = toolsMod.betterstackLogTool;
   });
 
@@ -818,7 +818,7 @@ describe("betterstackLogTool", () => {
         },
       };
     });
-    const toolsMod = await import("../src/tools.js");
+    const toolsMod = await import("../src/tools/index.js");
     const result = await toolsMod.betterstackLogTool.invoke({
       query: "test",
       last_minutes: 10,

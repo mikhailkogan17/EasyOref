@@ -17,6 +17,7 @@ import type {
 import {
   config,
   createEmptyEnrichmentData,
+  EnrichmentDataSchema,
   getActiveSession,
   saveEnrichmentData,
   setActiveSession,
@@ -641,5 +642,27 @@ export const editTelegramMessage = async (input: EditMessageInput): Promise<void
 }
 
 export const editMessage = editTelegramMessage;
+
+import type { AgentStateType } from "../graph.js";
+
+export const editNode = async (
+  state: AgentStateType,
+): Promise<Partial<AgentStateType>> => {
+  await editTelegramMessage({
+    alertId: state.alertId,
+    alertTs: state.alertTs,
+    alertType: state.alertType,
+    chatId: state.chatId,
+    messageId: state.messageId,
+    isCaption: state.isCaption,
+    telegramMessages: state.telegramMessages,
+    currentText: state.currentText,
+    votedResult: state.votedResult,
+    previousEnrichment:
+      state.previousEnrichment ?? EnrichmentDataSchema.parse({}),
+    monitoringLabel: state.monitoringLabel,
+  });
+  return {};
+};
 
 
