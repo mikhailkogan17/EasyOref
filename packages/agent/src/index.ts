@@ -1,9 +1,9 @@
 export {
   _test,
-  EXTRACT_SYSTEM_PROMPT,
-  extractModel,
-  filterModel,
-  getPhaseInstructions,
+  extractAgent,
+  filterAgent,
+  filterChannelsCheap,
+  extractPosts,
   postFilter,
 } from "./extract.js";
 export * from "./graph.js";

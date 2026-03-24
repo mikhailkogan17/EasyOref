@@ -112,9 +112,8 @@ import {
 } from "../src/nodes/message.js";
 import { textHash, toIsraelTime, config } from "@easyoref/shared";
 import {
-  EXTRACT_SYSTEM_PROMPT,
-  extractModel,
-  getPhaseInstructions,
+  extractAgent,
+  filterAgent,
   postFilter,
 } from "../src/extract.js";
 import { vote } from "../src/nodes/vote.js";
@@ -684,44 +683,10 @@ describe.skipIf(!HAS_API)("LLM extraction (real API)", () => {
     post: { channel: string; text: string; ts: number },
     alertType: "early_warning" | "siren" | "resolved" = "early_warning",
   ): Promise<Record<string, unknown>> {
-    const llm = extractModel;
-    const alertTimeIL = toIsraelTime(ALERT_TS);
-    const postTimeIL = toIsraelTime(post.ts);
-    const nowIL = toIsraelTime(Date.now());
-    const postAgeMin = Math.round((ALERT_TS - post.ts) / 60_000);
-    const postAgeSuffix =
-      postAgeMin > 0
-        ? `(${postAgeMin} min BEFORE alert)`
-        : `(${Math.abs(postAgeMin)} min AFTER alert)`;
-    const phaseInstructions = getPhaseInstructions(alertType);
-    const systemPrompt = EXTRACT_SYSTEM_PROMPT + "\n\n" + phaseInstructions;
-
-    const contextHeader =
-      `Alert time: ${alertTimeIL} (Israel)\n` +
-      `Post time:  ${postTimeIL} (Israel) ${postAgeSuffix}\n` +
-      `Current time: ${nowIL} (Israel)\n` +
-      `Alert region: תל אביב - דרום העיר ויפו\n` +
-      `UI language: en\n`;
-
-    const response = await llm.invoke([
-      { role: "system", content: systemPrompt },
-      {
-        role: "user",
-        content: `${contextHeader}Channel: ${post.channel}\n\nMessage:\n${post.text}`,
-      },
-    ]);
-
-    const raw =
-      typeof response.content === "string"
-        ? response.content
-        : JSON.stringify(response.content);
-    const text = raw
-      .replace(/^```(?:json)?\s*\n?/i, "")
-      .replace(/\n?```\s*$/i, "");
-    const rawParsed = JSON.parse(text.trim());
-    return Object.fromEntries(
-      Object.entries(rawParsed).filter(([_, v]) => v !== null),
-    );
+    const result = await extractAgent.invoke({
+      messages: [`Channel: ${post.channel}\n\nMessage:\n${post.text}`],
+    });
+    return result.structuredResponse ?? {};
   }
 
   it("correctly identifies Iran as origin from N12 launch report", async () => {
@@ -813,77 +778,32 @@ describe.skipIf(!HAS_API)("Lebanon bug regression (real API)", () => {
   }
 
   it("should NOT produce Lebanon when stale IDF post + fresh Iran post coexist", async () => {
-    // Simulate the exact bug scenario:
-    // - POST_LEBANON_STALE from @idf_telegram (2.5 hours old)
-    // - POST_IRAN_LAUNCH from @N12LIVE (current alert)
-    const llm = extractModel;
-    const alertTimeIL = toIsraelTime(ALERT_TS);
-    const nowIL = toIsraelTime(Date.now());
-    const phaseInstructions = getPhaseInstructions("early_warning");
-    const systemPrompt = EXTRACT_SYSTEM_PROMPT + "\n\n" + phaseInstructions;
-
     const posts = [POST_LEBANON_STALE, POST_IRAN_LAUNCH];
     const extractions: ValidatedExtraction[] = [];
 
     for (const post of posts) {
-      const postTimeIL = toIsraelTime(post.ts);
-      const postAgeMin = Math.round((ALERT_TS - post.ts) / 60_000);
-      const postAgeSuffix =
-        postAgeMin > 0
-          ? `(${postAgeMin} min BEFORE alert)`
-          : `(${Math.abs(postAgeMin)} min AFTER alert)`;
-
-      const contextHeader =
-        `Alert time: ${alertTimeIL} (Israel)\n` +
-        `Post time:  ${postTimeIL} (Israel) ${postAgeSuffix}\n` +
-        `Current time: ${nowIL} (Israel)\n` +
-        `Alert region: תל אביב - דרום העיר ויפו\n` +
-        `UI language: ru\n`;
-
-      const response = await llm.invoke([
-        { role: "system", content: systemPrompt },
-        {
-          role: "user",
-          content: `${contextHeader}Channel: ${post.channel}\n\nMessage:\n${post.text}`,
-        },
-      ]);
-
-      const raw =
-        typeof response.content === "string"
-          ? response.content
-          : JSON.stringify(response.content);
-      const text = raw
-        .replace(/^```(?:json)?\s*\n?/i, "")
-        .replace(/\n?```\s*$/i, "");
-      const parsed = JSON.parse(text.trim());
+      const result = await extractAgent.invoke({
+        messages: [`Channel: ${post.channel}\n\nMessage:\n${post.text}`],
+      });
 
       extractions.push({
-        ...parsed,
+        ...result.structuredResponse,
         channel: post.channel,
         messageUrl: post.messageUrl,
-        time_relevance: parsed.time_relevance ?? 0.5,
+        time_relevance: result.structuredResponse?.time_relevance ?? 0.5,
         valid: true,
-      });
+      } as ValidatedExtraction);
     }
 
-    // Run post-filter
     const filtered = postFilter(extractions, "test-regression");
-
-    // Run vote on filtered
     const voted = vote(filtered, "test-regression");
 
-    // THE KEY ASSERTION: if we get a result, it should NOT be Lebanon
     if (voted) {
       const origins = voted.country_origins;
       if (origins && origins.length > 0) {
         const hasLebanon = origins.some((o) => o.name === "Lebanon");
         const hasIran = origins.some((o) => o.name === "Iran");
-
-        // Must NOT have Lebanon as sole origin
-        expect(
-          hasIran || !hasLebanon,
-          "Regression: Lebanon appeared as origin instead of Iran",
-        ).toBe(true);
+        expect(hasIran || !hasLebanon, "Regression: Lebanon appeared as origin instead of Iran").toBe(true);
       }
     }
   }, 60_000);

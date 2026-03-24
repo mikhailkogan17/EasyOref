@@ -73,6 +73,15 @@ export const RelevanceCheckSchema = z.object({
 export type RelevanceCheck = z.infer<typeof RelevanceCheckSchema>;
 
 // ─────────────────────────────────────────────────────────
+// LLM filter (cheap pre-filter)
+// ─────────────────────────────────────────────────────────
+
+export const FilterOutputSchema = z.object({
+  relevant_channels: z.array(z.string()).describe("Channels with important intel"),
+});
+export type FilterOutput = z.infer<typeof FilterOutputSchema>;
+
+// ─────────────────────────────────────────────────────────
 // LLM extraction (single call per post)
 // ─────────────────────────────────────────────────────────
 
