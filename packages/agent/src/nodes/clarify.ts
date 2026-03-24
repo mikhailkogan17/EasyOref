@@ -5,24 +5,19 @@
 import * as logger from "@easyoref/monitoring";
 import {
   ClarifyOutputSchema,
+  config,
+  pushSessionPost,
+  type ChannelPost,
   type ValidatedExtraction,
 } from "@easyoref/shared";
-import { config, pushSessionPost, type ChannelPost } from "@easyoref/shared";
+import { ChatOpenRouter } from "@langchain/openrouter";
 import { createAgent, toolStrategy } from "langchain";
-import { ChatOpenAI } from "@langchain/openai";
-import { clarifyTools } from "../tools.js";
 import type { AgentStateType } from "../graph.js";
+import { clarifyTools } from "../tools.js";
 
-const clarifyModel = new ChatOpenAI({
-  model: config.agent.filterModel,
-  configuration: {
-    baseURL: "https://openrouter.ai/api/v1",
-    defaultHeaders: {
-      "HTTP-Referer": "https://github.com/mikhailkogan17/EasyOref",
-      "X-Title": "EasyOref-Clarify",
-    },
-  },
+const clarifyModel = new ChatOpenRouter({
   apiKey: config.agent.apiKey,
+  model: config.agent.filterModel,
   temperature: 0,
   maxTokens: 600,
 });
@@ -31,31 +26,30 @@ const clarifyAgent = createAgent({
   model: clarifyModel,
   tools: clarifyTools,
   responseFormat: toolStrategy(ClarifyOutputSchema),
-  systemPrompt: `You are the clarification agent for EasyOref — an Israeli missile alert enrichment system.
+  systemPrompt: `
+  You are the clarification agent for EasyOref — an Israeli missile alert enrichment system.
 
-The voting pipeline analyzed Telegram channel posts and produced a result with
-low confidence or contradictions. You have access to 4 tools:
+  The voting pipeline analyzed Telegram channel posts and produced a result with
+  low confidence or contradictions. You have access to 4 tools:
 
-  1. read_telegram_sources — fetch last N posts from a Telegram news channel
-  2. alert_history — get recent alert history from Pikud HaOref.
-  3. resolve_area — check if a location mentioned in news is relevant to user's areas.
-  4. betterstack_log — query recent EasyOref logs from Better Stack.
+    1. read_telegram_sources — fetch last N posts from a Telegram news channel
+    2. alert_history — get recent alert history from Pikud HaOref.
+    3. resolve_area — check if a location mentioned in news is relevant to user's areas.
+    4. betterstack_log — query recent EasyOref logs from Better Stack.
 
-CRITICAL — TIME VALIDATION:
-You receive the alert time (Israel timezone). Channel posts may be about PREVIOUS
-attacks or ongoing military operations (not THIS specific alert). When in doubt:
-- Use alert_history to verify if an alert really occurred at the claimed time/area.
-- If a post discusses events from hours ago, it is STALE — ignore it.
+  CRITICAL — TIME VALIDATION:
+  You receive the alert time (Israel timezone). Channel posts may be about PREVIOUS
+  attacks or ongoing military operations (not THIS specific alert). When in doubt:
+  - Use alert_history to verify if an alert really occurred at the claimed time/area.
+  - If a post discusses events from hours ago, it is STALE — ignore it.
 
-You decide whether tools would help:
-- If contradictions can be resolved with existing data → respond immediately, no tools.
-- If an authoritative source (IDF, N12) could settle a disagreement → fetch 1-4 posts.
-- If you need to verify whether an alert occurred → check alert_history.
+  You decide whether tools would help:
+  - If contradictions can be resolved with existing data → respond immediately, no tools.
+  - If an authoritative source (IDF, N12) could settle a disagreement → fetch 1-4 posts.
+  - If you need to verify whether an alert occurred → check alert_history.
 
-Output JSON with:
-- clarified: boolean
-- new_data: extracted fields (if clarified)
-- confidence_boost: number (0-0.3)`,
+  Always respect an output format.
+  `,
 });
 
 const describeContradictions = (
@@ -94,9 +88,9 @@ const describeContradictions = (
     voted.intercepted !== undefined
   ) {
     issues.push(
-      `Intercepted count (${
-        voted.intercepted
-      }) has low confidence: ${(voted.intercepted_confidence ?? 0).toFixed(2)}`,
+      `Intercepted count (${voted.intercepted}) has low confidence: ${(
+        voted.intercepted_confidence ?? 0
+      ).toFixed(2)}`,
     );
   }
 

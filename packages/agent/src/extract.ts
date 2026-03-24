@@ -22,43 +22,25 @@ import {
   textHash,
   toIsraelTime,
 } from "@easyoref/shared";
-import { ChatOpenAI } from "@langchain/openai";
+import { ChatOpenRouter } from "@langchain/openrouter";
 
-// ── LLM instances ──────────────────────────────────────
+const baseOptions = {
+  apiKey: config.agent.apiKey,
+};
 
-/** Cheap model for channel pre-filtering (single call, short output) */
-export function getFilterLLM(): ChatOpenAI {
-  return new ChatOpenAI({
-    model: config.agent.filterModel,
-    configuration: {
-      baseURL: "https://openrouter.ai/api/v1",
-      defaultHeaders: {
-        "HTTP-Referer": "https://github.com/mikhailkogan17/EasyOref",
-        "X-Title": "EasyOref",
-      },
-    },
-    apiKey: config.agent.apiKey,
-    temperature: 0,
-    maxTokens: 200,
-  });
-}
+export const filterModel = new ChatOpenRouter({
+  ...baseOptions,
+  model: config.agent.filterModel,
+  temperature: 0,
+  maxTokens: 200,
+});
 
-/** Expensive model for structured data extraction (per-post) */
-export function getExtractLLM(): ChatOpenAI {
-  return new ChatOpenAI({
-    model: config.agent.extractModel,
-    configuration: {
-      baseURL: "https://openrouter.ai/api/v1",
-      defaultHeaders: {
-        "HTTP-Referer": "https://github.com/mikhailkogan17/EasyOref",
-        "X-Title": "EasyOref",
-      },
-    },
-    apiKey: config.agent.apiKey,
-    temperature: 0,
-    maxTokens: 500,
-  });
-}
+export const extractModel = new ChatOpenRouter({
+  ...baseOptions,
+  model: config.agent.extractModel,
+  temperature: 0,
+  maxTokens: 500,
+});
 
 // ── Cheap pre-filter ───────────────────────────────────
 
@@ -119,7 +101,7 @@ export async function filterChannelsCheap(
     )}, phase: ${alertType}\n\n` + `Channels:\n${channelSummaries}`;
 
   try {
-    const llm = getFilterLLM();
+    const llm = filterModel;
     const response = await llm.invoke([
       { role: "system", content: FILTER_SYSTEM_PROMPT },
       { role: "user", content: userPrompt },
@@ -299,7 +281,7 @@ export async function extractPosts(
   }
 
   // ── Extract new posts ──────────────────────────────
-  const llm = getExtractLLM();
+  const llm = extractModel;
 
   const regionHint =
     ctx.alertAreas.length > 0
@@ -489,8 +471,8 @@ export function postFilter(
 // ── Exported for testing ───────────────────────────────
 
 export const _test = {
-  getFilterLLM,
-  getExtractLLM,
+  filterModel,
+  extractModel,
   getPhaseInstructions,
   EXTRACT_SYSTEM_PROMPT,
   FILTER_SYSTEM_PROMPT,

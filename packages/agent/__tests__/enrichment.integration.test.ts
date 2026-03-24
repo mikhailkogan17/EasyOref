@@ -113,7 +113,7 @@ import {
 import { textHash, toIsraelTime, config } from "@easyoref/shared";
 import {
   EXTRACT_SYSTEM_PROMPT,
-  getExtractLLM,
+  extractModel,
   getPhaseInstructions,
   postFilter,
 } from "../src/extract.js";
@@ -684,7 +684,7 @@ describe.skipIf(!HAS_API)("LLM extraction (real API)", () => {
     post: { channel: string; text: string; ts: number },
     alertType: "early_warning" | "siren" | "resolved" = "early_warning",
   ): Promise<Record<string, unknown>> {
-    const llm = getExtractLLM();
+    const llm = extractModel;
     const alertTimeIL = toIsraelTime(ALERT_TS);
     const postTimeIL = toIsraelTime(post.ts);
     const nowIL = toIsraelTime(Date.now());
@@ -816,7 +816,7 @@ describe.skipIf(!HAS_API)("Lebanon bug regression (real API)", () => {
     // Simulate the exact bug scenario:
     // - POST_LEBANON_STALE from @idf_telegram (2.5 hours old)
     // - POST_IRAN_LAUNCH from @N12LIVE (current alert)
-    const llm = getExtractLLM();
+    const llm = extractModel;
     const alertTimeIL = toIsraelTime(ALERT_TS);
     const nowIL = toIsraelTime(Date.now());
     const phaseInstructions = getPhaseInstructions("early_warning");

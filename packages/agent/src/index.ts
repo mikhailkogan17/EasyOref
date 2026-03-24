@@ -1,8 +1,8 @@
 export {
   _test,
   EXTRACT_SYSTEM_PROMPT,
-  getExtractLLM,
-  getFilterLLM,
+  extractModel,
+  filterModel,
   getPhaseInstructions,
   postFilter,
 } from "./extract.js";
