@@ -5,9 +5,9 @@
  * State survives restarts + redeploys via JSON file.
  */
 
+import * as logger from "@easyoref/monitoring";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import * as logger from "./logger.js";
 
 interface GifBags {
   [poolKey: string]: string[];

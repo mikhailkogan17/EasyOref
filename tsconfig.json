@@ -1,4 +1,11 @@
 {
   "files": [],
-  "references": [{ "path": "packages/bot" }, { "path": "packages/cli" }]
+  "references": [
+    { "path": "packages/shared" },
+    { "path": "packages/monitoring" },
+    { "path": "packages/agent" },
+    { "path": "packages/gramjs" },
+    { "path": "packages/bot" },
+    { "path": "packages/cli" }
+  ]
 }

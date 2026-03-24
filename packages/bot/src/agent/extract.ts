@@ -6,18 +6,23 @@
  * 3. Post-filter: deterministic validation on extraction results.
  */
 
-import { ChatOpenAI } from "@langchain/openai";
-import { config } from "../config.js";
-import * as logger from "../logger.js";
-import { textHash, toIsraelTime } from "./helpers.js";
-import { getCachedExtractions, saveCachedExtractions } from "./store.js";
+import * as logger from "@easyoref/monitoring";
 import type {
   AlertType,
   ChannelTracking,
+  EnrichmentData,
   ExtractionResult,
   TrackedMessage,
   ValidatedExtraction,
-} from "./types.js";
+} from "@easyoref/shared";
+import {
+  config,
+  getCachedExtractions,
+  saveCachedExtractions,
+  textHash,
+  toIsraelTime,
+} from "@easyoref/shared";
+import { ChatOpenAI } from "@langchain/openai";
 
 // ── LLM instances ──────────────────────────────────────
 
@@ -86,16 +91,24 @@ export async function filterChannelsCheap(
   alertTs: number,
   alertType: AlertType,
 ): Promise<string[]> {
-  const channels = tracking.channels_with_updates;
+  const channels = tracking.channelsWithUpdates;
   if (channels.length === 0) return [];
 
   const channelSummaries = channels
-    .map((ch) => {
-      const posts = ch.last_tracked_messages
-        .map((m) => `  [${toIsraelTime(m.timestamp)}] ${m.text.slice(0, 200)}`)
-        .join("\n");
-      return `${ch.channel} (${ch.last_tracked_messages.length} new):\n${posts}`;
-    })
+    .map(
+      (ch: {
+        channel: string;
+        lastTrackedMessages: Array<{ timestamp: number; text: string }>;
+      }) => {
+        const messages = ch.lastTrackedMessages
+          .map(
+            (m: { timestamp: number; text: string }) =>
+              `  [${toIsraelTime(m.timestamp)}] ${m.text.slice(0, 200)}`,
+          )
+          .join("\n");
+        return `${ch.channel} (${ch.lastTrackedMessages.length} new):\n${messages}`;
+      },
+    )
     .join("\n\n");
 
   const regionHint = alertAreas.length > 0 ? alertAreas.join(", ") : "Israel";
@@ -143,82 +156,56 @@ const QUAL_VALUES =
   '"all"|"most"|"many"|"few"|"exists"|"none"|"more_than"|"less_than"';
 
 /** Phase-specific extraction instructions */
-export function getPhaseInstructions(alertType: AlertType): string {
+export function getPhaseInstructions(alertType: AlertType): string | undefined {
   switch (alertType) {
     case "early_warning":
       return `PHASE: EARLY WARNING (radar detected launches, sirens not yet).
-Focus on: country_origin (WHERE were rockets launched from?), eta_refined_minutes, rocket_count, is_cassette.
-Do NOT extract: intercepted, sea_impact, open_area_impact, hits_confirmed, casualties, injuries — these are IMPOSSIBLE at this stage.
-If a message discusses interception results, it is about a PREVIOUS attack — set time_relevance=0.`;
+Focus on: countryOrigin (WHERE were rockets launched from?), eta_refined_minutes, rocketCount, isCassette.
+Do NOT extract: intercepted, seaImpact, open_area_impact, hitsConfirmed, casualties, injuries — these are IMPOSSIBLE at this stage.
+If a message discusses interception results, it is about a PREVIOUS attack — set timeRelevance=0.`;
 
     case "siren":
       return `PHASE: SIREN (rockets incoming, impact imminent).
-Focus on: country_origin (if not known yet), rocket_count, intercepted, sea_impact, open_area_impact, is_cassette.
-Do NOT extract: hits_confirmed, casualties, injuries — too early for confirmed damage reports.
+Focus on: countryOrigin (if not known yet), rocketCount, intercepted, seaImpact, open_area_impact, isCassette.
+Do NOT extract: hitsConfirmed, casualties, injuries — too early for confirmed damage reports.
 If a message discusses casualties or confirmed hits, verify the timing carefully - it may be about a previous attack.`;
 
     case "resolved":
       return `PHASE: RESOLVED (incident over, assessing damage).
-Focus on: intercepted (final count), hits_confirmed, casualties, injuries, open_area_impact.
+Focus on: countryOrigin, intercepted (final count), hitsConfirmed, casualties, injuries, open_area_impact.
 All fields are valid at this stage. Prioritize confirmed official reports.`;
   }
 }
 
 export const EXTRACT_SYSTEM_PROMPT = `You analyze Telegram channel messages about a missile/rocket attack on Israel.
-Your job: extract factual data, assess quality, AND validate temporal relevance.
+Extract structured data from the message and return ONLY valid JSON (no markdown).
+All field definitions and type info are in your ExtractionResultSchema.
 
 CRITICAL — TIME VALIDATION:
-You will receive the alert time and the post time. You MUST determine if this post
-is about the CURRENT attack or about a previous/different event.
-- If post discusses events clearly BEFORE the alert time → time_relevance=0
-- If post is generic military news not specific to this attack → time_relevance=0.2
-- If post discusses the current attack → time_relevance=1.0
-- If uncertain → time_relevance=0.5 (the system will use alert_history to verify)
+- If post discusses events BEFORE alert time → timeRelevance=0
+- If post is generic military news not specific to THIS attack → timeRelevance=0.2
+- If post discusses current attack → timeRelevance=1.0
+- If uncertain → timeRelevance=0.5
 
-Return ONLY valid JSON (no markdown, no explanation):
-{
-  "region_relevance": float,       // 0–1: does this message discuss the specified alert region?
-  "source_trust": float,           // 0–1: factual reporting (1.0) vs unverified rumors/panic (0.0)
-  "tone": "calm"|"neutral"|"alarmist",
-  "time_relevance": float,         // 0–1: is this post about the CURRENT attack? (see rules above)
-  "country_origin": string|null,   // "Iran","Yemen","Lebanon","Gaza","Iraq","Syria" or null
-  "rocket_count": int|null,
-  "is_cassette": bool|null,
-  "intercepted": int|null,
-  "intercepted_qual": ${QUAL_VALUES}|null,
-  "intercepted_qual_num": int|null,
-  "sea_impact": int|null,
-  "sea_impact_qual": ${QUAL_VALUES}|null,
-  "sea_impact_qual_num": int|null,
-  "open_area_impact": int|null,
-  "open_area_impact_qual": ${QUAL_VALUES}|null,
-  "open_area_impact_qual_num": int|null,
-  "hits_confirmed": int|null,
-  "hit_location": string|null,
-  "hit_type": "direct"|"shrapnel"|null,
-  "hit_detail": string|null,
-  "casualties": int|null,
-  "injuries": int|null,
-  "injuries_cause": "rocket"|"rushing_to_shelter"|null,
-  "eta_refined_minutes": int|null,
-  "rocket_detail": string|null,
-  "confidence": float
-}
+MANDATORY METADATA (ALWAYS INCLUDE):
+- timeRelevance, regionRelevance, confidence, sourceTrust, tone.
+- These fields MUST always be present in the JSON. Never omit them.
+- Use numbers (0.0 to 1.0) for relevance/confidence/trust and strings for tone.
 
-Rules:
-- If unrelated to the alert region, set region_relevance=0 and all data fields to null.
-- If message is speculative/unconfirmed rumor, set source_trust < 0.4.
+PHASE-SPECIFIC CONSTRAINTS:
+- If unrelated to the alert region, set regionRelevance=0 and all data fields to null.
+- If message is speculative/unconfirmed rumor, set sourceTrust < 0.4.
 - If message uses excessive caps, exclamation marks, panic language → tone="alarmist".
 - Only extract concrete numbers explicitly stated in the text. Never guess.
-- NEVER invent specific interception numbers. If source says "all intercepted" without a count, use intercepted=null, intercepted_qual="all". If source says "no impacts" without specifying interceptions, set hits_confirmed=0 and intercepted=null.
-- rocket_detail: If the source splits rocket count by region (e.g. "2 to the center, 3 to the north"), put the regional breakdown in rocket_detail and the TOTAL in rocket_count. If no regional split, set rocket_detail=null.
-- hit_location: If hits_confirmed > 0, prefer SPECIFIC city/town names over macro-regions (e.g. "Рамле" > "Центр", "Ришон-ле-Цион" > "Гуш-Дан"). Use macro-region ONLY if no specific city is mentioned. null if unknown or hits_confirmed == 0.
-- hit_type: "direct" (direct hit on structure/infrastructure) | "shrapnel" (debris/fragments/shrapnel). null if unknown or hits_confirmed == 0.
-- hit_detail: If hits_confirmed > 0, describe WHERE/HOW the impact occurred. Examples: "на открытой местности" (open area), "здание" (building), "в море" (sea), "без разрушений" (no damage). Must be written in UI language. Translate appropriately: "שטח פתוח" → "на открытой местности", "נפילה בשטח פתוח" → "на открытой местности". null if unknown or hits_confirmed == 0.
-- LANGUAGE: rocket_detail, hit_location, hit_detail MUST be written in the UI language (see context header). Translate from Hebrew/Arabic/English as needed. Do NOT output verbatim Hebrew if UI language is Russian, etc.
+- NEVER invent specific interception numbers. If source says "all intercepted" without a count, use intercepted=null, interceptedQual="all". If source says "no impacts" without specifying interceptions, set hitsConfirmed=0 and intercepted=null.
+- rocketDetail: If the source splits rocket count by region (e.g. "2 to the center, 3 to the north"), put the regional breakdown in rocketDetail and the TOTAL in rocketCount. If no regional split, set rocketDetail=null.
+- hit_location: If hitsConfirmed > 0, prefer SPECIFIC city/town names over macro-regions (e.g. "Рамле" > "Центр", "Ришон-ле-Цион" > "Гуш-Дан"). Use macro-region ONLY if no specific city is mentioned. null if unknown or hitsConfirmed == 0.
+- hit_type: "direct" (direct hit on structure/infrastructure) | "shrapnel" (debris/fragments/shrapnel). null if unknown or hitsConfirmed == 0.
+- hit_detail: If hitsConfirmed > 0, describe WHERE/HOW the impact occurred. Examples: "на открытой местности" (open area), "здание" (building), "в море" (sea), "без разрушений" (no damage). Must be written in UI language. Translate appropriately: "שטח פתוח" → "на открытой местности", "נפילה בשטח פתוח" → "на открытой местности". null if unknown or hitsConfirmed == 0.
+- LANGUAGE: rocketDetail, hit_location, hit_detail MUST be written in the UI language (see context header). Translate from Hebrew/Arabic/English as needed. Do NOT output verbatim Hebrew if UI language is Russian, etc.
 - *_qual fields: use ONLY when NO exact count is given. If exact number present, set *_qual=null.
 - "none" qual is only valid if explicitly stated (e.g., "все перехвачены", "не упало в море").
-- For IDF (@idf_telegram) posts about ongoing operations (not this specific attack) → time_relevance=0.
+- For IDF (@idf_telegram) posts about ongoing operations (not this specific attack) → timeRelevance=0.
 - CASUALTIES — HIGHEST THRESHOLD: Only set casualties > 0 if the source text EXPLICITLY uses words
   meaning "killed", "dead", "died", "fatality" (Hebrew: נהרג/מת/קטל; Russian: погиб/убит/смерть;
   English: killed/dead/died/fatality). NEVER infer deaths from "serious injury", "critical condition",
@@ -226,34 +213,36 @@ Rules:
   confidence for casualties MUST be >= 0.95 or set to null.
 - INJURY RETRACTIONS: If a source explicitly states "no injured", "false report of injury",
   "ложное сообщение о раненом", "אין פצועים", set injuries=0 with high confidence (>= 0.8).
-  This overrides earlier injury reports.- INJURIES CAUSE: injuries_cause distinguishes:
+  This overrides earlier injury reports.
+- INJURIES CAUSE: injuries_cause distinguishes:
   - "rocket" = injured by rocket fragment, blast, or structural damage from impact
   - "rushing_to_shelter" = injured while running to shelter (fell, stampede, heart attack, panic)
-  - null = unknown or no injuries. ALWAYS set this when injuries > 0.- GEO-RELEVANCE FOR HITS: hits_confirmed, hit_location, hit_detail and hit_type must refer to
+  - null = unknown or no injuries. ALWAYS set this when injuries > 0.
+- GEO-RELEVANCE FOR HITS: hitsConfirmed, hit_location, hit_detail and hit_type must refer to
   the CONFIGURED ALERT ZONE only. If the source describes damage/debris in a DIFFERENT city
   or area (e.g., Rishon LeZion when the zone is Tel Aviv South), set hit_location to that city
-  name with a note, set region_relevance proportionally lower, and describe the actual location
+  name with a note, set regionRelevance proportionally lower, and describe the actual location
   in hit_detail. Do NOT report hits as "confirmed" in the alert zone if the source says a
   different city. If the damage is in a nearby but different city (~10-30km), report it in
   hit_detail as "<city> (~Xкм)".
 - LANGUAGE NEUTRALITY: Posts may be in Hebrew, Russian, Arabic, or English. The language of the post
-  MUST NOT affect source_trust or confidence. Russian-language Israeli channels are equally reliable
+  MUST NOT affect sourceTrust or confidence. Russian-language Israeli channels are equally reliable
   and often break news faster than Hebrew ones. Judge ONLY by factual content and tone.
 - TRUST INTERCEPTION & IMPACT REPORTS: When a channel explicitly states interception results
   (e.g., "перехвачены", "intercepted", "יירוט", "упали в море", "fell in the sea", "נפלו בים",
-  "open area impact", "שטח פתוח"), trust these claims with source_trust >= 0.7 and confidence >= 0.7.
+  "open area impact", "שטח פתוח"), trust these claims with sourceTrust >= 0.7 and confidence >= 0.7.
   Israeli Telegram channels often report interception results before official confirmation,
   and these reports are typically accurate. Do NOT downgrade these just because they lack official source.
 - EXISTING ENRICHMENT CROSS-REFERENCE: If the context includes "EXISTING ENRICHMENT", previous phases
   already established facts with high confidence. Cross-reference against them:
-  - If this post discusses a DIFFERENT country_origin than what’s established, be skeptical.
-    Security officials summarizing past operations or different events should get time_relevance=0.
+  - If this post discusses a DIFFERENT countryOrigin than what’s established, be skeptical.
+    Security officials summarizing past operations or different events should get timeRelevance=0.
   - Only override existing enrichment if this post has DIRECT, specific information about the current attack.
-  - General security news that appeared right after a siren but doesn't mention THIS specific attack = time_relevance=0.
+  - General security news that appeared right after a siren but doesn't mention THIS specific attack = timeRelevance=0.
 - OFFICIAL PHASE ANNOUNCEMENTS ≠ INCIDENT DATA: Messages from IDF / Home Front Command (Pikud HaOref)
   that announce alert phases — "siren issued", "alert in effect", "can leave the shelter", "all clear" —
   are ADMINISTRATIVE NOTICES. They say nothing about rocket count, country of origin, interceptions,
-  hits, casualties, or damage. Extract NO data fields from these messages. Set time_relevance=0 and
+  hits, casualties, or damage. Extract NO data fields from these messages. Set timeRelevance=0 and
   all data fields to null.`;
 
 export interface ExtractContext {
@@ -263,7 +252,7 @@ export interface ExtractContext {
   alertId: string;
   language: string;
   /** Existing enrichment from earlier phases — for cross-reference */
-  existingEnrichment?: import("./types.js").EnrichmentData;
+  existingEnrichment?: EnrichmentData;
 }
 
 /**
@@ -373,12 +362,15 @@ export async function extractPosts(
         const text = raw
           .replace(/^```(?:json)?\s*\n?/i, "")
           .replace(/\n?```\s*$/i, "");
-        const parsed = JSON.parse(text.trim()) as ExtractionResult;
+        const rawParsed = JSON.parse(text.trim());
+        const parsed = Object.fromEntries(
+          Object.entries(rawParsed).filter(([_, v]) => v !== null),
+        ) as ExtractionResult;
         return {
           ...parsed,
           channel: post.channel,
           messageUrl: post.url,
-          time_relevance: parsed.time_relevance ?? 0.5,
+          timeRelevance: parsed.timeRelevance ?? 0.5,
           valid: true,
         };
       } catch (err) {
@@ -388,31 +380,13 @@ export async function extractPosts(
         });
         return {
           channel: post.channel,
-          region_relevance: 0,
-          source_trust: 0,
+          regionRelevance: 0,
+          sourceTrust: 0,
           tone: "neutral" as const,
-          time_relevance: 0,
-          country_origin: null,
-          rocket_count: null,
-          is_cassette: null,
-          intercepted: null,
-          intercepted_qual: null,
-          intercepted_qual_num: null,
-          sea_impact: null,
-          sea_impact_qual: null,
-          sea_impact_qual_num: null,
-          open_area_impact: null,
-          open_area_impact_qual: null,
-          open_area_impact_qual_num: null,
-          hits_confirmed: null,
-          casualties: null,
-          injuries: null,
-          injuries_cause: null,
-          eta_refined_minutes: null,
-          rocket_detail: null,
+          timeRelevance: 0,
           confidence: 0,
           valid: false,
-          reject_reason: "extraction_error",
+          rejectReason: "extraction_error",
         };
       }
     }),
@@ -451,49 +425,49 @@ export function postFilter(
 ): ValidatedExtraction[] {
   const validated = extractions.map((ext): ValidatedExtraction => {
     // V0: TIME RELEVANCE — most important check
-    if (ext.time_relevance < 0.5) {
-      return { ...ext, valid: false, reject_reason: "stale_post" };
+    if (ext.timeRelevance < 0.5) {
+      return { ...ext, valid: false, rejectReason: "stale_post" };
     }
-    // V1: region relevance — relaxed for rocket_count-only posts (national totals are valid)
+    // V1: region relevance — relaxed for rocketCount-only posts (national totals are valid)
     const regionThreshold =
-      ext.rocket_count !== null &&
-      ext.intercepted === null &&
-      ext.intercepted_qual === null &&
-      ext.hits_confirmed === null &&
-      ext.casualties === null &&
-      ext.injuries === null
+      ext.rocketCount != undefined &&
+      ext.intercepted == undefined &&
+      ext.interceptedQual == undefined &&
+      ext.hitsConfirmed == undefined &&
+      ext.casualties == undefined &&
+      ext.injuries == undefined
         ? 0.3
         : 0.5;
-    if (ext.region_relevance < regionThreshold) {
-      return { ...ext, valid: false, reject_reason: "region_irrelevant" };
+    if (ext.regionRelevance < regionThreshold) {
+      return { ...ext, valid: false, rejectReason: "region_irrelevant" };
     }
     // V2: source trust
-    if (ext.source_trust < 0.4) {
-      return { ...ext, valid: false, reject_reason: "untrusted_source" };
+    if (ext.sourceTrust < 0.4) {
+      return { ...ext, valid: false, rejectReason: "untrusted_source" };
     }
     // V3: tone — reject alarmist
     if (ext.tone === "alarmist") {
-      return { ...ext, valid: false, reject_reason: "alarmist_tone" };
+      return { ...ext, valid: false, rejectReason: "alarmist_tone" };
     }
-    // V4: at least one data field must be non-null
+    // V4: at least one data field must be non-undefined
     const hasData =
-      ext.country_origin !== null ||
-      ext.rocket_count !== null ||
-      ext.is_cassette !== null ||
-      ext.intercepted !== null ||
-      ext.intercepted_qual !== null ||
-      ext.hits_confirmed !== null ||
-      ext.casualties !== null ||
-      ext.injuries !== null ||
-      ext.eta_refined_minutes !== null;
+      ext.countryOrigin != undefined ||
+      ext.rocketCount != undefined ||
+      ext.isCassette != undefined ||
+      ext.intercepted != undefined ||
+      ext.interceptedQual != undefined ||
+      ext.hitsConfirmed != undefined ||
+      ext.casualties != undefined ||
+      ext.injuries != undefined ||
+      ext.etaRefinedMinutes != undefined;
     if (!hasData) {
-      return { ...ext, valid: false, reject_reason: "no_data" };
+      return { ...ext, valid: false, rejectReason: "no_data" };
     }
     // V5: overall confidence floor
     // Rocket count posts get a lower floor (0.2) — national totals are high-value even if uncertain
-    const confidenceFloor = ext.rocket_count !== null ? 0.2 : 0.3;
+    const confidenceFloor = ext.rocketCount != undefined ? 0.2 : 0.3;
     if (ext.confidence < confidenceFloor) {
-      return { ...ext, valid: false, reject_reason: "low_confidence" };
+      return { ...ext, valid: false, rejectReason: "low_confidence" };
     }
 
     return { ...ext, valid: true };
@@ -506,7 +480,7 @@ export function postFilter(
     alertId,
     passed: passed.length,
     rejected: rejected.length,
-    reasons: rejected.map((r) => `${r.channel}:${r.reject_reason}`),
+    reasons: rejected.map((r) => `${r.channel}:${r.rejectReason}`),
   });
 
   return validated;

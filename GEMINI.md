@@ -64,25 +64,47 @@ GramJS MTProto ──► monitors 5 news channels ──► BullMQ delayed job (
                                               bot.editMessageText() with enrichment
 ```
 
-### Files
+### Files (Monorepo Structure)
 
-| File                          | Purpose                                                                                |
-| ----------------------------- | -------------------------------------------------------------------------------------- |
-| `src/agent/types.ts`          | Shared types: `AgentState`, `EnrichResult`, `ChannelMessage`                           |
-| `src/agent/redis.ts`          | ioredis singleton, lazy connect                                                        |
-| `src/agent/store.ts`          | Redis-backed store: alert metadata, channel messages, dedup                            |
-| `src/agent/queue.ts`          | BullMQ queue: `enrich-alert` jobs with 90s delay                                       |
-| `src/agent/worker.ts`         | BullMQ worker: pulls from queue → runs graph → edits message                           |
-| `src/agent/graph.ts`          | LangGraph StateGraph: 5-tier pipeline (pre-filter → vote → enrich → format → validate) |
-| `src/agent/gramjs-monitor.ts` | GramJS MTProto client: monitors channels, stores messages in Redis                     |
-| `src/agent/auth.ts`           | One-time QR login script to obtain `session_string`                                    |
-| `src/agent/dry-run.ts`        | Manual test script for the pipeline                                                    |
+```
+packages/
+├── shared/        # Config, schemas, Redis helpers — shared across all packages
+├── monitoring/    # Logger wrapper (pino + Better Stack)
+├── gramjs/        # GramJS MTProto client: monitors channels, stores messages in Redis
+├── agent/         # LangGraph enrichment pipeline
+│   └── src/
+│       ├── graph.ts         # LangGraph StateGraph: 5-tier pipeline
+│       ├── extract.ts       # LLM extraction with cheap/expensive filter
+│       ├── queue.ts         # BullMQ queue: `enrich-alert` jobs
+│       ├── worker.ts        # BullMQ worker: runs graph → edits message
+│       ├── tools.ts         # MCP tools for clarification
+│       ├── redis.ts         # ioredis singleton
+│       └── nodes/           # Graph nodes: clarify, filters, message, vote
+├── bot/           # Main grammY bot
+└── cli/           # CLI commands (init, auth, install, logs)
+```
+
+**Build:** `npm run build` → `tsc -b` (uses root tsconfig.json project references)
+
+**Tests:** `npm test` (vitest runs all `packages/*/__tests__/*.test.ts` and `packages/*/src/**/*.test.ts`)
 
 ### Model
 
 - **google/gemini-3-flash-preview** via OpenRouter (no RPD limits)
 - Configured in `config.yaml` under `ai.openrouter_model`
 - Base URL `https://openrouter.ai/api/v1` hardcoded in `graph.ts` — NOT configurable
+
+### Running Tests
+
+```bash
+# Unit tests only (no LLM calls)
+npm test
+
+# All tests including LLM integration tests
+OPENROUTER_API_KEY="sk-or-v1-..." npm test
+```
+
+LLM integration tests are **skipped** without `OPENROUTER_API_KEY` env variable. Set it in your shell or `.env` file. Key is also in `config.yaml` under `ai.openrouter_api_key` but tests require the env var.
 
 ### Config Keys (config.yaml)
 

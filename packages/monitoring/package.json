@@ -1,0 +1,21 @@
+{
+  "name": "@easyoref/monitoring",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@logtail/node": "^0.5.6",
+    "chalk": "^5.3.0",
+    "@easyoref/shared": "*",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

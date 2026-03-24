@@ -1,0 +1,26 @@
+{
+  "name": "@easyoref/agent",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.1.31",
+    "@langchain/langgraph": "^1.2.1",
+    "@langchain/openai": "^1.2.12",
+    "bullmq": "^5.0.0",
+    "ioredis": "^5.3.0",
+    "@easyoref/shared": "*",
+    "@easyoref/monitoring": "*",
+    "@easyoref/gramjs": "*",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

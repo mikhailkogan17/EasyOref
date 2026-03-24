@@ -13,37 +13,38 @@
  * No LLM needed — purely deterministic matching for <1s latency.
  */
 
-import { Bot } from "grammy";
-import { createServer } from "node:http";
-import { startMonitor, stopMonitor } from "./agent/gramjs-monitor.js";
-import { enqueueEnrich } from "./agent/queue.js";
-import { closeRedis } from "./agent/redis.js";
 import {
   buildEnrichedMessage,
+  enqueueEnrich,
   MONITORING_RE,
+  startEnrichWorker,
+  stopEnrichWorker,
   stripMonitoring,
-} from "./agent/message.js";
+} from "@easyoref/agent";
+import { startMonitor, stopMonitor } from "@easyoref/gramjs";
+import * as logger from "@easyoref/monitoring";
 import {
+  ActiveSession,
+  AlertType,
+  AlertTypeConfig,
   clearSession,
+  closeRedis,
+  config,
   getActiveSession,
   getEnrichmentData,
-  PHASE_ENRICH_DELAY_MS,
-  PHASE_INITIAL_DELAY_MS,
-  saveAlertMeta,
-  setActiveSession,
-  type ActiveSession,
-  type ChatMessage,
-} from "./agent/store.js";
-import { startEnrichWorker, stopEnrichWorker } from "./agent/worker.js";
-import { config, type AlertTypeConfig } from "./config.js";
-import { initGifState, pickGif } from "./gif-state.js";
-import {
   getLanguagePack,
   initTranslations,
+  PHASE_ENRICH_DELAY_MS,
+  PHASE_INITIAL_DELAY_MS,
   resolveCityIds,
+  saveAlertMeta,
+  setActiveSession,
+  TelegramMessage,
   translateAreas,
-} from "./i18n.js";
-import * as logger from "./logger.js";
+} from "@easyoref/shared";
+import { Bot } from "grammy";
+import { createServer } from "node:http";
+import { initGifState, pickGif } from "./gif-state.js";
 
 const langPack = getLanguagePack(config.language);
 
@@ -76,8 +77,6 @@ function matchedAreaLabel(alertAreas: string[]): string {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Alert Type Classification
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-type AlertType = "early_warning" | "siren" | "resolved";
 
 /** Map internal AlertType → YAML config key */
 const ALERT_TYPE_TO_CONFIG: Record<AlertType, AlertTypeConfig> = {
@@ -477,7 +476,7 @@ async function removeMonitoringFromAll(
 ): Promise<void> {
   if (!MONITORING_RE.test(session.currentText)) return;
   const cleaned = stripMonitoring(session.currentText);
-  const targets: ChatMessage[] = session.chatMessages ?? [
+  const targets: TelegramMessage[] = session.telegramMessages ?? [
     {
       chatId: session.chatId,
       messageId: session.latestMessageId,
@@ -559,7 +558,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
       (alertType === "resolved" || existingForReply.phase !== "resolved");
     if (shouldReply) {
       // Build per-chat reply targets
-      const cms: ChatMessage[] = existingForReply.chatMessages ?? [
+      const cms: TelegramMessage[] = existingForReply.telegramMessages ?? [
         {
           chatId: existingForReply.chatId,
           messageId: existingForReply.latestMessageId,
@@ -588,12 +587,12 @@ async function processAlert(alert: OrefAlert): Promise<void> {
 
   try {
     // ── Send to all configured chats ──
-    const chatMessages: ChatMessage[] = [];
+    const telegramMessages: TelegramMessage[] = [];
     for (const cid of config.chatIds) {
       const replyTo = replyToMap.get(cid);
       const sent = await sendTelegram(cid, alertType, message, replyTo);
       if (sent) {
-        chatMessages.push({
+        telegramMessages.push({
           chatId: cid,
           messageId: sent.messageId,
           isCaption: sent.isCaption,
@@ -601,8 +600,8 @@ async function processAlert(alert: OrefAlert): Promise<void> {
       }
     }
 
-    if (chatMessages.length === 0) return;
-    const primary = chatMessages[0]!;
+    if (telegramMessages.length === 0) return;
+    const primary = telegramMessages[0]!;
 
     // ── Session-based enrichment lifecycle ──
     if (config.agent.enabled) {
@@ -636,7 +635,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
             isCaption: primary.isCaption,
             currentText: message,
             baseText: baseMessage,
-            chatMessages,
+            telegramMessages,
           };
           await setActiveSession(updated);
           const delay = PHASE_ENRICH_DELAY_MS.resolved;
@@ -668,7 +667,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
             currentText: message,
             baseText: baseMessage,
             alertAreas: alert.data,
-            chatMessages,
+            telegramMessages,
           };
           await setActiveSession(updated);
           logger.info("Session: upgraded phase", {
@@ -695,13 +694,13 @@ async function processAlert(alert: OrefAlert): Promise<void> {
             currentText: message,
             baseText: baseMessage,
             alertAreas: alert.data,
-            chatMessages,
+            telegramMessages,
           };
           await setActiveSession(session);
           logger.info("Session: started", {
             sessionId: alert.id,
             phase: alertType,
-            chatCount: chatMessages.length,
+            chatCount: telegramMessages.length,
           });
         }
 

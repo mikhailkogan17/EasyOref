@@ -9,7 +9,7 @@ import chalk from "chalk";
 import { Bot } from "grammy";
 import yaml from "js-yaml";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { CONFIG_DIR, HOME_CONFIG_PATH } from "./config.js";
+import { CONFIG_DIR, HOME_CONFIG_PATH } from "@easyoref/shared";
 
 export async function init(): Promise<void> {
   console.log(chalk.bold("\n🚨 EasyOref Setup\n"));

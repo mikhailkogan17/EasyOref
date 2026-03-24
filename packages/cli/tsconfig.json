@@ -12,8 +12,10 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "declaration": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "composite": true
   },
+  "references": [{ "path": "../shared" }, { "path": "../monitoring" }],
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
