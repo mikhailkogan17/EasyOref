@@ -1,8 +1,66 @@
 /**
  * LangGraph.js enrichment pipeline — phase-aware, time-validated.
  *
- * Pipeline:
- *   filter → extract → vote → [clarify → revote] → edit
+ * ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌────────────┐
+ * │ filter  │───▶│ extract │───▶│  vote   │───▶│ shouldClarify│
+ * └─────────┘    └─────────┘    └─────────┘    └──────┬─────┘
+ *                                                         │
+ *                                          ┌──────────────┴──────────────┐
+ *                                          │                               │
+ *                                     [low conf]                    [high conf]
+ *                                          │                               │
+ *                                          ▼                               ▼
+ *                                   ┌────────────┐              ┌─────────┐
+ *                                   │  clarify   │              │   edit  │
+ *                                   └──────┬─────┘              └─────────┘
+ *                                          │                            ▲
+ *                                          ▼                            │
+ *                                   ┌────────────┐              ┌─────────┐
+ *                                   │   revote   │──────────────┘
+ *                                   └────────────┘
+ *
+ * ── Node responsibilities ──────────────────────────────────────────────────
+ *
+ * filter:     Collect Telegram posts from Redis, apply deterministic noise
+ *             filters (area lists, summaries, IDF press releases). Returns
+ *             ChannelTracking structure.
+ *
+ * extract:    LLM-powered extraction pipeline:
+ *             1. Cheap model → which channels have relevant intel?
+ *             2. Expensive model → extract structured data per post
+ *             3. Post-filter → deterministic validation
+ *
+ * vote:       Consensus voting (deterministic, 0 tokens). Aggregates multiple
+ *             extractions into a single VotedResult using median/majority.
+ *
+ * shouldClarify: Conditional routing:
+ *             - Low confidence (< threshold) → clarify
+ *             - Single-source Lebanon for central Israel → clarify (suspicious)
+ *             - Already clarified → edit
+ *             - MCP tools disabled → edit
+ *
+ * clarify:    ReAct agent with tools (read_telegram, alert_history,
+ *             resolve_area, betterstack_log). Fetches more data to resolve
+ *             contradictions. Output: new extractions.
+ *
+ * revote:     Re-run vote with additional extractions from clarify.
+ *
+ * edit:       Build enriched message text and edit Telegram message.
+ *
+ * ── Why this pipeline? ─────────────────────────────────────────────────────
+ *
+ * 1. Cheap → Expensive: Saves tokens. Pre-filter with cheap model ($0.001)
+ *    before spending on per-post extraction ($0.01 each).
+ *
+ * 2. ReAct clarification: Low-confidence results aren't "failed" —
+ *    they're signals that more data is needed. The LLM decides what tools
+ *    to use rather than a hardcoded threshold.
+ *
+ * 3. Carry-forward: previousEnrichment preserves data between phases.
+ *    If origin was confirmed in early_warning, it carries to siren/resolved.
+ *
+ * 4. Time validation: LLM instructions emphasize checking if sources
+ *    are about THIS alert vs. previous attacks. Critical for accuracy.
  */
 
 import * as logger from "@easyoref/monitoring";
