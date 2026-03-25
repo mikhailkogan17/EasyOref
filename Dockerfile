@@ -4,7 +4,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY packages packages
 COPY tsconfig*.json ./
-RUN npm install --legacy-peer-deps
+RUN npm install --legacy-peer-deps --ignore-scripts
 RUN npm run build
 RUN mkdir -p /app/data && chown -R node:node /app/data
 USER node
