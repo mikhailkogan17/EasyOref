@@ -44,7 +44,7 @@ export const clarifyAgent = createAgent({
   `,
 });
 
-const describeContradictions = (
+function describeContradictions(
   extractions: ValidatedExtraction[],
   voted: {
     countryOrigins?: { name: string }[];
@@ -57,7 +57,7 @@ const describeContradictions = (
     confidence: number;
     sourcesCount: number;
   },
-): string => {
+): string {
   const issues: string[] = [];
 
   if (voted.countryOrigins && voted.countryOrigins.length > 1) {
@@ -90,7 +90,7 @@ const describeContradictions = (
   issues.push(`Sources count: ${voted.sourcesCount}`);
 
   return issues.join("\n");
-};
+}
 
 export const clarifyNode = async (
   state: AgentStateType,

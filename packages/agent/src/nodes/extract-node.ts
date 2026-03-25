@@ -49,7 +49,7 @@ RULES:
 - CASUALTIES: Only set > 0 if text explicitly uses "killed", "dead", "fatality" (Hebrew: נהרג/מת, Russian: погиб/убит, English: killed/dead).`,
 });
 
-const getPhaseInstructions = (alertType: AlertType): string => {
+function getPhaseInstructions(alertType: AlertType): string {
   switch (alertType) {
     case "early_warning":
       return `PHASE: EARLY WARNING. Focus on country_origin, eta_refined_minutes, rocket_count, is_cassette.`;
@@ -58,7 +58,7 @@ const getPhaseInstructions = (alertType: AlertType): string => {
     case "resolved":
       return `PHASE: RESOLVED. All fields valid. Prioritize confirmed official reports.`;
   }
-};
+}
 
 export const postFilter = (
   extractions: ValidatedExtraction[],

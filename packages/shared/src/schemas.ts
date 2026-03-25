@@ -93,12 +93,6 @@ export const ChannelTrackingSchema = z.object({
 });
 export type ChannelTracking = z.infer<typeof ChannelTrackingSchema>;
 
-// Backward compatibility aliases (deprecated)
-export const TrackedMessageSchema = NewsMessageSchema;
-export type TrackedMessage = NewsMessage;
-export const ChannelWithUpdatesSchema = NewsChannelWithUpdatesSchema;
-export type ChannelWithUpdates = NewsChannelWithUpdates;
-
 // ─────────────────────────────────────────────────────────
 // Pre-filter (deterministic, zero tokens)
 // ─────────────────────────────────────────────────────────
