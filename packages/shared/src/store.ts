@@ -28,6 +28,25 @@ import { createEmptyEnrichmentData } from "./schemas.js";
 // Re-export types for backward compatibility
 export type { ActiveSession, AlertMeta, ChannelPost, TelegramMessage };
 
+// Schema version for migration handling
+export const SCHEMA_VERSION = "2.0.0";
+const SCHEMA_VERSION_KEY = "schema:version";
+
+let schemaVersionChecked = false;
+
+export async function ensureSchemaVersion(): Promise<void> {
+  if (schemaVersionChecked) return;
+  schemaVersionChecked = true;
+
+  const redis = getRedis();
+  const stored = await redis.get(SCHEMA_VERSION_KEY);
+
+  if (stored !== SCHEMA_VERSION) {
+    await redis.flushall();
+    await redis.set(SCHEMA_VERSION_KEY, SCHEMA_VERSION);
+  }
+}
+
 const META_TTL_S = 20 * 60; // 20 minutes
 const SESSION_TTL_S = 45 * 60; // 45 min worst case
 
