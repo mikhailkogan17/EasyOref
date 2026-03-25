@@ -17,6 +17,9 @@
     "test:watch": "vitest",
     "changeset": "changeset",
     "version-bump": "changeset version",
+    "bump": "node scripts/bump.js",
+    "publish": "npm run build && npm publish -w packages/bot --access public --provenance",
+    "publish:all": "npm run build && npm publish -w packages/shared --access public --provenance && npm publish -w packages/agent --access public --provenance && npm publish -w packages/bot --access public --provenance",
     "release": "npm run build && npm publish -w packages/bot --access public --provenance",
     "prepare": "husky"
   },
