@@ -2,19 +2,15 @@
   "folders": [
     {
       "name": "EasyOref",
-      "path": ".",
-    },
-    {
-      "name": "CyberMem (reference)",
-      "path": "../cybermem",
-    },
+      "path": "."
+    }
   ],
   "settings": {
     // ===== Editor & Files =====
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
       "source.organizeImports": "explicit",
-      "source.fixAll": "explicit",
+      "source.fixAll": "explicit"
     },
     "editor.rulers": [100],
     "files.autoSave": "afterDelay",
@@ -24,15 +20,15 @@
     "files.associations": {
       "Dockerfile*": "dockerfile",
       "*.yaml": "yaml",
-      "*.yml": "yaml",
+      "*.yml": "yaml"
     },
 
     // ===== TypeScript =====
     "[typescript]": {
-      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
     },
     "[javascript]": {
-      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
     },
 
     // ===== YAML =====
@@ -40,19 +36,19 @@
     "yaml.format.enable": true,
     "yaml.schemas": {
       "https://json.schemastore.org/docker-compose.json": [
-        "docker-compose*.yml",
-      ],
+        "docker-compose*.yml"
+      ]
     },
     "[yaml]": {
-      "editor.defaultFormatter": "redhat.vscode-yaml",
+      "editor.defaultFormatter": "redhat.vscode-yaml"
     },
 
     // ===== JSON =====
     "[json]": {
-      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
     },
     "[jsonc]": {
-      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
     },
 
     // ===== Markdown =====
@@ -60,7 +56,7 @@
     "[markdown]": {
       "editor.defaultFormatter": "yzhang.markdown-all-in-one",
       "editor.wordWrap": "on",
-      "files.trimTrailingWhitespace": false,
+      "files.trimTrailingWhitespace": false
     },
 
     // ===== Git =====
@@ -71,12 +67,12 @@
     "files.exclude": {
       "**/.DS_Store": true,
       "**/node_modules": true,
-      "**/dist": true,
+      "**/dist": true
     },
     "search.exclude": {
       "**/node_modules": true,
       "**/.git": true,
-      "**/dist": true,
+      "**/dist": true
     },
     "cSpell.words": [
       "ansible",
@@ -90,11 +86,11 @@
       "oref",
       "tailscale",
       "traefik",
-      "сирена",
+      "сирена"
     ],
     "chat.tools.terminal.autoApprove": {
-      "npx tsc": true,
-    },
+      "npx tsc": true
+    }
   },
   "extensions": {
     "recommendations": [
@@ -117,8 +113,8 @@
       "streetsidesoftware.code-spell-checker",
 
       // Antigravity
-      "n2ns.antigravity-panel",
-    ],
+      "n2ns.antigravity-panel"
+    ]
   },
   "launch": {
     "version": "0.2.0",
@@ -130,9 +126,9 @@
         "runtimeExecutable": "npx",
         "runtimeArgs": ["tsx", "packages/bot/src/bot.ts"],
         "console": "integratedTerminal",
-        "cwd": "${workspaceFolder}",
-      },
-    ],
+        "cwd": "${workspaceFolder}"
+      }
+    ]
   },
   "tasks": {
     "version": "2.0.0",
@@ -143,27 +139,27 @@
         "command": "npx tsx watch packages/bot/src/bot.ts",
         "group": {
           "kind": "build",
-          "isDefault": true,
+          "isDefault": true
         },
         "presentation": {
           "reveal": "always",
-          "panel": "new",
-        },
+          "panel": "new"
+        }
       },
       {
         "label": "Build: TypeScript",
         "type": "shell",
-        "command": "npm run build",
+        "command": "npm run build"
       },
       {
         "label": "Docker: Up",
         "type": "shell",
-        "command": "docker compose --profile ollama up -d",
+        "command": "docker compose --profile ollama up -d"
       },
       {
         "label": "Docker: Down",
         "type": "shell",
-        "command": "docker compose down",
+        "command": "docker compose down"
       },
       {
         "label": "Docker: Logs",
@@ -171,20 +167,20 @@
         "command": "docker compose logs -f",
         "presentation": {
           "reveal": "always",
-          "panel": "new",
-        },
+          "panel": "new"
+        }
       },
       {
         "label": "Ollama: Pull Model",
         "type": "shell",
-        "command": "ollama pull gemma3:1b",
+        "command": "ollama pull gemma3:1b"
       },
 
       {
         "label": "Validate: docker-compose.yml",
         "type": "shell",
-        "command": "docker compose config",
-      },
-    ],
-  },
+        "command": "docker compose config"
+      }
+    ]
+  }
 }
