@@ -34,7 +34,7 @@ Cell Broadcast alerts — for you in Israel.
 ## Features
 
 - **4 languages** — Russian, English, Hebrew, Arabic
-- **3 alert types** — early warning, siren, all-clear
+- **3 alert types** — early warning, red_alert, all-clear
 - **Custom messages** — your own text and media per alert type
 
 ## Install
@@ -140,7 +140,7 @@ Full reference: [`config.yaml.example`](config.yaml.example).
 | `telegram.bot_token`     | —       | **required.** Token from @BotFather                                                                 |
 | `telegram.chat_id`       | —       | **required.** Chat ID (negative number)                                                             |
 | `language`               | `ru`    | `ru` `en` `he` `ar`                                                                                 |
-| `alert_types`            | all     | `early` `siren` `resolved`                                                                          |
+| `alert_types`            | all     | `early` `red_alert` `resolved`                                                                          |
 | `gif_mode`               | `none`  | `funny_cats` `none`                                                                                 |
 | `title_override.*`       | —       | Custom title per alert type                                                                         |
 | `description_override.*` | —       | Custom description per alert type                                                                   |
