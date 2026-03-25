@@ -614,8 +614,7 @@ export type RunEnrichmentInput = z.infer<typeof RunEnrichmentInputSchema>;
 // Config types
 // ─────────────────────────────────────────────────────────
 
-export const AlertTypeConfigSchema = z.enum(["early", "red_alert", "resolved"]);
-export type AlertTypeConfig = z.infer<typeof AlertTypeConfigSchema>;
+export type AlertTypeConfig = "early" | "red_alert" | "resolved";
 
 export const GifModeSchema = z.enum(["funny_cats", "none"]);
 export type GifMode = z.infer<typeof GifModeSchema>;
