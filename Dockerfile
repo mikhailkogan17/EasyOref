@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --ignore-scripts --legacy-peer-deps
 COPY packages packages
-RUN npm install --workspaces --ignore-scripts --legacy-peer-deps
+RUN npm install --ignore-scripts --legacy-peer-deps
 RUN npm run build
 
 # Stage 2: Production
@@ -17,7 +17,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev --ignore-scripts --legacy-peer-deps
 COPY packages packages
-RUN npm install --workspaces --omit=dev --ignore-scripts --legacy-peer-deps
+RUN npm install --omit=dev --ignore-scripts --legacy-peer-deps
 COPY --from=builder /app .
 RUN mkdir -p /app/data && chown -R node:node /app/data
 USER node
