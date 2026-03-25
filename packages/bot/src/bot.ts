@@ -7,7 +7,7 @@
  * Flow:
  *   1. Poll oref.org.il every 2 seconds for active alerts
  *   2. Match areas against configured regions (Hebrew names)
- *   3. Classify alert type: early warning / siren / incident over
+ *   3. Classify alert type: early warning / red_alert / incident over
  *   4. If relevant → send calm message to configured Telegram chat
  *
  * No LLM needed — purely deterministic matching for <1s latency.
@@ -26,7 +26,6 @@ import * as logger from "@easyoref/monitoring";
 import {
   ActiveSession,
   AlertType,
-  AlertTypeConfig,
   clearSession,
   closeRedis,
   config,
@@ -79,7 +78,7 @@ function matchedAreaLabel(alertAreas: string[]): string {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /** Map internal AlertType → YAML config key */
-const ALERT_TYPE_TO_CONFIG: Record<AlertType, AlertTypeConfig> = {
+const ALERT_TYPE_TO_CONFIG: Record<AlertType, "early" | "red_alert" | "resolved"> = {
   early_warning: "early",
   red_alert: "red_alert",
   resolved: "resolved",
@@ -97,8 +96,8 @@ function classifyAlertType(title: string): AlertType {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const COOLDOWN_EARLY_MS = 2 * 60 * 1000; // 2 min (Oref sends multiple IDs per wave)
-const COOLDOWN_SIREN_MS = 90 * 1000; // 1.5 min (no prior early warning)
-const COOLDOWN_SIREN_AFTER_EARLY_MS = 3 * 60 * 1000; // 3 min (early warning already sent)
+const COOLDOWN_RED_ALERT_MS = 90 * 1000; // 1.5 min (no prior early warning)
+const COOLDOWN_RED_ALERT_AFTER_EARLY_MS = 3 * 60 * 1000; // 3 min (early warning already sent)
 const COOLDOWN_RESOLVED_MS = 5 * 60 * 1000; // 5 min
 
 const lastSent: Record<AlertType, number> = {
@@ -117,8 +116,8 @@ function shouldSend(type: AlertType): boolean {
     case "red_alert": {
       const sirenCd =
         lastSent.early_warning > 0
-          ? COOLDOWN_SIREN_AFTER_EARLY_MS
-          : COOLDOWN_SIREN_MS;
+          ? COOLDOWN_RED_ALERT_AFTER_EARLY_MS
+          : COOLDOWN_RED_ALERT_MS;
       return elapsed >= sirenCd;
     }
   }
@@ -242,7 +241,7 @@ const CATS_EARLY_WARNING_NIGHT = [
   "https://media1.tenor.com/m/-1dJGIwOFo8AAAAC/wake-up-hooman-husky.gif",
 ];
 
-const CATS_SIREN = [
+const CATS_RED_ALERT = [
   "https://media1.tenor.com/m/9vcHsGLyJmgAAAAd/cat-alarm-alarm.mp4",
   "https://media.tenor.com/Wx3bGh80AWkAAAPo/siren-cat.mp4",
   "https://media.giphy.com/media/WLGJGG9JjpUrmUWkYf/giphy.gif",
@@ -267,7 +266,7 @@ const CATS_RESOLVED = [
 type GifPools = {
   early: string[];
   earlyNight: string[];
-  siren: string[];
+  red_alert: string[];
   resolved: string[];
 };
 
@@ -275,7 +274,7 @@ const GIF_POOLS: Record<string, GifPools> = {
   funny_cats: {
     early: CATS_EARLY_WARNING,
     earlyNight: [...CATS_EARLY_WARNING, ...CATS_EARLY_WARNING_NIGHT],
-    siren: CATS_SIREN,
+    red_alert: CATS_RED_ALERT,
     resolved: CATS_RESOLVED,
   },
 };
@@ -309,7 +308,7 @@ function getGifUrl(alertType: AlertType): string | null {
       );
     }
     case "red_alert":
-      return pickGif(pools.siren, `${mode}_siren`);
+      return pickGif(pools.red_alert, `${mode}_red_alert`);
     case "resolved":
       return pickGif(pools.resolved, `${mode}_resolved`);
   }
@@ -649,9 +648,9 @@ async function processAlert(alert: OrefAlert): Promise<void> {
           });
         }
       } else {
-        // ── Early warning / Siren ──
+        // ── Early warning / Red Alert ──
         if (existingSession && existingSession.phase !== "resolved") {
-          // Upgrade session phase (early → siren, or same-type refresh)
+          // Upgrade session phase (early → red_alert, or same-type refresh)
           if (bot) await removeMonitoringFromAll(bot, existingSession);
 
           const updated: ActiveSession = {

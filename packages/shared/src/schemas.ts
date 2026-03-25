@@ -9,7 +9,11 @@ import { z } from "zod";
 // Alert & Phase types
 // ─────────────────────────────────────────────────────────
 
-export const AlertTypeSchema = z.enum(["early_warning", "red_alert", "resolved"]);
+export const AlertTypeSchema = z.enum([
+  "early_warning",
+  "red_alert",
+  "resolved",
+]);
 export type AlertType = z.infer<typeof AlertTypeSchema>;
 
 export const QualitativeCountSchema = z.discriminatedUnion("type", [
@@ -84,7 +88,9 @@ export const NewsChannelWithUpdatesSchema = z.object({
     .default([])
     .describe("New messages pending processing"),
 });
-export type NewsChannelWithUpdates = z.infer<typeof NewsChannelWithUpdatesSchema>;
+export type NewsChannelWithUpdates = z.infer<
+  typeof NewsChannelWithUpdatesSchema
+>;
 
 export const ChannelTrackingSchema = z.object({
   trackStartTimestamp: z.number().int().min(0),
@@ -134,8 +140,14 @@ export const InsightKindSchema = z.enum([
 export type InsightKind = z.infer<typeof InsightKindSchema>;
 
 export const InsightSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("rocket_impact"), value: z.number().int().min(0) }),
-  z.object({ kind: z.literal("rocket_interception"), value: z.number().int().min(0) }),
+  z.object({
+    kind: z.literal("rocket_impact"),
+    value: z.number().int().min(0),
+  }),
+  z.object({
+    kind: z.literal("rocket_interception"),
+    value: z.number().int().min(0),
+  }),
   z.object({ kind: z.literal("location"), value: z.string().min(1) }),
   z.object({ kind: z.literal("casualty"), value: z.number().int().min(0) }),
   z.object({ kind: z.literal("injury"), value: z.number().int().min(0) }),
@@ -403,7 +415,9 @@ export type VotedResult = z.infer<typeof VotedResultSchema>;
 
 export const ConsensusInsightSchema = z.object({
   insight: InsightSchema,
-  validExtractions: z.array(z.lazy(() => ValidatedExtractionSchema)).default([]),
+  validExtractions: z
+    .array(z.lazy(() => ValidatedExtractionSchema))
+    .default([]),
   avgConfidence: z.number().min(0).max(1),
   sourcesCount: z.number().int().min(1),
 });
