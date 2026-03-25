@@ -1,6 +1,6 @@
 {
   "name": "@easyoref/gramjs",
-  "version": "1.21.9",
+  "version": "1.21.10",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
