@@ -1,8 +1,11 @@
 {
   "name": "@easyoref/cli",
-  "version": "1.21.8",
+  "version": "1.21.10",
   "description": "Interactive setup wizard for EasyOref",
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "bin": {
     "easyoref": "dist/index.js"
   },
