@@ -1,6 +1,6 @@
 {
   "name": "@easyoref/shared",
-  "version": "1.21.2",
+  "version": "1.21.3",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
