@@ -14,7 +14,7 @@ export * from "./nodes/vote-node.js";
 
 export * from "./models.js";
 
-export * from "./runtime/auth.js";
+// export * from "./runtime/auth.js"; // CLI tool, not for import
 export * from "./runtime/dry-run.js";
 export * from "./runtime/queue.js";
 export * from "./runtime/redis.js";

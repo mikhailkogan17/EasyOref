@@ -55,8 +55,8 @@ function printHelp(): void {
 
 function update(path?: string): void {
   const targetPath = path 
-    ? resolve(path) 
-    : process.cwd();
+    ? resolve(path)
+    : "/home/pi/EasyOref";
 
   const composePath = resolve(targetPath, "docker-compose.yml");
 
@@ -69,8 +69,8 @@ function update(path?: string): void {
   console.log(chalk.cyan(`Updating EasyOref in: ${targetPath}...\n`));
 
   try {
-    console.log(chalk.gray("  → npm update"));
-    execSync("npm update", { cwd: targetPath, stdio: "inherit" });
+    console.log(chalk.gray("  → npm update --legacy-peer-deps"));
+    execSync("npm update --legacy-peer-deps", { cwd: targetPath, stdio: "inherit" });
 
     console.log(chalk.gray("\n  → npm uninstall -g easyoref @easyoref/cli 2>/dev/null; npm install -g @easyoref/cli"));
     execSync("npm uninstall -g easyoref @easyoref/cli 2>/dev/null; npm install -g @easyoref/cli", { stdio: "inherit" });
