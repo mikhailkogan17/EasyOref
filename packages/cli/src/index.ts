@@ -16,6 +16,7 @@ import { init } from "./commands/init.js";
 import { listAreas } from "./commands/list-areas.js";
 
 const command = process.argv[2];
+const args = process.argv.slice(3);
 
 async function main(): Promise<void> {
   console.log(chalk.bold("\n🚨 EasyOref — Setup Wizard\n"));
@@ -29,7 +30,7 @@ async function main(): Promise<void> {
       listAreas();
       break;
     case "update":
-      update();
+      update(args[0]);
       break;
     case "--help":
     case "-h":
@@ -44,31 +45,36 @@ async function main(): Promise<void> {
 
 function printHelp(): void {
   console.log(`${chalk.bold("Commands:")}
-  ${chalk.cyan("init")}         Interactive setup wizard (default)
-  ${chalk.cyan("list-areas")}  Show all Oref area names with translations
-  ${chalk.cyan("update")}      Update RPi deployment (docker compose down && up --build)
-  ${chalk.cyan("--help")}      Show this help message
+  ${chalk.cyan("init")}                  Interactive setup wizard (default)
+  ${chalk.cyan("list-areas")}           Show all Oref area names with translations
+  ${chalk.cyan("update")}                Update RPi deployment
+  ${chalk.cyan("update /path/to/deploy")} Update in specific directory
+  ${chalk.cyan("--help")}                Show this help message
 `);
 }
 
-function update(): void {
-  const composePath = resolve(process.cwd(), "docker-compose.yml");
-  const envPath = resolve(process.cwd(), ".env");
+function update(path?: string): void {
+  const targetPath = path 
+    ? resolve(path) 
+    : process.cwd();
+
+  const composePath = resolve(targetPath, "docker-compose.yml");
+  const envPath = resolve(targetPath, ".env");
 
   if (!existsSync(composePath)) {
-    console.log(chalk.yellow("No docker-compose.yml found in current directory."));
-    console.log(chalk.gray("Run from your project or deployment directory."));
+    console.log(chalk.yellow(`No docker-compose.yml found in: ${targetPath}`));
+    console.log(chalk.gray("Usage: easyoref update /path/to/deployment"));
     process.exit(1);
   }
 
-  console.log(chalk.cyan("Updating EasyOref...\n"));
+  console.log(chalk.cyan(`Updating EasyOref in: ${targetPath}...\n`));
 
   try {
     console.log(chalk.gray("  → docker compose down"));
-    execSync("docker compose down", { stdio: "inherit" });
+    execSync("docker compose down", { cwd: targetPath, stdio: "inherit" });
 
     console.log(chalk.gray("\n  → docker compose up --build -d"));
-    execSync("docker compose up --build -d", { stdio: "inherit" });
+    execSync("docker compose up --build -d", { cwd: targetPath, stdio: "inherit" });
 
     console.log(chalk.green("\n✅ EasyOref updated successfully!"));
   } catch (err) {
