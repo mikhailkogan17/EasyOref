@@ -493,7 +493,7 @@ describe("buildEnrichmentFromVote", () => {
     prev.originCites = [{ url: "https://t.me/old/1", channel: "@old" }];
 
     const voted = makeVoted({ countryOrigins: undefined });
-    const data = buildEnrichmentFromVote(voted, prev, "siren", alertTs);
+    const data = buildEnrichmentFromVote(voted, prev, "red_alert", alertTs);
     expect(data.origin).toBe("Йемен");
     expect(data.originCites).toHaveLength(1);
   });
@@ -577,7 +577,7 @@ describe("buildEnrichedMessage", () => {
     enrichment.interceptedCites = [{ url: "https://t.me/b/1", channel: "@b" }];
 
     const text = "🔴 Тревога!\n<b>Время оповещения:</b> 18:00";
-    const result = buildEnrichedMessage(text, "siren", alertTs, enrichment);
+    const result = buildEnrichedMessage(text, "red_alert", alertTs, enrichment);
     expect(result).toContain("<b>Ракет:</b> ~10–15");
     expect(result).toContain("<b>Перехваты:</b> 8");
     expect(result).not.toContain("из них");
@@ -602,7 +602,7 @@ describe("buildEnrichedMessage", () => {
 
     const resultSiren = buildEnrichedMessage(
       text,
-      "siren",
+      "red_alert",
       alertTs,
       enrichment,
     );
@@ -615,7 +615,7 @@ describe("buildEnrichedMessage", () => {
     enrichment.earlyWarningTime = "17:55";
 
     const text = "🟡 Сирена!\n<b>Время оповещения:</b> 18:00";
-    const result = buildEnrichedMessage(text, "siren", alertTs, enrichment);
+    const result = buildEnrichedMessage(text, "red_alert", alertTs, enrichment);
     expect(result).not.toContain("Раннее предупреждение:");
   });
 });

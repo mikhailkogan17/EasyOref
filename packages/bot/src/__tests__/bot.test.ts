@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 
 // ── Alert Type Classification (copied logic for unit testing) ──
 
-type AlertType = "early_warning" | "siren" | "resolved";
+type AlertType = "early_warning" | "red_alert" | "resolved";
 
 function classifyAlertType(title: string): AlertType {
   if (title.includes("האירוע הסתיים")) return "resolved";
   if (title.includes("בדקות הקרובות") || title.includes("צפויות להתקבל"))
     return "early_warning";
-  return "siren";
+  return "red_alert";
 }
 
 describe("classifyAlertType", () => {
@@ -24,8 +24,8 @@ describe("classifyAlertType", () => {
     expect(classifyAlertType("התרעות צפויות להתקבל")).toBe("early_warning");
   });
 
-  it("classifies siren as default", () => {
-    expect(classifyAlertType("ירי רקטות וטילים")).toBe("siren");
+  it("classifies red_alert as default", () => {
+    expect(classifyAlertType("ירי רקטות וטילים")).toBe("red_alert");
   });
 });
 

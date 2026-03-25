@@ -677,7 +677,7 @@ describe.skipIf(!HAS_API)("LLM extraction (real API)", () => {
    */
   async function extractPost(
     post: { channel: string; text: string; ts: number },
-    alertType: "early_warning" | "siren" | "resolved" = "early_warning",
+    alertType: "early_warning" | "red_alert" | "resolved" = "early_warning",
   ): Promise<Record<string, unknown>> {
     const alertTime = toIsraelTime(ALERT_TS);
     const postTime = toIsraelTime(post.ts);
@@ -759,7 +759,7 @@ ${post.text}`;
     "extracts interception data in siren phase",
     { timeout: 60_000 },
     async () => {
-      const result = await extractPost(POST_INTERCEPTION, "siren");
+      const result = await extractPost(POST_INTERCEPTION, "red_alert");
       console.log(
         "DEBUG interception result:",
         JSON.stringify(result, null, 2),

@@ -13,10 +13,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 // We can't import config.ts directly (it evaluates at import time).
 // Instead we test the YAML parsing/validation logic in isolation.
 
-type AlertTypeConfig = "early" | "siren" | "resolved";
+type AlertTypeConfig = "early" | "red_alert" | "resolved";
 type GifMode = "funny_cats" | "none";
 
-const ALL_ALERT_TYPES: AlertTypeConfig[] = ["early", "siren", "resolved"];
+const ALL_ALERT_TYPES: AlertTypeConfig[] = ["early", "red_alert", "resolved"];
 const VALID_GIF_MODES: GifMode[] = ["funny_cats", "none"];
 
 interface ConfigYaml {
@@ -83,12 +83,12 @@ describe("YAML config parsing", () => {
 
   it("parses a full config with all fields", () => {
     const full: ConfigYaml = {
-      alert_types: ["early", "siren"],
+      alert_types: ["early", "red_alert"],
       city_ids: [722, 723, 1],
       language: "en",
       gif_mode: "funny_cats",
-      title_override: { siren: "🚀 ROCKET!" },
-      description_override: { siren: "Run!" },
+      title_override: { red_alert: "🚀 ROCKET!" },
+      description_override: { red_alert: "Run!" },
       observability: { betterstack_token: "tok_abc" },
       telegram: { bot_token: "123:ABC", chat_id: "-100" },
       health_port: 8080,
@@ -98,12 +98,12 @@ describe("YAML config parsing", () => {
     const path = writeTmpYaml("full.yaml", full);
     const raw = yaml.load(readFileSync(path, "utf-8")) as ConfigYaml;
 
-    expect(raw.alert_types).toEqual(["early", "siren"]);
+    expect(raw.alert_types).toEqual(["early", "red_alert"]);
     expect(raw.city_ids).toEqual([722, 723, 1]);
     expect(raw.language).toBe("en");
     expect(raw.gif_mode).toBe("funny_cats");
-    expect(raw.title_override?.siren).toBe("🚀 ROCKET!");
-    expect(raw.description_override?.siren).toBe("Run!");
+    expect(raw.title_override?.red_alert).toBe("🚀 ROCKET!");
+    expect(raw.description_override?.red_alert).toBe("Run!");
     expect(raw.observability?.betterstack_token).toBe("tok_abc");
     expect(raw.health_port).toBe(8080);
     expect(raw.poll_interval_ms).toBe(5000);
@@ -142,8 +142,8 @@ describe("parseAlertTypes", () => {
   });
 
   it("filters invalid alert types", () => {
-    const input = ["early", "bogus", "siren"] as AlertTypeConfig[];
-    expect(parseAlertTypes(input)).toEqual(["early", "siren"]);
+    const input = ["early", "bogus", "red_alert"] as AlertTypeConfig[];
+    expect(parseAlertTypes(input)).toEqual(["early", "red_alert"]);
   });
 
   it("keeps valid subset", () => {
@@ -151,7 +151,7 @@ describe("parseAlertTypes", () => {
   });
 
   it("returns all types when non-array passed", () => {
-    expect(parseAlertTypes("siren" as unknown as AlertTypeConfig[])).toEqual(
+    expect(parseAlertTypes("red_alert" as unknown as AlertTypeConfig[])).toEqual(
       ALL_ALERT_TYPES,
     );
   });
@@ -233,12 +233,12 @@ describe("config overrides", () => {
   it("override fields can be partial", () => {
     const yml: ConfigYaml = {
       emoji_override: { early: "🚀" },
-      title_override: { siren: "CUSTOM SIREN" },
+      title_override: { red_alert: "CUSTOM SIREN" },
       // description_override not set
     };
     expect(yml.emoji_override?.early).toBe("🚀");
-    expect(yml.emoji_override?.siren).toBeUndefined();
-    expect(yml.title_override?.siren).toBe("CUSTOM SIREN");
+    expect(yml.emoji_override?.red_alert).toBeUndefined();
+    expect(yml.title_override?.red_alert).toBe("CUSTOM SIREN");
     expect(yml.title_override?.early).toBeUndefined();
     expect(yml.description_override).toBeUndefined();
   });
@@ -247,15 +247,15 @@ describe("config overrides", () => {
     const overrides = {
       emoji_override: {
         early: "🚀",
-        siren: "🔴",
+        red_alert: "🔴",
       },
       title_override: {
         early: "Warning",
-        siren: "SIREN",
+        red_alert: "SIREN",
         resolved: "Clear",
       },
       description_override: {
-        siren: "",
+        red_alert: "",
         resolved: "You may leave the shelter.",
       },
     };
@@ -268,10 +268,10 @@ describe("config overrides", () => {
   });
 
   it("empty description string round-trips as empty", () => {
-    const yml = { description_override: { siren: "" } };
+    const yml = { description_override: { red_alert: "" } };
     const dumped = yaml.dump(yml);
     const parsed = yaml.load(dumped) as ConfigYaml;
-    expect(parsed.description_override?.siren).toBe("");
+    expect(parsed.description_override?.red_alert).toBe("");
   });
 });
 

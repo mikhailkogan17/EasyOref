@@ -551,7 +551,7 @@ describe("clarify output contract", () => {
     const input = {
       alertId: "test-1",
       alertAreas: ["תל אביב"],
-      alertType: "siren" as const,
+      alertType: "red_alert" as const,
       messageId: 123,
       currentText: "text",
       extractions: [makeExtraction()],
