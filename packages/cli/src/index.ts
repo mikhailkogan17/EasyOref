@@ -59,7 +59,6 @@ function update(path?: string): void {
     : process.cwd();
 
   const composePath = resolve(targetPath, "docker-compose.yml");
-  const envPath = resolve(targetPath, ".env");
 
   if (!existsSync(composePath)) {
     console.log(chalk.yellow(`No docker-compose.yml found in: ${targetPath}`));
@@ -70,7 +69,13 @@ function update(path?: string): void {
   console.log(chalk.cyan(`Updating EasyOref in: ${targetPath}...\n`));
 
   try {
-    console.log(chalk.gray("  → docker compose down"));
+    console.log(chalk.gray("  → npm update"));
+    execSync("npm update", { cwd: targetPath, stdio: "inherit" });
+
+    console.log(chalk.gray("\n  → npm install -g @easyoref/cli"));
+    execSync("npm install -g @easyoref/cli", { stdio: "inherit" });
+
+    console.log(chalk.gray("\n  → docker compose down"));
     execSync("docker compose down", { cwd: targetPath, stdio: "inherit" });
 
     console.log(chalk.gray("\n  → docker compose up --build -d"));

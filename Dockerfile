@@ -11,13 +11,26 @@ WORKDIR /app
 COPY package.json package-lock.json* tsconfig.base.json ./
 
 # Copy all packages
-COPY packages/*/package.json ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/agent/package.json ./packages/agent/
+COPY packages/bot/package.json ./packages/bot/
+COPY packages/monitoring/package.json ./packages/monitoring/
+COPY packages/gramjs/package.json ./packages/gramjs/
+COPY packages/cli/package.json ./packages/cli/
 
 RUN npm ci --workspaces --ignore-scripts --legacy-peer-deps
 
 # Copy configs and sources
-COPY packages/*/tsconfig.json ./
-COPY packages/*/src/ ./packages/*/src/
+COPY packages/shared/tsconfig.json ./packages/shared/
+COPY packages/shared/src/ ./packages/shared/src/
+COPY packages/agent/tsconfig.json ./packages/agent/
+COPY packages/agent/src/ ./packages/agent/src/
+COPY packages/bot/tsconfig.json ./packages/bot/
+COPY packages/bot/src/ ./packages/bot/src/
+COPY packages/monitoring/tsconfig.json ./packages/monitoring/
+COPY packages/monitoring/src/ ./packages/monitoring/src/
+COPY packages/gramjs/tsconfig.json ./packages/gramjs/
+COPY packages/gramjs/src/ ./packages/gramjs/src/
 
 RUN npm run build
 
@@ -28,11 +41,20 @@ WORKDIR /app
 
 # Install production deps
 COPY package.json package-lock.json* tsconfig.base.json ./
-COPY packages/*/package.json ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/agent/package.json ./packages/agent/
+COPY packages/bot/package.json ./packages/bot/
+COPY packages/monitoring/package.json ./packages/monitoring/
+COPY packages/gramjs/package.json ./packages/gramjs/
+COPY packages/cli/package.json ./packages/cli/
 RUN npm ci --workspaces --omit=dev --ignore-scripts --legacy-peer-deps
 
 # Copy compiled output
-COPY --from=builder /app/packages/*/dist ./packages/*/dist
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/agent/dist ./packages/agent/dist
+COPY --from=builder /app/packages/bot/dist ./packages/bot/dist
+COPY --from=builder /app/packages/monitoring/dist ./packages/monitoring/dist
+COPY --from=builder /app/packages/gramjs/dist ./packages/gramjs/dist
 
 # Copy config file (user must supply config.yaml at build or mount)
 COPY config.yaml* ./
