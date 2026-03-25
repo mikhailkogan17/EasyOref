@@ -1,11 +1,5 @@
 # easyoref
 
-## 2.0.0
-
-### Major Changes
-
-- Release version 1.20.0
-
 ## 1.18.5
 
 ### Patch Changes
