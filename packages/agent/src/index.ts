@@ -9,7 +9,7 @@ export * from "./graph.js";
 export * from "./nodes/clarify-node.js";
 export * from "./nodes/edit-node.js";
 export * from "./nodes/extract-node.js";
-export * from "./nodes/filter-node.js";
+export * from "./nodes/pre-filter-node.js";
 export * from "./nodes/vote-node.js";
 
 export * from "./models.js";

@@ -12,7 +12,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { isValidLanguage, type Language } from "./i18n.js";
-import { type AlertTypeConfig, type GifMode } from "./schemas.js";
+import {
+  type AlertTypeConfig,
+  type GifModeType as GifMode,
+} from "./schemas.js";
 
 // ── Types ────────────────────────────────────────────────
 
@@ -67,6 +70,9 @@ interface ConfigYamlAi {
   channels?: string[];
   /** Map monitored area prefix → human-readable region label */
   area_labels?: Record<string, string>;
+  /** LangSmith tracing */
+  langsmith_api_key?: string;
+  langsmith_project?: string;
 }
 
 // ── YAML Loader ──────────────────────────────────────────
@@ -213,8 +219,7 @@ export const config = {
     return {
       enabled: ai?.enabled ?? false,
       apiKey: ai?.openrouter_api_key ?? process.env.OPENROUTER_API_KEY ?? "",
-      filterModel:
-        ai?.openrouter_filter_model ?? "google/gemini-2.5-flash-lite",
+      filterModel: ai?.openrouter_filter_model ?? "openai/gpt-oss-120b",
       extractModel:
         ai?.openrouter_extract_model ?? "google/gemini-3.1-flash-lite-preview",
       redisUrl:
@@ -236,6 +241,9 @@ export const config = {
       mcpTools: ai?.mcp_tools ?? false,
       /** Posts per channel to fetch during clarify (1-4, default 3) */
       clarifyFetchCount: Math.min(4, Math.max(1, ai?.clarify_fetch_count ?? 3)),
+      /** LangSmith tracing */
+      langsmithApiKey: ai?.langsmith_api_key ?? "",
+      langsmithProject: ai?.langsmith_project ?? "",
     };
   })(),
 };

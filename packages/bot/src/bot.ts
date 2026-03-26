@@ -24,13 +24,12 @@ import {
 import { startMonitor, stopMonitor } from "@easyoref/gramjs";
 import * as logger from "@easyoref/monitoring";
 import {
-  ActiveSession,
   AlertType,
   clearSession,
   closeRedis,
   config,
   getActiveSession,
-  getEnrichmentData,
+  getEnrichment,
   getLanguagePack,
   initTranslations,
   PHASE_ENRICH_DELAY_MS,
@@ -38,8 +37,9 @@ import {
   resolveCityIds,
   saveAlertMeta,
   setActiveSession,
-  TelegramMessage,
   translateAreas,
+  type ActiveSessionType as ActiveSession,
+  type TelegramMessageType as TelegramMessage,
 } from "@easyoref/shared";
 import { Bot } from "grammy";
 import { createServer } from "node:http";
@@ -78,7 +78,10 @@ function matchedAreaLabel(alertAreas: string[]): string {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /** Map internal AlertType → YAML config key */
-const ALERT_TYPE_TO_CONFIG: Record<AlertType, "early" | "red_alert" | "resolved"> = {
+const ALERT_TYPE_TO_CONFIG: Record<
+  AlertType,
+  "early" | "red_alert" | "resolved"
+> = {
   early_warning: "early",
   red_alert: "red_alert",
   resolved: "resolved",
@@ -566,17 +569,21 @@ async function processAlert(alert: OrefAlert): Promise<void> {
       for (const cm of cms) {
         replyToMap.set(cm.chatId, cm.messageId);
       }
-      const prevEnrichment = await getEnrichmentData();
+      const prevEnrichment = await getEnrichment();
       const hasData =
         prevEnrichment.origin ||
         prevEnrichment.rocketCount ||
         prevEnrichment.intercepted;
       if (hasData) {
+        // Convert legacy Record<string,string> enrichment to SynthesizedInsight[] for buildEnrichedMessage
+        const legacyInsights = Object.entries(prevEnrichment)
+          .filter(([, v]) => v !== undefined && v !== "")
+          .map(([key, value]) => ({ key, value: String(value), confidence: 0.5, sourceUrls: [] }));
         message = buildEnrichedMessage(
           message,
           alertType,
           alertTs,
-          prevEnrichment,
+          legacyInsights,
           alertType !== "resolved" ? langPack.labels.monitoring : undefined,
         );
       }

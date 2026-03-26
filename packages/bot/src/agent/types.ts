@@ -5,27 +5,24 @@ export type {
   AlertType,
   AlertTypeConfig,
   ChannelPost,
-  ChannelTracking,
-  NewsChannelWithUpdates,
-  NewsMessage,
-  CitedSource,
+  ChannelTrackingType,
   ClarifyInput,
   ClarifyOutput,
-  EnrichmentData,
-  ExtractContext,
-  ExtractionResult,
+  Enrichment,
   GifMode,
-  InlineCite,
-  QualitativeCount,
-  RelevanceCheck,
+  Insight,
+  NewsChannelWithUpdatesType,
+  NewsMessageType,
+  QualitativeCountType,
+  RelevanceCheckType,
   RunEnrichmentInput,
   TelegramMessage,
-  ValidatedExtraction,
+  ValidatedInsight,
   VotedResult,
 } from "@easyoref/shared";
 
-export type { AgentStateType } from "@easyoref/agent";
 export { AgentState } from "@easyoref/agent";
+export type { AgentStateType } from "@easyoref/agent";
 
-import { createEmptyEnrichmentData } from "@easyoref/shared";
-export const emptyEnrichmentData = createEmptyEnrichmentData;
+import { createEmptyEnrichment } from "@easyoref/shared";
+export const emptyEnrichment = createEmptyEnrichment;

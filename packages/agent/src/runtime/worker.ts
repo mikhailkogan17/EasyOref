@@ -18,12 +18,12 @@ import {
   getLanguagePack,
   isPhaseExpired,
   PHASE_ENRICH_DELAY_MS,
-  TelegramMessage,
+  type TelegramMessageType as TelegramMessage,
 } from "@easyoref/shared";
 import { Worker } from "bullmq";
 import { Bot } from "grammy";
 import { runEnrichment } from "../graph.js";
-import { MONITORING_RE, stripMonitoring } from "../nodes/message.js";
+import { MONITORING_RE, stripMonitoring } from "../nodes/edit-node.js";
 import { enqueueEnrich, type EnrichJobData } from "./queue.js";
 
 let _worker: Worker | undefined = undefined;

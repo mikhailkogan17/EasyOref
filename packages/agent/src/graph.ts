@@ -23,7 +23,7 @@
  *
  * filter:     Collect Telegram posts from Redis, apply deterministic noise
  *             filters (area lists, summaries, IDF press releases). Returns
- *             ChannelTracking structure.
+ *             ChannelTrackingType structure.
  *
  * extract:    LLM-powered extraction pipeline:
  *             1. Cheap model → which channels have relevant intel?
@@ -63,22 +63,23 @@
  *    are about THIS alert vs. previous attacks. Critical for accuracy.
  */
 
-import * as logger from "@easyoref/monitoring";
 import {
-  AlertTypeSchema,
-  ChannelTrackingSchema,
-  EnrichmentDataSchema,
-  RunEnrichmentInputSchema,
-  TelegramMessageSchema,
-  ValidatedExtractionSchema,
-  VotedResultSchema,
+  AlertType,
+  ChannelTracking,
+  Insight,
+  RunEnrichmentInput,
+  SynthesizedInsight,
+  TelegramMessage,
+  ValidatedInsight,
+  VotedInsight,
+  VotedResult,
   config,
-  createEmptyEnrichmentData,
   validateSafe,
 } from "@easyoref/shared";
 import {
   END,
   MemorySaver,
+  MessagesValue,
   ReducedValue,
   START,
   StateGraph,
@@ -88,27 +89,38 @@ import { z } from "zod";
 import { clarifyNode } from "./nodes/clarify-node.js";
 import { editNode } from "./nodes/edit-node.js";
 import { extractNode } from "./nodes/extract-node.js";
-import { filterNode } from "./nodes/filter-node.js";
+import { postFilterNode } from "./nodes/post-filter-node.js";
+import { filterNode as preFilterNode } from "./nodes/pre-filter-node.js";
+import { synthesizeNode } from "./nodes/synthesize-node.js";
 import { voteNode } from "./nodes/vote-node.js";
 
 export const AgentState = new StateSchema({
+  messages: MessagesValue,
   alertId: z.string(),
   alertTs: z.number(),
-  alertType: AlertTypeSchema,
+  alertType: AlertType,
   alertAreas: z.array(z.string()),
   chatId: z.string(),
   messageId: z.number(),
   isCaption: z.boolean(),
   currentText: z.string(),
-  tracking: ChannelTrackingSchema.optional(),
-  extractions: new ReducedValue(z.array(ValidatedExtractionSchema), {
+  tracking: ChannelTracking.optional(),
+  extractedInsights: new ReducedValue(z.array(Insight), {
     reducer: (previous, current) => [...previous, ...current],
   }),
-  votedResult: VotedResultSchema.optional(),
+  filteredInsights: new ReducedValue(z.array(ValidatedInsight), {
+    reducer: (previous, current) => [...previous, ...current],
+  }),
+  votedResult: VotedResult.optional(),
   clarifyAttempted: z.boolean().default(false),
-  previousEnrichment: EnrichmentDataSchema.optional(),
+  previousInsights: new ReducedValue(z.array(VotedInsight), {
+    reducer: (_previous, current) => current, // Replace, not accumulate — only latest phase matters
+  }),
+  synthesizedInsights: new ReducedValue(z.array(SynthesizedInsight), {
+    reducer: (_previous, current) => current,
+  }),
   monitoringLabel: z.string().optional(),
-  telegramMessages: new ReducedValue(z.array(TelegramMessageSchema), {
+  telegramMessages: new ReducedValue(z.array(TelegramMessage), {
     reducer: (previous, current) => [...previous, ...current],
   }),
 });
@@ -120,28 +132,9 @@ const shouldClarify = (state: AgentStateType): "clarify" | "edit" => {
   if (!config.agent.mcpTools) return "edit";
   if (!state.votedResult) return "edit";
 
-  if (state.votedResult.confidence < config.agent.confidenceThreshold) {
-    logger.info("Agent: routing to clarify (low confidence)", {
-      confidence: state.votedResult.confidence,
-    });
+  // New logic: check if voting determined clarification needed
+  if (state.votedResult.needsClarify) {
     return "clarify";
-  }
-
-  const origins = state.votedResult.countryOrigins;
-  if (origins && origins.length === 1 && state.votedResult.sourcesCount === 1) {
-    if (
-      origins[0]!.name === "Lebanon" &&
-      state.alertAreas.some(
-        (area) =>
-          area.includes("תל אביב") ||
-          area.includes("גוש דן") ||
-          area.includes("שרון") ||
-          area.includes("מרכז"),
-      )
-    ) {
-      logger.info("Agent: routing to clarify (suspicious Lebanon origin)", {});
-      return "clarify";
-    }
   }
 
   return "edit";
@@ -151,31 +144,34 @@ const checkpointer = new MemorySaver();
 
 export const buildGraph = () =>
   new StateGraph(AgentState)
-    .addNode("filter", filterNode)
+    .addNode("pre-filter", preFilterNode)
     .addNode("extract", extractNode)
+    .addNode("post-filter", postFilterNode)
     .addNode("vote", voteNode)
+    .addNode("synthesize", synthesizeNode)
     .addNode("clarify", clarifyNode)
     .addNode("revote", voteNode)
     .addNode("edit", editNode)
-    .addEdge(START, "filter")
-    .addEdge("filter", "extract")
-    .addEdge("extract", "vote")
-    .addConditionalEdges("vote", shouldClarify, {
+    .addEdge(START, "pre-filter")
+    .addEdge("pre-filter", "extract")
+    .addEdge("extract", "post-filter")
+    .addEdge("post-filter", "vote")
+    .addEdge("vote", "synthesize")
+    .addConditionalEdges("synthesize", shouldClarify, {
       clarify: "clarify",
       edit: "edit",
     })
     .addEdge("clarify", "revote")
-    .addEdge("revote", "edit")
+    .addEdge("revote", "synthesize")
     .addEdge("edit", END)
     .compile({ checkpointer });
 
-export type { RunEnrichmentInput } from "@easyoref/shared";
-export { RunEnrichmentInputSchema };
+export type { RunEnrichmentInputType } from "@easyoref/shared";
+export { RunEnrichmentInput };
 
 export const runEnrichment = async (input: unknown): Promise<void> => {
-  const validation = validateSafe(RunEnrichmentInputSchema, input);
+  const validation = validateSafe(RunEnrichmentInput, input);
   if (!validation.ok) {
-    logger.error("Enrichment: invalid input", { error: validation.error });
     throw new Error(`Invalid enrichment input: ${validation.error}`);
   }
 
@@ -192,7 +188,7 @@ export const runEnrichment = async (input: unknown): Promise<void> => {
       isCaption: validInput.isCaption,
       telegramMessages: validInput.telegramMessages,
       currentText: validInput.currentText,
-      previousEnrichment: createEmptyEnrichmentData(),
+      previousInsights: [],
       monitoringLabel: validInput.monitoringLabel,
     },
     { configurable: { thread_id: validInput.alertId } },

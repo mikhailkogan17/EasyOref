@@ -1,202 +1,198 @@
 /**
- * Resolve area relevance tool — check if location is in user's defense zone.
+ * Resolve area relevance — 3-tier matching:
+ *
+ *  1. Exact / substring match against user's monitored areas (free, O(n))
+ *  2. cityMap / zoneMap hierarchy from i18n (free, uses loaded Oref data)
+ *  3. LLM fallback: "Is '{userArea}' part of '{mentioned}'?" (gpt-oss-120b:free)
+ *
+ * The key question is always:
+ *   "Is the user's zone X a part of / inside the region Y mentioned in news?"
+ *
+ * NOT: "are X and Y in the same zone?" (wrong direction — misses macro coverage).
  */
 
-import * as logger from "@easyoref/monitoring";
 import { config } from "@easyoref/shared";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import { freeModel } from "../models.js";
 
-const AREA_PROXIMITY_GROUPS: Record<string, string[]> = {
-  "גוש דן": [
-    "תל אביב", "רמת גן", "גבעתיים", "בני ברק", "חולון", "בת ים",
-    "פתח תקווה", "גבעת שמואל", "אור יהודה", "יהוד", "קריית אונו",
-  ],
-  שרון: ["הרצליה", "רעננה", "כפר סבא", "הוד השרון", "נתניה", "רמת השרון", "כוכב יאיר"],
-  מרכז: ["ראשון לציון", "רחובות", "נס ציונה", "לוד", "רמלה", "מודיעין", "יבנה", "שוהם"],
-  ירושלים: ["ירושלים", "בית שמש", "מעלה אדומים", "מבשרת ציון"],
-  חיפה: ["חיפה", "קריות", "קריית אתא", "קריית ביאליק", "קריית מוצקין", "טירת כרמל", "נשר"],
-  "דרום-מערב": ["אשקלון", "אשדוד", "גן יבנה", "קריית מלאכי"],
-  "עוטף עזה": ["שדרות", "עוטף עזה", "נתיבות", "אופקים"],
-  "באר שבע": ["באר שבע", "ערד", "דימונה"],
-  "גליל עליון": ["קריית שמונה", "מטולה", "צפת", "ראש פינה"],
-};
+// ── Tier 1: direct string matching ────────────────────────
 
-function resolveAreaProximity(
-  mentioned: string,
-  monitoredAreas: string[],
-): {
-  relevant: boolean;
-  sameZone: string | undefined;
-  monitoredMatch: string[];
-  reasoning: string;
-} {
-  const normalizedMentioned = mentioned.toLowerCase().trim();
-  const normalizedMentionedHebrew = mentioned.replace(/\s+/g, "");
+function directMatch(mentioned: string, userAreas: string[]): string[] {
+  const m = mentioned.toLowerCase().trim();
+  return userAreas.filter((a) => {
+    const n = a.toLowerCase().trim();
+    return n === m || n.includes(m) || m.includes(n);
+  });
+}
 
-  for (const area of monitoredAreas) {
-    const normalizedArea = area.toLowerCase().trim();
-    const normalizedAreaHebrew = area.replace(/\s+/g, "");
+// ── Tier 2: geo-hierarchy via cityMap / zoneMap from i18n ─
 
-    if (
-      normalizedMentioned === normalizedArea ||
-      normalizedMentioned.includes(normalizedArea) ||
-      normalizedArea.includes(normalizedMentioned) ||
-      normalizedMentionedHebrew === normalizedAreaHebrew ||
-      normalizedMentionedHebrew.includes(normalizedAreaHebrew)
-    ) {
-      return {
-        relevant: true,
-        sameZone: undefined,
-        monitoredMatch: [area],
-        reasoning: `"${mentioned}" directly matches monitored area "${area}"`,
-      };
-    }
-  }
+/**
+ * Access i18n maps exported from shared.
+ * They're populated after initTranslations(), but we can access the module-level
+ * maps by calling translateAreas — however those aren't exported directly.
+ *
+ * Alternative approach: use ZONE_HIERARCHY from zone-priority which covers
+ * the most common Oref API zones (Tel Aviv zones → area=גוש דן, macro=מרכז).
+ * For everything else: fall through to LLM.
+ */
+import { ZONE_HIERARCHY } from "@easyoref/shared";
 
-  for (const [zone, cities] of Object.entries(AREA_PROXIMITY_GROUPS)) {
-    const mentionedNormalized = mentioned.toLowerCase();
-    const mentionedHebrew = mentioned.replace(/\s+/g, "");
+function hierarchyMatch(mentioned: string, userAreas: string[]): string[] {
+  const m = mentioned.trim();
+  const matched: string[] = [];
 
-    for (const city of cities) {
-      const cityNormalized = city.toLowerCase();
-      const cityHebrew = city.replace(/\s+/g, "");
+  for (const userArea of userAreas) {
+    const meta = ZONE_HIERARCHY[userArea as keyof typeof ZONE_HIERARCHY];
+    if (!meta) continue;
 
+    // Check if mentioned matches city, area, or macro of this user zone
+    const candidates = [meta.city, meta.area, meta.macro].filter(Boolean) as string[];
+    for (const candidate of candidates) {
       if (
-        mentionedNormalized === cityNormalized ||
-        mentionedNormalized.includes(cityNormalized) ||
-        cityNormalized.includes(mentionedNormalized) ||
-        mentionedHebrew === cityHebrew ||
-        mentionedHebrew.includes(cityHebrew)
+        candidate.toLowerCase() === m.toLowerCase() ||
+        m.toLowerCase().includes(candidate.toLowerCase()) ||
+        candidate.toLowerCase().includes(m.toLowerCase())
       ) {
-        const matchedMonitored = monitoredAreas.filter((mArea) => {
-          const mAreaNormalized = mArea.toLowerCase().replace(/\s+/g, "");
-          return cities.some(
-            (c) =>
-              c.toLowerCase().replace(/\s+/g, "") === mAreaNormalized ||
-              mAreaNormalized.includes(c.toLowerCase().replace(/\s+/g, "")) ||
-              c.toLowerCase().replace(/\s+/g, "").includes(mAreaNormalized),
-          );
-        });
-
-        if (matchedMonitored.length > 0) {
-          return {
-            relevant: true,
-            sameZone: zone,
-            monitoredMatch: matchedMonitored,
-            reasoning:
-              `"${mentioned}" is in zone "${zone}" together with monitored: ` +
-              matchedMonitored.join(", "),
-          };
-        }
-
-        return {
-          relevant: false,
-          sameZone: zone,
-          monitoredMatch: [],
-          reasoning:
-            `"${mentioned}" is in zone "${zone}" but none of user's monitored ` +
-            `areas (${monitoredAreas.join(", ")}) are in that zone`,
-        };
+        matched.push(userArea);
+        break;
       }
     }
   }
 
+  return matched;
+}
+
+// ── Tier 3: LLM fallback ──────────────────────────────────
+
+async function llmMatch(
+  mentioned: string,
+  userAreas: string[],
+): Promise<string[]> {
+  try {
+    const matched: string[] = [];
+
+    // Batch all userAreas into a single prompt to save tokens
+    const prompt =
+      `Answer ONLY with a JSON array of indices (0-based) of the user zones that are ` +
+      `located inside or are part of "${mentioned}".\n` +
+      `User zones:\n` +
+      userAreas.map((a, i) => `${i}: ${a}`).join("\n") +
+      `\nRespond with only: [0, 2] or [] — no other text.`;
+
+    const result = await (freeModel as any).invoke(prompt);
+    const text = typeof result === "string" ? result : result?.content ?? "";
+    const match = text.match(/\[[\d,\s]*\]/);
+    if (match) {
+      const indices: number[] = JSON.parse(match[0]);
+      for (const idx of indices) {
+        if (idx >= 0 && idx < userAreas.length) {
+          matched.push(userAreas[idx]!);
+        }
+      }
+    }
+    return matched;
+  } catch {
+    return [];
+  }
+}
+
+// ── Main export ────────────────────────────────────────────
+
+export interface ResolveAreaResult {
+  relevant: boolean;
+  matchedAreas: string[];
+  tier: "exact" | "hierarchy" | "llm" | "none";
+  reasoning: string;
+}
+
+/**
+ * Resolve whether `mentioned` (location from news) contains any of `userAreas`.
+ * Used in post-filter-node (for insightLocation flag) and as clarify ReAct tool.
+ */
+export async function resolveArea(
+  mentioned: string,
+  userAreas: string[],
+): Promise<ResolveAreaResult> {
+  if (!mentioned || !userAreas.length) {
+    return { relevant: false, matchedAreas: [], tier: "none", reasoning: "No areas to check" };
+  }
+
+  // Tier 1
+  const exact = directMatch(mentioned, userAreas);
+  if (exact.length > 0) {
+    return {
+      relevant: true,
+      matchedAreas: exact,
+      tier: "exact",
+      reasoning: `"${mentioned}" directly matches: ${exact.join(", ")}`,
+    };
+  }
+
+  // Tier 2
+  const hier = hierarchyMatch(mentioned, userAreas);
+  if (hier.length > 0) {
+    return {
+      relevant: true,
+      matchedAreas: hier,
+      tier: "hierarchy",
+      reasoning: `"${mentioned}" covers zones via geo-hierarchy: ${hier.join(", ")}`,
+    };
+  }
+
+  // Tier 3
+  const llm = await llmMatch(mentioned, userAreas);
+  if (llm.length > 0) {
+    return {
+      relevant: true,
+      matchedAreas: llm,
+      tier: "llm",
+      reasoning: `LLM confirmed "${mentioned}" contains: ${llm.join(", ")}`,
+    };
+  }
+
   return {
     relevant: false,
-    sameZone: undefined,
-    monitoredMatch: [],
-    reasoning:
-      `"${mentioned}" could not be matched to any monitored area ` +
-      `(${monitoredAreas.join(", ")})`,
+    matchedAreas: [],
+    tier: "none",
+    reasoning: `"${mentioned}" does not match any of: ${userAreas.join(", ")}`,
   };
 }
 
-const REGION_KEYWORDS: Record<string, string[]> = {
-  מרכז: ["תל אביב", "רמת גן", "פתח תקווה", "ראשון לציון", "הרצליה", "חולון"],
-  צפון: ["חיפה", "קריות", "צפת", "קריית שמונה", "נצרת", "עכו", "טבריה"],
-  דרום: ["באר שבע", "אשדוד", "אשקלון", "שדרות", "אילת"],
-};
-
-function resolveAreaProximityWithRegions(
-  mentioned: string,
-  monitoredAreas: string[],
-): {
-  relevant: boolean;
-  sameZone: string | undefined;
-  monitoredMatch: string[];
-  reasoning: string;
-} {
-  const baseResult = resolveAreaProximity(mentioned, monitoredAreas);
-  if (baseResult.relevant) {
-    return baseResult;
-  }
-
-  const mentionedLower = mentioned.toLowerCase();
-
-  for (const [region, cities] of Object.entries(REGION_KEYWORDS)) {
-    if (!mentionedLower.includes(region)) continue;
-    const matchedMonitored = monitoredAreas.filter((m) =>
-      cities.some((c) => m.includes(c) || c.includes(m.split(" ")[0] ?? "")),
-    );
-    if (matchedMonitored.length > 0) {
-      return {
-        relevant: true,
-        sameZone: region,
-        monitoredMatch: matchedMonitored,
-        reasoning:
-          `"${mentioned}" refers to region "${region}" which includes ` +
-          matchedMonitored.join(", "),
-      };
-    }
-  }
-
-  return baseResult;
-}
-
-export { resolveAreaProximityWithRegions as resolveAreaProximity };
+// ── ReAct tool (for clarify-node) ─────────────────────────
 
 export const resolveAreaTool = tool(
   async ({ location }: { location: string }): Promise<string> => {
-    const monitoredAreas = config.areas;
+    const userAreas = config.areas;
 
-    if (monitoredAreas.length === 0) {
-      return JSON.stringify({
-        error: "No monitored areas configured",
-        hint: "User has not set up city monitoring",
-      });
+    if (!userAreas.length) {
+      return JSON.stringify({ error: "No monitored areas configured" });
     }
 
-    const result = resolveAreaProximityWithRegions(location, monitoredAreas);
-
-    logger.info("Tool: resolve_area executed", {
-      location,
-      relevant: result.relevant,
-      zone: result.sameZone,
-    });
+    const result = await resolveArea(location, userAreas);
 
     return JSON.stringify({
       location,
-      monitored_areas: monitoredAreas,
-      ...result,
+      monitored_areas: userAreas,
+      relevant: result.relevant,
+      matched_areas: result.matchedAreas,
+      tier: result.tier,
+      reasoning: result.reasoning,
     });
   },
   {
     name: "resolve_area",
     description:
-      "Determine if a location mentioned in news is relevant to the user's " +
-      "monitored areas. Uses defense-zone proximity: cities in the same Iron Dome " +
-      "coverage zone are considered relevant. " +
-      'Example: "попадание в Петах Тикве" → relevant for Herzliya user ' +
-      "(both in Gush Dan / Sharon zone). " +
-      'Use when a news post mentions a city or region like "center" and you need ' +
-      "to determine if it affects the user.",
+      "Determine if a location mentioned in news is relevant to the user's monitored zones. " +
+      "Checks whether the user's zone is inside or part of the mentioned area. " +
+      'Example: user monitors "תל אביב - מרכז העיר", news says "מרכז" → relevant. ' +
+      'Example: user monitors Tel Aviv zones, news says "Petah Tikva hit" → NOT relevant. ' +
+      "Use when news mentions a city/region and you need to decide if it affects the user.",
     schema: z.object({
       location: z
         .string()
-        .describe(
-          "City or region name in Hebrew as mentioned in news (e.g. פתח תקווה, מרכז)",
-        ),
+        .describe("City or region name as mentioned in news (Hebrew preferred, e.g. מרכז, פתח תקווה)"),
     }),
   },
 );

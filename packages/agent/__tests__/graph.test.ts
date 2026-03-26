@@ -1,23 +1,21 @@
 /**
- * Tests for enrichment pipeline functions.
+ * Unit tests for core agent pipeline functions.
  *
- * Split into two parts:
- *   1. Unit tests — no LLM, no network. Test pure functions from extract, vote, message, helpers.
- *   2. Integration tests — call real OpenRouter API (skipped without OPENROUTER_API_KEY env).
- *
- * Run with integration: OPENROUTER_API_KEY=sk-or-... npm test
+ * Tests pure/deterministic logic only — no LLM, no network.
+ * Covers: voteNode, insertBeforeBlockEnd, buildEnrichedMessage,
+ *         stripMonitoring, appendMonitoring, describeContradictions,
+ *         getClarifyNeed, textHash, toIsraelTime.
  */
 
-import {
-  emptyEnrichmentData,
-  type CitedSource,
-  type InlineCite,
-  type ValidatedExtraction,
-  type VotedResult,
+import type {
+  SynthesizedInsightType,
+  ValidatedInsightType,
+  VotedResultType,
 } from "@easyoref/shared";
+import { getClarifyNeed, textHash, toIsraelTime } from "@easyoref/shared";
 import { describe, expect, it, vi } from "vitest";
 
-// ── Mocks — minimal, only for config & logger ─────────
+// ── Mocks ──────────────────────────────────────────────────
 
 vi.mock("@easyoref/shared", async () => {
   const actual = await vi.importActual("@easyoref/shared");
@@ -26,31 +24,28 @@ vi.mock("@easyoref/shared", async () => {
     config: {
       agent: {
         filterModel: "google/gemini-2.5-flash-lite",
-        extractModel: "google/gemini-3.1-flash-lite-preview",
-        apiKey: process.env.OPENROUTER_API_KEY ?? "test-key",
+        extractModel: "google/gemini-2.5-flash-lite",
+        apiKey: "test-key",
         mcpTools: false,
         clarifyFetchCount: 3,
         confidenceThreshold: 0.6,
         channels: ["@idf_telegram", "@N12LIVE", "@kann_news"],
-        areaLabels: { הרצליה: "Герцлия" },
+        areaLabels: {},
       },
       botToken: "",
-      areas: ["הרצליה", "תל אביב - דרום העיר ויפו"],
+      areas: ["תל אביב - דרום העיר ויפו"],
       language: "ru",
       orefApiUrl: "https://mock.oref.api/alerts",
       orefHistoryUrl: "",
       logtailToken: "",
     },
-    getRedis: vi.fn().mockReturnValue({
-      lpush: vi.fn(),
-      expire: vi.fn(),
-    }),
+    getRedis: vi.fn().mockReturnValue({ lpush: vi.fn(), expire: vi.fn() }),
     pushSessionPost: vi.fn(),
     pushChannelPost: vi.fn(),
     getActiveSession: vi.fn().mockResolvedValue(null),
     getChannelPosts: vi.fn().mockResolvedValue([]),
-    getEnrichmentData: vi.fn().mockResolvedValue(null),
-    saveEnrichmentData: vi.fn(),
+    getEnrichment: vi.fn().mockResolvedValue(null),
+    saveEnrichment: vi.fn(),
     getCachedExtractions: vi.fn().mockResolvedValue(new Map()),
     saveCachedExtractions: vi.fn(),
     getLastUpdateTs: vi.fn().mockResolvedValue(0),
@@ -65,38 +60,78 @@ vi.mock("@easyoref/monitoring", () => ({
   debug: vi.fn(),
 }));
 
-// ── Imports (after mocks are hoisted) ──────────────────
+// ── Imports (after mocks) ──────────────────────────────────
 
-import { textHash, toIsraelTime } from "@easyoref/shared";
-import { postFilter } from "../src/nodes/extract-node.js";
 import {
+  appendMonitoring,
   buildEnrichedMessage,
-  buildEnrichmentFromVote,
-  buildGlobalCiteMap,
-  CERTAIN,
-  COUNTRY_RU,
-  extractCites,
-  inlineCites,
-  inlineCitesFromData,
-  insertBeforeTimeLine,
-  renderCitesGlobal,
-  SKIP,
-  UNCERTAIN,
-} from "../src/nodes/message.js";
-import { vote } from "../src/nodes/vote-node.js";
+  insertBeforeBlockEnd,
+  stripMonitoring,
+} from "../src/utils/message.js";
+import { describeContradictions } from "../src/utils/contradictions.js";
+import { voteNode } from "../src/nodes/vote-node.js";
 
-// ═══════════════════════════════════════════════════════
-// PART 1: UNIT TESTS (pure functions, no LLM)
-// ═══════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────
 
-// ─── textHash ──────────────────────────────────────────
+function makeSource(channelId = "@test", ts = Date.now()) {
+  return {
+    channelId,
+    sourceType: "telegram_channel" as const,
+    timestamp: ts,
+    text: "test post text",
+  };
+}
+
+function makeInsight(
+  kind: ValidatedInsightType["kind"],
+  overrides: Partial<ValidatedInsightType> = {},
+): ValidatedInsightType {
+  return {
+    kind,
+    timeRelevance: 0.9,
+    regionRelevance: 0.9,
+    confidence: 0.8,
+    source: makeSource(),
+    timeStamp: new Date(),
+    isValid: true,
+    sourceTrust: 0.8,
+    ...overrides,
+  };
+}
+
+function makeState(
+  filteredInsights: ValidatedInsightType[] = [],
+  previousInsights: VotedResultType["consensus"][string][] = [],
+) {
+  return {
+    messages: [],
+    filteredInsights,
+    previousInsights,
+    extractedInsights: [],
+    votedResult: undefined,
+    synthesizedInsights: [],
+    channelTracking: {
+      trackStartTimestamp: Date.now(),
+      lastUpdateTimestamp: Date.now(),
+      channelsWithUpdates: [],
+    },
+    alertId: "test-alert",
+    alertType: "early_warning" as const,
+    alertTs: Date.now(),
+    alertAreas: [],
+  };
+}
+
+// ─────────────────────────────────────────────────────────
+// textHash
+// ─────────────────────────────────────────────────────────
 
 describe("textHash", () => {
   it("returns stable hash for same input", () => {
-    const h1 = textHash("hello world");
-    const h2 = textHash("hello world");
-    expect(h1).toBe(h2);
-    expect(h1).toMatch(/^[a-f0-9]{16,32}$/);
+    expect(textHash("hello")).toBe(textHash("hello"));
+    expect(textHash("hello")).toMatch(/^[a-f0-9]+$/);
   });
 
   it("returns different hash for different input", () => {
@@ -104,558 +139,371 @@ describe("textHash", () => {
   });
 });
 
-// ─── toIsraelTime ──────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+// toIsraelTime
+// ─────────────────────────────────────────────────────────
 
 describe("toIsraelTime", () => {
-  it("formats timestamp in Israel timezone", () => {
+  it("formats UTC timestamp to HH:MM in Israel timezone", () => {
+    // 2024-01-15 12:00 UTC = 14:00 IST (UTC+2 winter)
     const ts = new Date("2024-01-15T12:00:00Z").getTime();
-    const result = toIsraelTime(ts);
-    expect(result).toMatch(/14:00/);
+    expect(toIsraelTime(ts)).toMatch(/14:00/);
+  });
+
+  it("returns HH:MM format", () => {
+    expect(toIsraelTime(Date.now())).toMatch(/^\d{2}:\d{2}$/);
   });
 });
 
-// ─── postFilter ────────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+// getClarifyNeed
+// ─────────────────────────────────────────────────────────
 
-describe("postFilter", () => {
-  function makeExtraction(
-    overrides: Partial<ValidatedExtraction> = {},
-  ): ValidatedExtraction {
-    return {
-      channel: "@test",
-      regionRelevance: 0.9,
-      sourceTrust: 0.8,
-      tone: "calm" as const,
-      timeRelevance: 0.9,
-      countryOrigin: "Iran",
-      rocketCount: 10,
-      isCassette: undefined,
-      intercepted: undefined,
-      interceptedQual: undefined,
-      seaImpact: undefined,
-      seaImpactQual: undefined,
-      openAreaImpact: undefined,
-      openAreaImpactQual: undefined,
-      hitsConfirmed: undefined,
-      casualties: undefined,
-      injuries: undefined,
-      etaRefinedMinutes: undefined,
-      rocketDetail: undefined,
-      confidence: 0.7,
-      valid: true,
-      ...overrides,
-    };
-  }
-
-  it("passes valid extraction", () => {
-    const result = postFilter([makeExtraction()], "test-1");
-    expect(result[0].valid).toBe(true);
+describe("getClarifyNeed", () => {
+  it("returns needs_clarify for low confidence eta", () => {
+    expect(getClarifyNeed("eta", 0.3)).toBe("needs_clarify");
   });
 
-  it("rejects stale posts (timeRelevance < 0.5)", () => {
-    const result = postFilter(
-      [makeExtraction({ timeRelevance: 0.3 })],
-      "test-1",
-    );
-    expect(result[0].valid).toBe(false);
-    expect(result[0].rejectReason).toBe("stale_post");
+  it("returns verified for high confidence country_origins", () => {
+    expect(getClarifyNeed("country_origins", 0.9)).toBe("verified");
   });
 
-  it("rejects region_irrelevant posts", () => {
-    const result = postFilter(
-      [makeExtraction({ regionRelevance: 0.2 })],
-      "test-1",
-    );
-    expect(result[0].valid).toBe(false);
-    expect(result[0].rejectReason).toBe("region_irrelevant");
+  it("returns uncertain for mid confidence rocket_count", () => {
+    expect(getClarifyNeed("rocket_count", 0.45)).toBe("uncertain");
   });
 
-  it("rejects untrusted sources", () => {
-    const result = postFilter([makeExtraction({ sourceTrust: 0.2 })], "test-1");
-    expect(result[0].valid).toBe(false);
-    expect(result[0].rejectReason).toBe("untrusted_source");
-  });
-
-  it("rejects alarmist tone", () => {
-    const result = postFilter([makeExtraction({ tone: "alarmist" })], "test-1");
-    expect(result[0].valid).toBe(false);
-    expect(result[0].rejectReason).toBe("alarmist_tone");
-  });
-
-  it("rejects extraction with no data fields", () => {
-    const result = postFilter(
-      [
-        makeExtraction({
-          countryOrigin: undefined,
-          rocketCount: undefined,
-          isCassette: undefined,
-          intercepted: undefined,
-          interceptedQual: undefined,
-          hitsConfirmed: undefined,
-          casualties: undefined,
-          injuries: undefined,
-          etaRefinedMinutes: undefined,
-        }),
-      ],
-      "test-1",
-    );
-    expect(result[0].valid).toBe(false);
-    expect(result[0].rejectReason).toBe("no_data");
-  });
-
-  it("rejects low confidence", () => {
-    const result = postFilter([makeExtraction({ confidence: 0.1 })], "test-1");
-    expect(result[0].valid).toBe(false);
-    expect(result[0].rejectReason).toBe("low_confidence");
-  });
-
-  it("timeRelevance is checked FIRST (before region)", () => {
-    const result = postFilter(
-      [makeExtraction({ timeRelevance: 0.1, regionRelevance: 0.1 })],
-      "test-1",
-    );
-    expect(result[0].rejectReason).toBe("stale_post");
+  it("returns uncertain for unknown kind", () => {
+    expect(getClarifyNeed("unknown_kind", 0.5)).toBe("uncertain");
   });
 });
 
-// ─── vote ──────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+// insertBeforeBlockEnd
+// ─────────────────────────────────────────────────────────
 
-describe("vote", () => {
-  function makeValidExtraction(
-    overrides: Partial<ValidatedExtraction> = {},
-  ): ValidatedExtraction {
-    return {
-      channel: "@test",
-      regionRelevance: 0.9,
-      sourceTrust: 0.8,
-      tone: "calm" as const,
-      timeRelevance: 0.9,
-      countryOrigin: "Iran",
-      rocketCount: 10,
-      isCassette: undefined,
-      intercepted: undefined,
-      interceptedQual: undefined,
-      seaImpact: undefined,
-      seaImpactQual: undefined,
-      openAreaImpact: undefined,
-      openAreaImpactQual: undefined,
-      hitsConfirmed: undefined,
-      casualties: undefined,
-      injuries: undefined,
-      etaRefinedMinutes: undefined,
-      rocketDetail: undefined,
-      confidence: 0.8,
-      valid: true,
-      messageUrl: "https://t.me/test/1",
-      ...overrides,
-    };
-  }
-
-  it("returns undefined for empty valid extractions", () => {
-    const result = vote([makeValidExtraction({ valid: false })], "test-1");
-    expect(result).toBeUndefined();
-  });
-
-  it("aggregates country origins from multiple sources", () => {
-    const result = vote(
-      [
-        makeValidExtraction({
-          channel: "@a",
-          countryOrigin: "Iran",
-          messageUrl: "https://t.me/a/1",
-        }),
-        makeValidExtraction({
-          channel: "@b",
-          countryOrigin: "Iran",
-          messageUrl: "https://t.me/b/1",
-        }),
-      ],
-      "test-1",
+describe("insertBeforeBlockEnd", () => {
+  it("inserts before </blockquote> tag", () => {
+    const text = "<blockquote>Line1\n<b>Время оповещения:</b> 18:00\n</blockquote>";
+    const result = insertBeforeBlockEnd(text, "NEW LINE");
+    expect(result.indexOf("NEW LINE")).toBeLessThan(
+      result.indexOf("</blockquote>"),
     );
-    expect(result).not.toBeNull();
-    expect(result!.countryOrigins).toHaveLength(1);
-    expect(result!.countryOrigins![0].name).toBe("Iran");
-    expect(result!.countryOrigins![0].citations).toHaveLength(2);
+    expect(result).toContain("NEW LINE\n</blockquote>");
   });
 
-  it("computes rocket count range", () => {
-    const result = vote(
-      [
-        makeValidExtraction({ rocketCount: 10 }),
-        makeValidExtraction({ rocketCount: 15 }),
-      ],
-      "test-1",
-    );
-    expect(result!.rocketCountMin).toBe(10);
-    expect(result!.rocketCountMax).toBe(15);
-    expect(result!.rocketCitations).toHaveLength(2);
-  });
-
-  it("median injuries from multiple sources", () => {
-    const result = vote(
-      [
-        makeValidExtraction({ injuries: 5 }),
-        makeValidExtraction({ injuries: 3 }),
-        makeValidExtraction({ injuries: 8 }),
-      ],
-      "test-1",
-    );
-    expect(result!.injuries).toBe(5);
-    expect(result!.injuriesCitations).toHaveLength(3);
-  });
-
-  it("sets citedSources with 1-based indices", () => {
-    const result = vote(
-      [
-        makeValidExtraction({
-          channel: "@a",
-          messageUrl: "https://t.me/a/1",
-        }),
-        makeValidExtraction({
-          channel: "@b",
-          messageUrl: "https://t.me/b/1",
-        }),
-      ],
-      "test-1",
-    );
-    expect(result!.citedSources).toHaveLength(2);
-    expect(result!.citedSources[0].index).toBe(1);
-    expect(result!.citedSources[1].index).toBe(2);
-  });
-});
-
-// ─── inlineCites ───────────────────────────────────────
-
-describe("inlineCites", () => {
-  const sources: CitedSource[] = [
-    { index: 1, channel: "@a", messageUrl: "https://t.me/a/1" },
-    { index: 2, channel: "@b", messageUrl: "https://t.me/b/2" },
-    { index: 3, channel: "@c", messageUrl: undefined },
-  ];
-
-  it("returns HTML links for indices with URLs", () => {
-    const result = inlineCites([1, 2], sources);
-    expect(result).toContain('<a href="https://t.me/a/1">[1]</a>');
-    expect(result).toContain('<a href="https://t.me/b/2">[2]</a>');
-  });
-
-  it("skips indices without URLs", () => {
-    const result = inlineCites([3], sources);
-    expect(result).toBe("");
-  });
-
-  it("returns empty string for no indices", () => {
-    const result = inlineCites([], sources);
-    expect(result).toBe("");
-  });
-});
-
-// ─── inlineCitesFromData ───────────────────────────────
-
-describe("inlineCitesFromData", () => {
-  it("renders InlineCite array to HTML", () => {
-    const cites: InlineCite[] = [
-      { url: "https://t.me/a/1", channel: "@a" },
-      { url: "https://t.me/b/2", channel: "@b" },
-    ];
-    const result = inlineCitesFromData(cites);
-    expect(result).toContain('<a href="https://t.me/a/1">[1]</a>');
-    expect(result).toContain('<a href="https://t.me/b/2">[2]</a>');
-  });
-
-  it("returns empty for empty array", () => {
-    expect(inlineCitesFromData([])).toBe("");
-  });
-});
-
-// ─── buildGlobalCiteMap + renderCitesGlobal ────────────
-
-describe("buildGlobalCiteMap", () => {
-  it("assigns unique sequential indices by URL", () => {
-    const data = { ...emptyEnrichmentData };
-    data.originCites = [{ url: "https://t.me/a/1", channel: "@a" }];
-    data.rocketCites = [
-      { url: "https://t.me/a/1", channel: "@a" },
-      { url: "https://t.me/b/2", channel: "@b" },
-    ];
-    const map = buildGlobalCiteMap(data);
-    expect(map.get("https://t.me/a/1")).toBe(1);
-    expect(map.get("https://t.me/b/2")).toBe(2);
-    expect(map.size).toBe(2);
-  });
-
-  it("returns empty map for empty enrichment", () => {
-    const map = buildGlobalCiteMap(emptyEnrichmentData);
-    expect(map.size).toBe(0);
-  });
-});
-
-describe("renderCitesGlobal", () => {
-  it("renders citations with global indices", () => {
-    const globalMap = new Map([
-      ["https://t.me/a/1", 1],
-      ["https://t.me/b/2", 3],
-    ]);
-    const cites: InlineCite[] = [{ url: "https://t.me/b/2", channel: "@b" }];
-    const result = renderCitesGlobal(cites, globalMap);
-    expect(result).toBe(' <a href="https://t.me/b/2">[3]</a>');
-  });
-
-  it("returns empty for empty cites", () => {
-    const map = new Map([["https://t.me/a/1", 1]]);
-    expect(renderCitesGlobal([], map)).toBe("");
-  });
-});
-
-// ─── extractCites ──────────────────────────────────────
-
-describe("extractCites", () => {
-  const sources: CitedSource[] = [
-    { index: 1, channel: "@a", messageUrl: "https://t.me/a/1" },
-    { index: 2, channel: "@b" },
-  ];
-
-  it("returns InlineCite objects with url and channel", () => {
-    const cites = extractCites([1], sources);
-    expect(cites).toHaveLength(1);
-    expect(cites[0].url).toBe("https://t.me/a/1");
-    expect(cites[0].channel).toBe("@a");
-  });
-
-  it("skips sources without messageUrl", () => {
-    const cites = extractCites([2], sources);
-    expect(cites).toHaveLength(0);
-  });
-});
-
-// ─── buildEnrichmentFromVote ───────────────────────────
-
-describe("buildEnrichmentFromVote", () => {
-  const alertTs = new Date("2024-03-09T16:00:00Z").getTime();
-
-  function makeVoted(overrides: Partial<VotedResult> = {}): VotedResult {
-    return {
-      etaRefinedMinutes: undefined,
-      etaCitations: [],
-      countryOrigins: [{ name: "Iran", citations: [1] }],
-      rocketCountMin: 10,
-      rocketCountMax: 15,
-      rocketCitations: [1, 2],
-      rocketConfidence: 0.8,
-      isCassette: undefined,
-      isCassetteConfidence: 0,
-      intercepted: 8,
-      interceptedQual: undefined,
-      interceptedConfidence: 0.7,
-      seaImpact: undefined,
-      seaImpactQual: undefined,
-      seaConfidence: 0,
-      openAreaImpact: undefined,
-      openAreaImpactQual: undefined,
-      openAreaConfidence: 0,
-      hitsConfirmed: 1,
-      hitsCitations: [2],
-      hitsConfidence: 0.7,
-      noImpacts: false,
-      noImpactsCitations: [],
-      interceptedCitations: [1],
-      rocketDetail: undefined,
-      casualties: undefined,
-      casualtiesCitations: [],
-      casualtiesConfidence: 0,
-      injuries: 3,
-      injuriesCitations: [1],
-      injuriesConfidence: 0.7,
-      confidence: 0.75,
-      sourcesCount: 2,
-      citedSources: [
-        { index: 1, channel: "@a", messageUrl: "https://t.me/a/1" },
-        { index: 2, channel: "@b", messageUrl: "https://t.me/b/2" },
-      ],
-      ...overrides,
-    };
-  }
-
-  it("sets origin from voted countryOrigins", () => {
-    const data = buildEnrichmentFromVote(
-      makeVoted(),
-      emptyEnrichmentData,
-      "early_warning",
-      alertTs,
-    );
-    expect(data.origin).toBe("Иран");
-    expect(data.originCites).toHaveLength(1);
-    expect(data.originCites[0].url).toBe("https://t.me/a/1");
-  });
-
-  it("preserves carry-forward data from prev", () => {
-    const prev = emptyEnrichmentData;
-    prev.origin = "Йемен";
-    prev.originCites = [{ url: "https://t.me/old/1", channel: "@old" }];
-
-    const voted = makeVoted({ countryOrigins: undefined });
-    const data = buildEnrichmentFromVote(voted, prev, "red_alert", alertTs);
-    expect(data.origin).toBe("Йемен");
-    expect(data.originCites).toHaveLength(1);
-  });
-
-  it("sets ETA for early_warning", () => {
-    const voted = makeVoted({ etaRefinedMinutes: 5 });
-    const data = buildEnrichmentFromVote(
-      voted,
-      emptyEnrichmentData,
-      "early_warning",
-      alertTs,
-    );
-    expect(data.etaAbsolute).toMatch(/^~\d{2}:\d{2}$/);
-  });
-
-  it("sets injuries for resolved phase", () => {
-    const voted = makeVoted({ injuries: 3, injuriesConfidence: 0.95 });
-    const data = buildEnrichmentFromVote(
-      voted,
-      emptyEnrichmentData,
-      "resolved",
-      alertTs,
-    );
-    expect(data.injuries).toBe("3");
-    expect(data.injuriesCites).toHaveLength(1);
-  });
-
-  it("shows uncertainty marker for injuries at sub-certain confidence", () => {
-    const voted = makeVoted({ injuries: 3, injuriesConfidence: 0.8 });
-    const data = buildEnrichmentFromVote(
-      voted,
-      emptyEnrichmentData,
-      "resolved",
-      alertTs,
-    );
-    expect(data.injuries).toBe("3 (?)");
-  });
-
-  it("records earlyWarningTime on first early_warning", () => {
-    const data = buildEnrichmentFromVote(
-      makeVoted(),
-      emptyEnrichmentData,
-      "early_warning",
-      alertTs,
-    );
-    expect(data.earlyWarningTime).toBeTruthy();
-    expect(data.earlyWarningTime).toMatch(/\d{2}:\d{2}/);
-  });
-});
-
-// ─── buildEnrichedMessage ──────────────────────────────
-
-describe("buildEnrichedMessage", () => {
-  const alertTs = new Date("2024-03-09T16:00:00Z").getTime();
-
-  it("inserts origin before time line", () => {
-    const enrichment = emptyEnrichmentData;
-    enrichment.origin = "Иран";
-    enrichment.originCites = [{ url: "https://t.me/a/1", channel: "@a" }];
-
-    const text =
-      "🔴 Тревога!\nОбласть: Герцлия\n<b>Время оповещения:</b> 18:00";
-    const result = buildEnrichedMessage(
-      text,
-      "early_warning",
-      alertTs,
-      enrichment,
-    );
-    expect(result).toContain("<b>Откуда:</b> Иран");
-    expect(result).toContain('<a href="https://t.me/a/1">[1]</a>');
-    const originIdx = result.indexOf("Откуда:");
-    const timeIdx = result.indexOf("Время оповещения:");
-    expect(originIdx).toBeLessThan(timeIdx);
-  });
-
-  it("inserts rocket count and intercepted as separate lines", () => {
-    const enrichment = emptyEnrichmentData;
-    enrichment.rocketCount = "~10–15";
-    enrichment.intercepted = "8";
-    enrichment.rocketCites = [{ url: "https://t.me/a/1", channel: "@a" }];
-    enrichment.interceptedCites = [{ url: "https://t.me/b/1", channel: "@b" }];
-
-    const text = "🔴 Тревога!\n<b>Время оповещения:</b> 18:00";
-    const result = buildEnrichedMessage(text, "red_alert", alertTs, enrichment);
-    expect(result).toContain("<b>Ракет:</b> ~10–15");
-    expect(result).toContain("<b>Перехваты:</b> 8");
-    expect(result).not.toContain("из них");
-  });
-
-  it("inserts casualties/injuries only for resolved", () => {
-    const enrichment = emptyEnrichmentData;
-    enrichment.casualties = "2";
-    enrichment.injuries = "5";
-    enrichment.casualtiesCites = [{ url: "https://t.me/a/1", channel: "@a" }];
-    enrichment.injuriesCites = [{ url: "https://t.me/b/1", channel: "@b" }];
-
-    const text = "✅ Отбой\n<b>Время оповещения:</b> 18:00";
-    const resultResolved = buildEnrichedMessage(
-      text,
-      "resolved",
-      alertTs,
-      enrichment,
-    );
-    expect(resultResolved).toContain("<b>Погибшие:</b> 2");
-    expect(resultResolved).toContain("<b>Пострадавшие:</b> 5");
-
-    const resultSiren = buildEnrichedMessage(
-      text,
-      "red_alert",
-      alertTs,
-      enrichment,
-    );
-    expect(resultSiren).not.toContain("Погибшие:");
-    expect(resultSiren).not.toContain("Пострадавшие:");
-  });
-
-  it("does not insert early warning time in red_alert phase (replaced by reply chain)", () => {
-    const enrichment = emptyEnrichmentData;
-    enrichment.earlyWarningTime = "17:55";
-
-    const text = "🟡 Сирена!\n<b>Время оповещения:</b> 18:00";
-    const result = buildEnrichedMessage(text, "red_alert", alertTs, enrichment);
-    expect(result).not.toContain("Раннее предупреждение:");
-  });
-});
-
-// ─── insertBeforeTimeLine ──────────────────────────────
-
-describe("insertBeforeTimeLine", () => {
-  it("inserts before Время оповещения line", () => {
+  it("falls back to before Время оповещения line when no blockquote", () => {
     const text = "Header\n<b>Время оповещения:</b> 18:00";
-    const result = insertBeforeTimeLine(text, "NEW LINE");
+    const result = insertBeforeBlockEnd(text, "NEW LINE");
     expect(result.indexOf("NEW LINE")).toBeLessThan(
       result.indexOf("Время оповещения:"),
     );
   });
 
-  it("inserts before last line if no time pattern", () => {
+  it("falls back to before last line when no time pattern or blockquote", () => {
     const text = "Line1\nLine2\nLine3";
-    const result = insertBeforeTimeLine(text, "NEW");
+    const result = insertBeforeBlockEnd(text, "NEW");
     const lines = result.split("\n");
     expect(lines[lines.length - 2]).toBe("NEW");
+    expect(lines[lines.length - 1]).toBe("Line3");
   });
 });
 
-// ─── COUNTRY_RU translations ───────────────────────────
+// ─────────────────────────────────────────────────────────
+// stripMonitoring / appendMonitoring
+// ─────────────────────────────────────────────────────────
 
-describe("COUNTRY_RU", () => {
-  it("maps all expected countries", () => {
-    expect(COUNTRY_RU["Iran"]).toBe("Иран");
-    expect(COUNTRY_RU["Yemen"]).toBe("Йемен");
-    expect(COUNTRY_RU["Lebanon"]).toBe("Ливан");
-    expect(COUNTRY_RU["Gaza"]).toBe("Газа");
+describe("stripMonitoring", () => {
+  it("removes monitoring indicator line", () => {
+    const text = 'Message\n<tg-emoji emoji-id="12345">⏳</tg-emoji> Мониторинг';
+    expect(stripMonitoring(text)).toBe("Message");
+  });
+
+  it("is idempotent when no monitoring line present", () => {
+    const text = "Clean message";
+    expect(stripMonitoring(text)).toBe("Clean message");
   });
 });
 
-// ─── Confidence thresholds ─────────────────────────────
+describe("appendMonitoring", () => {
+  it("appends monitoring label to text", () => {
+    const result = appendMonitoring("Message", "⏳ Мониторинг");
+    expect(result).toBe("Message\n⏳ Мониторинг");
+  });
+});
 
-describe("confidence thresholds", () => {
-  it("SKIP=0.6, UNCERTAIN=0.75, CERTAIN=0.95", () => {
-    expect(SKIP).toBe(0.6);
-    expect(UNCERTAIN).toBe(0.75);
-    expect(CERTAIN).toBe(0.95);
+// ─────────────────────────────────────────────────────────
+// buildEnrichedMessage
+// ─────────────────────────────────────────────────────────
+
+describe("buildEnrichedMessage", () => {
+  const alertTs = new Date("2024-03-09T16:00:00Z").getTime();
+  const baseText = "Header\n<b>Время оповещения:</b> 18:00";
+
+  function makeInsights(
+    entries: Array<{ key: string; value: string; sourceUrls?: string[] }>,
+  ): SynthesizedInsightType[] {
+    return entries.map((e) => ({
+      key: e.key,
+      value: e.value,
+      confidence: 0.9,
+      sourceUrls: e.sourceUrls ?? [],
+    }));
+  }
+
+  it("inserts origin before time line", () => {
+    const insights = makeInsights([{ key: "origin", value: "Иран" }]);
+    const result = buildEnrichedMessage(baseText, "early_warning", alertTs, insights);
+    expect(result).toContain("<b>Откуда:</b> Иран");
+    expect(result.indexOf("Откуда:")).toBeLessThan(result.indexOf("Время оповещения:"));
+  });
+
+  it("inserts rocket count line", () => {
+    const insights = makeInsights([{ key: "rocket_count", value: "~10–15" }]);
+    const result = buildEnrichedMessage(baseText, "red_alert", alertTs, insights);
+    expect(result).toContain("<b>Ракет:</b> ~10–15");
+  });
+
+  it("inserts rocket count with cassette", () => {
+    const insights = makeInsights([
+      { key: "rocket_count", value: "~10" },
+      { key: "is_cassette", value: "true" },
+    ]);
+    const result = buildEnrichedMessage(baseText, "red_alert", alertTs, insights);
+    expect(result).toContain("кассетные");
+  });
+
+  it("inserts intercepted for red_alert but NOT for early_warning", () => {
+    const insights = makeInsights([{ key: "intercepted", value: "8" }]);
+    const siren = buildEnrichedMessage(baseText, "red_alert", alertTs, insights);
+    const early = buildEnrichedMessage(baseText, "early_warning", alertTs, insights);
+    expect(siren).toContain("<b>Перехваты:</b> 8");
+    expect(early).not.toContain("Перехваты:");
+  });
+
+  it("inserts hits for red_alert but NOT for early_warning", () => {
+    const insights = makeInsights([{ key: "hits", value: "Рамат-Ган" }]);
+    const siren = buildEnrichedMessage(baseText, "red_alert", alertTs, insights);
+    const early = buildEnrichedMessage(baseText, "early_warning", alertTs, insights);
+    expect(siren).toContain("<b>Попадания:</b> Рамат-Ган");
+    expect(early).not.toContain("Попадания:");
+  });
+
+  it("inserts casualties for resolved only", () => {
+    const insights = makeInsights([{ key: "casualties", value: "2 погибших" }]);
+    const resolved = buildEnrichedMessage(baseText, "resolved", alertTs, insights);
+    const siren = buildEnrichedMessage(baseText, "red_alert", alertTs, insights);
+    expect(resolved).toContain("<b>Погибшие:</b> 2 погибших");
+    expect(siren).not.toContain("Погибшие:");
+  });
+
+  it("replaces ETA range with absolute time in early_warning", () => {
+    const text = "Header\n<b>Подлётное время:</b> ~5–12 мин\n<b>Время оповещения:</b> 18:00";
+    const insights = makeInsights([{ key: "eta_absolute", value: "~18:07" }]);
+    const result = buildEnrichedMessage(text, "early_warning", alertTs, insights);
+    expect(result).not.toContain("~5–12 мин");
+    expect(result).toContain("~18:07");
+  });
+
+  it("does NOT replace ETA in resolved phase", () => {
+    const text = "Header\n~5–12 мин\n<b>Время оповещения:</b> 18:00";
+    const insights = makeInsights([{ key: "eta_absolute", value: "~18:07" }]);
+    const result = buildEnrichedMessage(text, "resolved", alertTs, insights);
+    // ETA replacement skipped for resolved
+    expect(result).toContain("~5–12 мин");
+  });
+
+  it("appends monitoring label when not resolved", () => {
+    const insights: SynthesizedInsightType[] = [];
+    const result = buildEnrichedMessage(baseText, "early_warning", alertTs, insights, "⏳ Мониторинг");
+    expect(result).toContain("⏳ Мониторинг");
+  });
+
+  it("does NOT append monitoring label for resolved phase", () => {
+    const insights: SynthesizedInsightType[] = [];
+    const result = buildEnrichedMessage(baseText, "resolved", alertTs, insights, "⏳ Мониторинг");
+    expect(result).not.toContain("⏳ Мониторинг");
+  });
+
+  it("strips existing monitoring before inserting new content", () => {
+    const textWithMonitoring =
+      'Header\n<b>Время оповещения:</b> 18:00\n<tg-emoji emoji-id="123">⏳</tg-emoji> Old label';
+    const insights = makeInsights([{ key: "origin", value: "Иран" }]);
+    const result = buildEnrichedMessage(textWithMonitoring, "early_warning", alertTs, insights);
+    expect(result).not.toContain("Old label");
+    expect(result).toContain("<b>Откуда:</b> Иран");
+  });
+});
+
+// ─────────────────────────────────────────────────────────
+// describeContradictions
+// ─────────────────────────────────────────────────────────
+
+describe("describeContradictions", () => {
+  it("reports multiple country origins", () => {
+    const insights: ValidatedInsightType[] = [
+      makeInsight({
+        kind: "country_origins",
+        value: new Set(["Iran"]),
+      }),
+      makeInsight({
+        kind: "country_origins",
+        value: new Set(["Yemen"]),
+      }),
+    ];
+    const result = describeContradictions(insights);
+    expect(result).toMatch(/Iran/);
+    expect(result).toMatch(/Yemen/);
+  });
+
+  it("reports wide rocket count range", () => {
+    const insights: ValidatedInsightType[] = [
+      makeInsight({ kind: "rocket_count", value: { type: "exact", value: 5 } }),
+      makeInsight({ kind: "rocket_count", value: { type: "exact", value: 15 } }),
+    ];
+    const result = describeContradictions(insights);
+    expect(result).toMatch(/5.{1,5}15/);
+  });
+
+  it("reports low confidence insights", () => {
+    const insights: ValidatedInsightType[] = [
+      makeInsight(
+        { kind: "eta", value: { kind: "minutes", minutes: 5 } },
+        { confidence: 0.3 },
+      ),
+    ];
+    const result = describeContradictions(insights);
+    expect(result).toContain("low confidence");
+  });
+
+  it("always includes total valid insights count", () => {
+    const insights: ValidatedInsightType[] = [
+      makeInsight({ kind: "rocket_count", value: { type: "exact", value: 10 } }),
+    ];
+    const result = describeContradictions(insights);
+    expect(result).toContain("Total valid insights: 1");
+  });
+
+  it("returns empty issues for single clean insight", () => {
+    const insights: ValidatedInsightType[] = [
+      makeInsight(
+        { kind: "rocket_count", value: { type: "exact", value: 10 } },
+        { confidence: 0.9 },
+      ),
+    ];
+    const result = describeContradictions(insights);
+    // Should still have kind/count lines
+    expect(result).toContain("rocket_count");
+  });
+});
+
+// ─────────────────────────────────────────────────────────
+// voteNode — deterministic consensus
+// ─────────────────────────────────────────────────────────
+
+describe("voteNode", () => {
+  it("returns empty consensus for no valid insights", async () => {
+    const state = makeState([
+      makeInsight(
+        { kind: "rocket_count", value: { type: "exact", value: 10 } },
+        { isValid: false },
+      ),
+    ]);
+    const result = await voteNode(state as any);
+    expect(result.votedResult).toBeDefined();
+    expect(Object.keys(result.votedResult!.consensus)).toHaveLength(0);
+    expect(result.votedResult!.needsClarify).toBe(false);
+  });
+
+  it("produces consensus for single valid insight", async () => {
+    const state = makeState([
+      makeInsight({ kind: "rocket_count", value: { type: "exact", value: 10 } }),
+    ]);
+    const result = await voteNode(state as any);
+    expect(result.votedResult!.consensus["rocket_count"]).toBeDefined();
+    expect(result.votedResult!.consensus["rocket_count"]!.kind.kind).toBe("rocket_count");
+  });
+
+  it("picks highest-confidence option when values differ", async () => {
+    const state = makeState([
+      makeInsight(
+        { kind: "rocket_count", value: { type: "exact", value: 10 } },
+        { confidence: 0.9 },
+      ),
+      makeInsight(
+        { kind: "rocket_count", value: { type: "exact", value: 20 } },
+        { confidence: 0.5 },
+      ),
+    ]);
+    const result = await voteNode(state as any);
+    const consensus = result.votedResult!.consensus["rocket_count"]!;
+    expect((consensus.kind as any).value.value).toBe(10);
+  });
+
+  it("drops notAUserZone impact insight", async () => {
+    const state = makeState([
+      makeInsight(
+        { kind: "impact", value: { interceptionsCount: { type: "exact", value: 5 } } },
+        { insightLocation: "not_a_user_zone" },
+      ),
+    ]);
+    const result = await voteNode(state as any);
+    expect(result.votedResult!.consensus["impact"]).toBeUndefined();
+  });
+
+  it("keeps exactUserZone impact insight", async () => {
+    const state = makeState([
+      makeInsight(
+        { kind: "impact", value: { interceptionsCount: { type: "exact", value: 5 } } },
+        { insightLocation: "exact_user_zone" },
+      ),
+    ]);
+    const result = await voteNode(state as any);
+    expect(result.votedResult!.consensus["impact"]).toBeDefined();
+    expect(result.votedResult!.consensus["impact"]!.insightLocation).toBe("exact_user_zone");
+  });
+
+  it("exactUserZone wins over userMacroRegion in merging", async () => {
+    const state = makeState([
+      makeInsight(
+        { kind: "impact", value: { interceptionsCount: { type: "exact", value: 5 } } },
+        { insightLocation: "user_macro_region", confidence: 0.9 },
+      ),
+      makeInsight(
+        { kind: "impact", value: { interceptionsCount: { type: "exact", value: 5 } } },
+        { insightLocation: "exact_user_zone", confidence: 0.8 },
+      ),
+    ]);
+    const result = await voteNode(state as any);
+    // Both have same value — same option → insightLocation merges: exact wins
+    const consensus = result.votedResult!.consensus["impact"]!;
+    expect(consensus.insightLocation).toBe("exact_user_zone");
+  });
+
+  it("sets needsClarify=true when low-confidence eta insight", async () => {
+    const state = makeState([
+      makeInsight(
+        { kind: "eta", value: { kind: "minutes", minutes: 5 } },
+        { confidence: 0.3 }, // below needsClarify threshold for eta (0.4)
+      ),
+    ]);
+    const result = await voteNode(state as any);
+    expect(result.votedResult!.needsClarify).toBe(true);
+  });
+
+  it("carries forward previousInsights into consensus", async () => {
+    const prev = {
+      kind: { kind: "country_origins" as const, value: new Set(["Iran"]) },
+      sources: [makeSource("@prev")],
+      confidence: 0.85,
+      sourceTrust: 0.9,
+      timeRelevance: 0.8,
+      regionRelevance: 0.9,
+      reason: "carry-forward",
+      rejectedInsights: [],
+      insightLocation: undefined,
+    };
+    const state = makeState([], [prev]);
+    const result = await voteNode(state as any);
+    expect(result.votedResult!.consensus["country_origins"]).toBeDefined();
   });
 });

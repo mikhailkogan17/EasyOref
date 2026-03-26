@@ -1,354 +1,192 @@
 /**
- * Vote Node — consensus voting, deterministic, 0 tokens.
+ * Vote Node — consensus voting over ValidatedInsight[], deterministic, 0 tokens.
  *
- * Aggregates extraction results from multiple sources into a single
- * voted consensus using median, majority, and weighted confidence.
+ * Merges state.filteredInsights (new) + state.previousInsights (carry-forward)
+ * into a single consensus per insight kind.
+ *
+ * For each kind:
+ * - Collect all ValidatedInsights + previousInsights for that kind
+ * - Group by JSON-serialized value
+ * - Compute weighted avg confidence
+ * - Pick highest-confidence option as consensus
+ * - Build VotedInsight with sources: BaseSourceMessage[]
  */
 
-import * as logger from "@easyoref/monitoring";
 import type {
-  CitedSource,
-  QualitativeCount,
-  ValidatedExtraction,
-  VotedResult,
+  BaseSourceMessageType,
+  InsightLocationType,
+  ValidatedInsightType,
+  VotedInsightType,
+  VotedResultType,
 } from "@easyoref/shared";
+import { getClarifyNeed } from "@easyoref/shared";
+import { AIMessage } from "langchain";
 import type { AgentStateType } from "../graph.js";
 
-function weightedConfidence(
-  sources: Array<{ sourceTrust: number; confidence: number }>,
-): number {
-  if (sources.length === 0) return 0;
-  return (
-    sources.reduce(
-      (accumulator, extraction) =>
-        accumulator + extraction.sourceTrust * extraction.confidence,
-      0,
-    ) / sources.length
-  );
+// ── Internal grouping helpers ──────────────────────────────
+
+interface InsightOption {
+  kind: ValidatedInsightType["kind"];
+  sources: BaseSourceMessageType[];
+  avgConfidence: number;
+  avgSourceTrust: number;
+  avgTimeRelevance: number;
+  avgRegionRelevance: number;
+  insightLocation: InsightLocationType | undefined;
+  insights: ValidatedInsightType[];
 }
 
-function modeQualification(
-  sources: Array<Record<string, unknown>>,
-  key: string,
-): QualitativeCount | undefined {
-  const values = sources
-    .map((extraction) => extraction[key] as QualitativeCount | undefined)
-    .filter((value): value is QualitativeCount => value !== undefined);
-  if (values.length === 0) return undefined;
-  const frequency = new Map<QualitativeCount, number>();
-  for (const value of values)
-    frequency.set(value, (frequency.get(value) ?? 0) + 1);
-  return [...frequency.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-}
-
-function medianQualificationNumber(
-  sources: Array<Record<string, unknown>>,
-  key: string,
-): number | undefined {
-  const values = sources
-    .map((extraction) => extraction[key] as number | undefined)
-    .filter((value): value is number => value !== undefined)
-    .sort((a, b) => a - b);
-  return values.length > 0 ? values[Math.floor(values.length / 2)] : undefined;
-}
-
-function aggregateVote(
-  extractions: ValidatedExtraction[],
-  alertId: string,
-): VotedResult | undefined {
-  const valid = extractions.filter((extraction) => extraction.valid);
-
-  if (valid.length === 0) return undefined;
-
-  const indexed = valid.map((extraction, index) => ({
-    ...extraction,
-    citationIndex: index + 1,
-  }));
-
-  const citedSources: CitedSource[] = indexed.map((extraction) => ({
-    index: extraction.citationIndex,
-    channel: extraction.channel,
-    ...(extraction.messageUrl && { messageUrl: extraction.messageUrl }),
-  }));
-
-  const etaSources = indexed
-    .filter((extraction) => extraction.etaRefinedMinutes !== undefined)
-    .sort((a, b) => b.confidence - a.confidence);
-  const bestEtaSource = etaSources[0];
-
-  const countryMap = new Map<
-    string,
-    { canonical: string; citations: number[] }
-  >();
-  for (const extraction of indexed) {
-    if (extraction.countryOrigin) {
-      const key = extraction.countryOrigin.toLowerCase();
-      const entry = countryMap.get(key);
-      if (entry) {
-        entry.citations.push(extraction.citationIndex);
-      } else {
-        countryMap.set(key, {
-          canonical: extraction.countryOrigin,
-          citations: [extraction.citationIndex],
-        });
-      }
-    }
+function groupInsightsByKind(
+  insights: ValidatedInsightType[],
+): Map<string, ValidatedInsightType[]> {
+  const map = new Map<string, ValidatedInsightType[]>();
+  for (const i of insights) {
+    const k = i.kind.kind;
+    if (!map.has(k)) map.set(k, []);
+    map.get(k)!.push(i);
   }
-  const countryOrigins =
-    countryMap.size > 0
-      ? Array.from(countryMap.values()).map(({ canonical, citations }) => ({
-          name: canonical,
-          citations,
-        }))
-      : undefined;
+  return map;
+}
 
-  const rocketSources = indexed.filter(
-    (extraction) => extraction.rocketCount !== undefined,
-  );
-  const rocketValues = rocketSources.map(
-    (extraction) => extraction.rocketCount as number,
-  );
-  const rocketCountMin =
-    rocketValues.length > 0 ? Math.min(...rocketValues) : undefined;
-  const rocketCountMax =
-    rocketValues.length > 0 ? Math.max(...rocketValues) : undefined;
-  const rocketCitations = rocketSources.map(
-    (extraction) => extraction.citationIndex,
-  );
-  const rocketConfidence = weightedConfidence(rocketSources);
+function computeOptions(group: ValidatedInsightType[]): InsightOption[] {
+  // Sub-group by serialized value
+  const valueMap = new Map<string, ValidatedInsightType[]>();
+  for (const i of group) {
+    const key = JSON.stringify(i.kind);
+    if (!valueMap.has(key)) valueMap.set(key, []);
+    valueMap.get(key)!.push(i);
+  }
 
-  const detailSources = indexed
-    .filter((extraction) => extraction.rocketDetail)
-    .sort((a, b) => b.confidence - a.confidence);
-  const rocketDetail = detailSources[0]?.rocketDetail;
+  const options: InsightOption[] = [];
+  for (const [, sub] of valueMap) {
+    if (!sub.length) continue;
+    const avg = (fn: (i: ValidatedInsightType) => number) =>
+      sub.reduce((s, i) => s + fn(i), 0) / sub.length;
 
-  const cassetteSources = indexed.filter(
-    (extraction) => extraction.isCassette !== undefined,
-  );
-  const cassetteValues = cassetteSources.map(
-    (extraction) => extraction.isCassette as boolean,
-  );
-  const isCassette =
-    cassetteValues.length > 0
-      ? cassetteValues.filter(Boolean).length > cassetteValues.length / 2
-      : undefined;
-  const cassetteConfidence = weightedConfidence(cassetteSources);
+    options.push({
+      kind: sub[0]!.kind,
+      sources: sub.map((i) => i.source as BaseSourceMessageType),
+      avgConfidence: avg((i) => i.confidence ?? 0),
+      avgSourceTrust: avg((i) => i.sourceTrust ?? 0),
+      avgTimeRelevance: avg((i) => i.timeRelevance),
+      avgRegionRelevance: avg((i) => i.regionRelevance),
+      // exact_user_zone wins if any source confirms it; user_macro_region if any source says broader;
+      // not_a_user_zone if all sources say no overlap; undefined if non-location insight
+      insightLocation: sub.some((i) => i.insightLocation === "exact_user_zone")
+        ? "exact_user_zone"
+        : sub.some((i) => i.insightLocation === "user_macro_region")
+        ? "user_macro_region"
+        : sub.some((i) => i.insightLocation === "not_a_user_zone")
+        ? "not_a_user_zone"
+        : undefined,
+      insights: sub,
+    });
+  }
 
-  const interceptedSources = indexed.filter(
-    (extraction) => extraction.intercepted !== undefined,
-  );
-  const interceptedQualSources = indexed.filter(
-    (extraction) => extraction.interceptedQual !== undefined,
-  );
-  const interceptedValues = interceptedSources
-    .map((extraction) => extraction.intercepted as number)
-    .sort((a, b) => a - b);
-  const intercepted =
-    interceptedValues.length > 0
-      ? interceptedValues[Math.floor(interceptedValues.length / 2)]
-      : undefined;
-  const interceptedQual =
-    intercepted === undefined
-      ? modeQualification(interceptedQualSources, "interceptedQual")
-      : undefined;
-  const interceptedQualNumber = interceptedQual
-    ? medianQualificationNumber(interceptedQualSources, "interceptedQualNum")
-    : undefined;
-  const interceptedConfidence = weightedConfidence(
-    interceptedSources.length > 0 ? interceptedSources : interceptedQualSources,
-  );
+  options.sort((a, b) => b.avgConfidence - a.avgConfidence);
+  return options;
+}
 
-  const seaSources = indexed.filter(
-    (extraction) => extraction.seaImpact !== undefined,
-  );
-  const seaQualSources = indexed.filter(
-    (extraction) => extraction.seaImpactQual !== undefined,
-  );
-  const seaValues = seaSources
-    .map((extraction) => extraction.seaImpact as number)
-    .sort((a, b) => a - b);
-  const seaImpact =
-    seaValues.length > 0
-      ? seaValues[Math.floor(seaValues.length / 2)]
-      : undefined;
-  const seaImpactQual =
-    seaImpact === undefined
-      ? modeQualification(seaQualSources, "seaImpactQual")
-      : undefined;
-  const seaImpactQualNumber = seaImpactQual
-    ? medianQualificationNumber(seaQualSources, "seaImpactQualNum")
-    : undefined;
-  const seaConfidence = weightedConfidence(
-    seaSources.length > 0 ? seaSources : seaQualSources,
+// ── Node ───────────────────────────────────────────────────
+
+export async function voteNode(
+  state: AgentStateType,
+): Promise<Partial<AgentStateType>> {
+  const { filteredInsights, previousInsights } = state;
+
+  // Convert previousInsights (VotedInsightType[]) back to ValidatedInsight-like for merging
+  const prevAsValidated: ValidatedInsightType[] = previousInsights.flatMap(
+    (vi) =>
+      vi.sources.map((src) => ({
+        kind: vi.kind,
+        source: src,
+        timeRelevance: vi.timeRelevance,
+        regionRelevance: vi.regionRelevance,
+        confidence: vi.confidence,
+        sourceTrust: vi.sourceTrust,
+        timeStamp: new Date(src.timestamp),
+        isValid: true,
+        extractionReason: "carry-forward from previous phase",
+        insightLocation: vi.insightLocation,
+      })),
   );
 
-  const openSources = indexed.filter(
-    (extraction) => extraction.openAreaImpact !== undefined,
-  );
-  const openQualSources = indexed.filter(
-    (extraction) => extraction.openAreaImpactQual !== undefined,
-  );
-  const openValues = openSources
-    .map((extraction) => extraction.openAreaImpact as number)
-    .sort((a, b) => a - b);
-  const openAreaImpact =
-    openValues.length > 0
-      ? openValues[Math.floor(openValues.length / 2)]
-      : undefined;
-  const openAreaImpactQual =
-    openAreaImpact === undefined
-      ? modeQualification(openQualSources, "openAreaImpactQual")
-      : undefined;
-  const openAreaImpactQualNumber = openAreaImpactQual
-    ? medianQualificationNumber(openQualSources, "openAreaImpactQualNum")
-    : undefined;
-  const openAreaConfidence = weightedConfidence(
-    openSources.length > 0 ? openSources : openQualSources,
-  );
+  const allInsights = [
+    ...filteredInsights.filter((i) => i.isValid),
+    ...prevAsValidated,
+  ];
 
-  const allHitsSources = indexed.filter(
-    (extraction) => extraction.hitsConfirmed !== undefined,
-  );
-  const hitsValues = allHitsSources
-    .map((extraction) => extraction.hitsConfirmed as number)
-    .sort((a, b) => a - b);
-  const hitsConfirmed =
-    hitsValues.length > 0
-      ? hitsValues[Math.floor(hitsValues.length / 2)]
-      : undefined;
-  const positiveHitsSources = allHitsSources.filter(
-    (extraction) => (extraction.hitsConfirmed as number) > 0,
-  );
-  const hitsCitations =
-    positiveHitsSources.length > 0
-      ? positiveHitsSources.map((extraction) => extraction.citationIndex)
-      : allHitsSources.map((extraction) => extraction.citationIndex);
-  const hitsConfidence = weightedConfidence(allHitsSources);
+  if (allInsights.length === 0) {
+    return {
+      messages: [new AIMessage("vote-node: no valid insights to vote on")],
+      votedResult: {
+        insights: filteredInsights,
+        consensus: {},
+        needsClarify: false,
+        timestamp: Date.now(),
+      },
+    };
+  }
 
-  const hitsWithLocation = positiveHitsSources
-    .filter((extraction) => extraction.hitLocation)
-    .sort((a, b) => b.confidence - a.confidence);
-  const hitLocation = hitsWithLocation[0]?.hitLocation;
-  const hitType = hitsWithLocation[0]?.hitType;
+  const grouped = groupInsightsByKind(allInsights);
+  const consensusMap: Record<string, VotedInsightType> = {};
+  let anyNeedsClarify = false;
 
-  const hitsWithDetail = positiveHitsSources
-    .filter((extraction) => extraction.hitDetail)
-    .sort((a, b) => b.confidence - a.confidence);
-  const hitDetail = hitsWithDetail[0]?.hitDetail;
+  for (const [kind, insightsForKind] of grouped) {
+    const options = computeOptions(insightsForKind);
+    if (!options.length) continue;
 
-  const noImpactSources = allHitsSources.filter(
-    (extraction) => (extraction.hitsConfirmed as number) === 0,
-  );
-  const noImpacts = noImpactSources.length > 0 && hitsConfirmed === 0;
-  const noImpactsCitations = noImpactSources.map(
-    (extraction) => extraction.citationIndex,
-  );
+    const best = options[0]!;
+    const rejected = options.slice(1).flatMap((o) => o.insights);
 
-  const casualtySources = indexed.filter(
-    (extraction) => extraction.casualties && extraction.casualties > 0,
-  );
-  const casualtyValues = casualtySources
-    .map((extraction) => extraction.casualties as number)
-    .sort((a, b) => a - b);
-  const casualties =
-    casualtyValues.length > 0
-      ? casualtyValues[Math.floor(casualtyValues.length / 2)]
-      : undefined;
-  const casualtiesCitations = casualtySources.map(
-    (extraction) => extraction.citationIndex,
-  );
-  const casualtiesConfidence = weightedConfidence(casualtySources);
+    // Drop impact/casualities insights where region has zero overlap with user zones
+    // (not_a_user_zone = Petah Tikva case — no connection to user's monitored areas)
+    const LOCATION_KINDS = new Set(["impact", "casualities"]);
+    if (
+      LOCATION_KINDS.has(kind) &&
+      best.insightLocation === "not_a_user_zone"
+    ) {
+      // Every source said "not user zone" → skip this insight entirely
+      continue;
+    }
 
-  const injurySources = indexed.filter(
-    (extraction) =>
-      extraction.injuries !== undefined && (extraction.injuries as number) > 0,
-  );
-  const injuryValues = injurySources
-    .map((extraction) => extraction.injuries as number)
-    .sort((a, b) => a - b);
-  const injuries =
-    injuryValues.length > 0
-      ? injuryValues[Math.floor(injuryValues.length / 2)]
-      : undefined;
-  const injuriesCitations = injurySources.map(
-    (extraction) => extraction.citationIndex,
-  );
-  const injuriesConfidence = weightedConfidence(injurySources);
+    const clarifyNeed = getClarifyNeed(kind, best.avgConfidence);
+    if (clarifyNeed === "needs_clarify") anyNeedsClarify = true;
 
-  const injuryCauseValues = injurySources
-    .map((extraction) => extraction.injuriesCause)
-    .filter(
-      (value): value is "rocket" | "rushing_to_shelter" => value !== undefined,
-    );
-  const rocketCauseCount = injuryCauseValues.filter(
-    (value) => value === "rocket",
-  ).length;
-  const shelterCauseCount = injuryCauseValues.filter(
-    (value) => value === "rushing_to_shelter",
-  ).length;
-  const injuriesCause =
-    injuryCauseValues.length === 0
-      ? undefined
-      : rocketCauseCount >= shelterCauseCount
-      ? "rocket"
-      : "rushing_to_shelter";
+    consensusMap[kind] = {
+      kind: best.kind,
+      sources: best.sources,
+      confidence: best.avgConfidence,
+      sourceTrust: best.avgSourceTrust,
+      timeRelevance: best.avgTimeRelevance,
+      regionRelevance: best.avgRegionRelevance,
+      reason: `Consensus from ${
+        insightsForKind.length
+      } source(s), avg confidence ${(best.avgConfidence * 100).toFixed(0)}%`,
+      rejectedInsights: rejected,
+      insightLocation: best.insightLocation,
+    };
+  }
 
-  const totalWeight = indexed.reduce(
-    (accumulator, extraction) =>
-      accumulator + extraction.sourceTrust * extraction.confidence,
-    0,
-  );
-  const weightedConfidenceValue = totalWeight / indexed.length;
-
-  const voted: VotedResult = {
-    etaRefinedMinutes: bestEtaSource?.etaRefinedMinutes,
-    etaCitations: bestEtaSource ? [bestEtaSource.citationIndex] : [],
-    countryOrigins: countryOrigins ?? [],
-    rocketCountMin: rocketCountMin,
-    rocketCountMax: rocketCountMax,
-    rocketCitations: rocketCitations,
-    rocketConfidence: rocketConfidence,
-    rocketDetail: rocketDetail,
-    isCassette: isCassette,
-    isCassetteConfidence: cassetteConfidence,
-    intercepted,
-    interceptedQual: interceptedQual,
-    interceptedConfidence: interceptedConfidence,
-    seaImpact: seaImpact,
-    seaImpactQual: seaImpactQual,
-    seaConfidence: seaConfidence,
-    openAreaImpact: openAreaImpact,
-    openAreaImpactQual: openAreaImpactQual,
-    openAreaConfidence: openAreaConfidence,
-    hitsConfirmed: hitsConfirmed,
-    hitsCitations: hitsCitations,
-    hitsConfidence: hitsConfidence,
-    hitLocation: hitLocation,
-    hitType: hitType,
-    hitDetail: hitDetail,
-    noImpacts: noImpacts,
-    noImpactsCitations: noImpactsCitations,
-    interceptedCitations: interceptedSources.map(
-      (extraction) => extraction.citationIndex,
-    ),
-    casualties,
-    casualtiesCitations: casualtiesCitations,
-    casualtiesConfidence: casualtiesConfidence,
-    injuries,
-    injuriesCause: injuriesCause,
-    injuriesCitations: injuriesCitations,
-    injuriesConfidence: injuriesConfidence,
-    confidence: Math.round(weightedConfidenceValue * 100) / 100,
-    sourcesCount: indexed.length,
-    citedSources,
+  const votedResult: VotedResultType = {
+    insights: allInsights,
+    consensus: consensusMap,
+    needsClarify: anyNeedsClarify,
+    timestamp: Date.now(),
   };
 
-  logger.info("Agent: voted", { alertId, voted });
-  return voted;
+  return {
+    messages: [
+      new AIMessage(
+        JSON.stringify({
+          node: "vote",
+          kinds: Object.keys(consensusMap),
+          totalInsights: allInsights.length,
+          carryForward: prevAsValidated.length,
+          needsClarify: anyNeedsClarify,
+        }),
+      ),
+    ],
+    votedResult,
+  };
 }
-
-export const voteNode = (state: AgentStateType): Partial<AgentStateType> => {
-  return { votedResult: aggregateVote(state.extractions, state.alertId) };
-};
-
-export const vote = aggregateVote;

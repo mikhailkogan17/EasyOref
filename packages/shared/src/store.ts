@@ -16,25 +16,28 @@
 
 import { getRedis } from "./redis.js";
 import type {
-  ActiveSession,
-  AlertMeta,
+  ActiveSessionType,
+  AlertMetaType,
   AlertType,
-  ChannelPost,
-  EnrichmentData,
-  TelegramMessage,
+  ChannelPostType,
+  EnrichmentType,
+  TelegramMessageType,
 } from "./schemas.js";
-import { createEmptyEnrichmentData } from "./schemas.js";
+import { createEmptyEnrichment } from "./schemas.js";
 
-// Re-export types for backward compatibility
-export type { ActiveSession, AlertMeta, ChannelPost, TelegramMessage };
+// Internal aliases for use within this file
+type AlertMeta = AlertMetaType;
+type ChannelPost = ChannelPostType;
+type ActiveSession = ActiveSessionType;
+type Enrichment = EnrichmentType;
 
-// Schema version for migration handling
+//  version for migration handling
 export const SCHEMA_VERSION = "2.0.0";
 const SCHEMA_VERSION_KEY = "schema:version";
 
 let schemaVersionChecked = false;
 
-export async function ensureSchemaVersion(): Promise<void> {
+export async function ensureVersion(): Promise<void> {
   if (schemaVersionChecked) return;
   schemaVersionChecked = true;
 
@@ -169,17 +172,15 @@ export async function getChannelPosts(
 
 // ── Enrichment data (cross-phase persistence) ──────────
 
-export async function saveEnrichmentData(data: EnrichmentData): Promise<void> {
+export async function saveEnrichment(data: Enrichment): Promise<void> {
   const redis = getRedis();
   await redis.setex("session:enrichment", SESSION_TTL_S, JSON.stringify(data));
 }
 
-export async function getEnrichmentData(): Promise<EnrichmentData> {
+export async function getEnrichment(): Promise<Enrichment> {
   const redis = getRedis();
   const raw = await redis.get("session:enrichment");
-  return raw
-    ? (JSON.parse(raw) as EnrichmentData)
-    : createEmptyEnrichmentData();
+  return raw ? (JSON.parse(raw) as Enrichment) : createEmptyEnrichment();
 }
 
 // ── Last update timestamp (tracks when last enrichment job ran) ──

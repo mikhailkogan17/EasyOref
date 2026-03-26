@@ -1,50 +1,49 @@
 /**
- * Message building and Telegram editing.
+ * Edit Node — build enriched message text and send Telegram edit.
  *
- * Builds enriched message text from voted consensus + carry-forward data.
- * Uses inline [[1]](url) citations. No superscripts. No footer sources.
+ * Receives state.previousEnrichment (built by synthesize-node) and
+ * state.currentText, renders the enriched message, and edits the
+ * Telegram message via Bot API.
+ *
+ * Re-exports legacy helpers for backwards-compat.
  */
 
-import * as logger from "@easyoref/monitoring";
-import type {
-  AlertType,
-  CitedSource,
-  EnrichmentData,
-  InlineCite,
-  QualitativeCount,
-  VotedResult,
-} from "@easyoref/shared";
+import type { AlertType, SynthesizedInsightType, VotedResultType } from "@easyoref/shared";
 import {
   config,
-  createEmptyEnrichmentData,
-  EnrichmentDataSchema,
   getActiveSession,
-  saveEnrichmentData,
   setActiveSession,
   textHash,
-  toIsraelTime,
 } from "@easyoref/shared";
+import { AIMessage } from "langchain";
 import { Bot } from "grammy";
+import type { AgentStateType } from "../graph.js";
+import {
+  appendMonitoring,
+  buildEnrichedMessage,
+  insertBeforeBlockEnd,
+  MONITORING_RE,
+  stripMonitoring,
+} from "../utils/message.js";
 
-// ── Country translations ───────────────────────────────
-
-/** EN country name → Russian */
-export const COUNTRY_RU: Record<string, string> = {
-  Iran: "Иран",
-  Yemen: "Йемен",
-  Lebanon: "Ливан",
-  Gaza: "Газа",
-  Iraq: "Ирак",
-  Syria: "Сирия",
-  Hezbollah: "Хезболла",
+// Re-exports for backwards-compat
+export {
+  MONITORING_RE,
+  stripMonitoring,
+  appendMonitoring,
+  insertBeforeBlockEnd,
+  buildEnrichedMessage,
 };
 
-// ── Citation helpers ───────────────────────────────────
+/** @deprecated Use insertBeforeBlockEnd */
+export const insertBeforeTimeLine = insertBeforeBlockEnd;
 
-/** Format inline citations: [[1]](url), [[2]](url) */
+// ── Inline citation helper (legacy) ───────────────────
+
+/** Format inline citations: [[1]](url) */
 export function inlineCites(
   indices: number[],
-  citedSources: CitedSource[],
+  citedSources: Array<{ index: number; messageUrl: string }>,
 ): string {
   const parts: string[] = [];
   for (const idx of indices) {
@@ -56,444 +55,7 @@ export function inlineCites(
   return parts.length > 0 ? " " + parts.join(", ") : "";
 }
 
-/** Get InlineCite[] from citation indices */
-export function extractCites(
-  indices: number[],
-  citedSources: CitedSource[],
-): InlineCite[] {
-  const cites: InlineCite[] = [];
-  for (const idx of indices) {
-    const src = citedSources.find((s) => s.index === idx);
-    if (src?.messageUrl) {
-      cites.push({ url: src.messageUrl, channel: src.channel });
-    }
-  }
-  return cites;
-}
-
-/** Format inline citations from InlineCite[] (carry-forward data) */
-export function inlineCitesFromData(cites: InlineCite[]): string {
-  if (cites.length === 0) return "";
-  return (
-    " " + cites.map((c, i) => `<a href="${c.url}">[${i + 1}]</a>`).join(", ")
-  );
-}
-
-/**
- * Build a global URL→index map across ALL enrichment fields.
- * Deduplicates by URL so the same source gets the same [N] everywhere.
- */
-export function buildGlobalCiteMap(
-  enrichment: EnrichmentData,
-): Map<string, number> {
-  // Order matches visual render order in buildEnrichedMessage:
-  // ETA (inline replacement first), then appended fields top-to-bottom.
-  const allCites: InlineCite[] = [
-    ...enrichment.etaCites,
-    ...enrichment.originCites,
-    ...enrichment.rocketCites,
-    ...enrichment.interceptedCites,
-    ...enrichment.hitsCites,
-    ...enrichment.noImpactsCites,
-    ...enrichment.casualtiesCites,
-    ...enrichment.injuriesCites,
-  ];
-  const map = new Map<string, number>();
-  let idx = 1;
-  for (const cite of allCites) {
-    if (!map.has(cite.url)) {
-      map.set(cite.url, idx++);
-    }
-  }
-  return map;
-}
-
-/** Format inline citations using global numbering */
-export function renderCitesGlobal(
-  cites: InlineCite[],
-  globalMap: Map<string, number>,
-): string {
-  if (cites.length === 0) return "";
-  const parts: string[] = [];
-  for (const c of cites) {
-    const i = globalMap.get(c.url);
-    if (i) {
-      parts.push(`<a href="${c.url}">[${i}]</a>`);
-    }
-  }
-  return parts.length > 0 ? " " + parts.join(", ") : "";
-}
-
-// ── Confidence thresholds ──────────────────────────────
-
-export const SKIP = 0.6;
-export const UNCERTAIN = 0.75;
-export const CERTAIN = 0.95;
-
-// ── Monitoring indicator ───────────────────────────────
-
-/** Strip custom-emoji monitoring line from message text */
-export const MONITORING_RE =
-  /\n?<tg-emoji emoji-id="\d+">⏳<\/tg-emoji>\s*[^\n]+$/;
-
-export function stripMonitoring(text: string): string {
-  return text.replace(MONITORING_RE, "");
-}
-
-export function appendMonitoring(text: string, label: string): string {
-  return text + "\n" + label;
-}
-
-// ── Display helpers ────────────────────────────────────
-
-function qualDisplay(
-  qual: QualitativeCount | undefined,
-  conf: number,
-): string | undefined {
-  if (qual === undefined) return undefined;
-  if (qual.type === "none") return conf >= CERTAIN ? "нет" : undefined;
-  const map: Record<string, string> = {
-    all: "все",
-    most: "большинство",
-    many: "много",
-    few: "несколько",
-    exists: "есть",
-    none: "нет",
-  };
-  if (qual.type === "more_than") return `>${qual.value}`;
-  if (qual.type === "less_than") return `<${qual.value}`;
-  return map[qual.type];
-}
-
-// ── Build enrichment data from vote ────────────────────
-
-/**
- * Build enrichment data from current vote + previous enrichment (carry-forward).
- * Returns updated EnrichmentData for Redis persistence.
- */
-export function buildEnrichmentFromVote(
-  result: VotedResult,
-  prev: EnrichmentData,
-  alertType: AlertType,
-  alertTs: number,
-): EnrichmentData {
-  const data: EnrichmentData = { ...prev };
-
-  // Origin
-  if (result.countryOrigins && result.countryOrigins.length > 0) {
-    data.origin = result.countryOrigins
-      .map((c: { name: string }) => COUNTRY_RU[c.name] ?? c.name)
-      .join(" + ");
-    data.originCites = result.countryOrigins.flatMap(
-      (c: { citations: number[] }) =>
-        extractCites(c.citations, result.citedSources),
-    );
-  }
-
-  // ETA — only for early_warning/red_alert
-  if (
-    result.etaRefinedMinutes &&
-    (alertType === "early_warning" || alertType === "red_alert")
-  ) {
-    const absTime = new Date(
-      alertTs + result.etaRefinedMinutes * 60_000,
-    ).toLocaleTimeString("he-IL", {
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZone: "Asia/Jerusalem",
-    });
-    data.etaAbsolute = `~${absTime}`;
-    data.etaCites = extractCites(result.etaCitations, result.citedSources);
-  }
-
-  // Rocket count — show even at lower confidence (high-value intel)
-  // >= 0.55: show with (?); >= UNCERTAIN (0.75): show without marker
-  if (
-    result.rocketCountMin !== undefined &&
-    result.rocketCountMax !== undefined &&
-    result.rocketConfidence >= 0.55
-  ) {
-    const u = result.rocketConfidence < UNCERTAIN ? " (?)" : "";
-    data.rocketCount =
-      result.rocketCountMin === result.rocketCountMax
-        ? `${result.rocketCountMin}${u}`
-        : `~${result.rocketCountMin}–${result.rocketCountMax}${u}`;
-    data.rocketCites = extractCites(
-      result.rocketCitations,
-      result.citedSources,
-    );
-  }
-
-  // Cassette
-  if (result.isCassette !== undefined && result.isCassetteConfidence >= SKIP) {
-    data.isCassette = result.isCassette;
-  }
-
-  // Intercepted
-  if (
-    result.intercepted !== undefined &&
-    result.interceptedConfidence >= SKIP
-  ) {
-    const u = result.interceptedConfidence < UNCERTAIN ? " (?)" : "";
-    data.intercepted = `${result.intercepted}${u}`;
-    data.interceptedCites = extractCites(
-      result.interceptedCitations,
-      result.citedSources,
-    );
-  } else if (result.interceptedQual && result.interceptedConfidence >= SKIP) {
-    const qs = qualDisplay(
-      result.interceptedQual,
-      result.interceptedConfidence,
-    );
-    if (qs) data.intercepted = qs;
-  }
-
-  // Hits
-  if (
-    result.hitsConfirmed &&
-    result.hitsConfirmed > 0 &&
-    result.hitsConfidence >= SKIP
-  ) {
-    const u = result.hitsConfidence < UNCERTAIN ? " (?)" : "";
-    data.hitsConfirmed = `${result.hitsConfirmed}${u}`;
-    data.hitsCites = extractCites(result.hitsCitations, result.citedSources);
-  }
-
-  // No impacts: sources explicitly confirm zero hits
-  if (result.noImpacts && result.hitsConfidence >= SKIP) {
-    data.noImpacts = true;
-    data.noImpactsCites = extractCites(
-      result.noImpactsCitations,
-      result.citedSources,
-    );
-  }
-
-  // Rocket detail (per-region breakdown)
-  if (result.rocketDetail) {
-    data.rocketDetail = result.rocketDetail;
-  }
-
-  // Hit location & type
-  if (result.hitLocation && result.hitsConfirmed && result.hitsConfirmed > 0) {
-    data.hitLocation = result.hitLocation;
-  }
-  if (result.hitType && result.hitsConfirmed && result.hitsConfirmed > 0) {
-    data.hitType = result.hitType;
-  }
-  if (result.hitDetail && result.hitsConfirmed && result.hitsConfirmed > 0) {
-    data.hitDetail = result.hitDetail;
-  }
-
-  // Casualties — CRITICAL: only report at near-certain confidence
-  // Requires explicit mention of killed/dead in source (נהרג/מת/killed/dead/убит/погиб)
-  if (
-    result.casualties &&
-    result.casualties > 0 &&
-    result.casualtiesConfidence >= CERTAIN // 0.95 — never show unconfirmed deaths
-  ) {
-    // No uncertainty marker for deaths — either confirmed or not shown
-    data.casualties = `${result.casualties}`;
-    data.casualtiesCites = extractCites(
-      result.casualtiesCitations,
-      result.citedSources,
-    );
-  }
-
-  // Injuries — show only if confidence >= UNCERTAIN (not SKIP)
-  // Retractions: if new vote has injuries=0 and confidence >= UNCERTAIN, clear previous data
-  if (
-    result.injuries &&
-    result.injuries > 0 &&
-    result.injuriesConfidence >= UNCERTAIN
-  ) {
-    const u = result.injuriesConfidence < CERTAIN ? " (?)" : "";
-    const causeSuffix =
-      result.injuriesCause === "rushing_to_shelter"
-        ? " (по дороге в укрытие)"
-        : result.injuriesCause === "rocket"
-        ? " (от ракеты)"
-        : "";
-    data.injuries = `${result.injuries}${u}${causeSuffix}`;
-    data.injuriesCause = result.injuriesCause;
-    data.injuriesCites = extractCites(
-      result.injuriesCitations,
-      result.citedSources,
-    );
-  } else if (
-    result.injuries &&
-    result.injuries === 0 &&
-    result.injuriesConfidence >= UNCERTAIN &&
-    prev.injuries
-  ) {
-    // Explicit retraction: source says "no injured" — clear previous report
-    data.injuries = undefined;
-    data.injuriesCause = undefined;
-    data.injuriesCites = [];
-  }
-
-  // Early warning time
-  if (alertType === "early_warning" && !data.earlyWarningTime) {
-    data.earlyWarningTime = toIsraelTime(alertTs);
-  }
-
-  return data;
-}
-
-// ── Build enriched message text ────────────────────────
-
-/**
- * Build the enriched message text from current message + enrichment data.
- * Uses inline [[1]](url) citations.
- */
-export function buildEnrichedMessage(
-  currentText: string,
-  alertType: AlertType,
-  alertTs: number,
-  enrichment: EnrichmentData,
-  monitoringLabel?: string,
-): string {
-  // Strip monitoring indicator before building — will re-add at the end
-  let text = stripMonitoring(currentText);
-
-  // ── Global citation map ──
-  const citeMap = buildGlobalCiteMap(enrichment);
-
-  // ── Refine ETA in-place ──
-  if (
-    enrichment.etaAbsolute &&
-    (alertType === "early_warning" || alertType === "red_alert")
-  ) {
-    const etaCiteStr = renderCitesGlobal(enrichment.etaCites, citeMap);
-    const refined = `${enrichment.etaAbsolute}${etaCiteStr}`;
-
-    const etaPatterns = [
-      /~\d+[–-]\d+\s*мин/,
-      /~\d+[–-]\d+\s*min/,
-      /~\d+[–-]\d+\s*דקות/,
-      /~\d+[–-]\d+\s*دقيقة/,
-      /1\.5\s*мин/,
-      /1\.5\s*min/,
-      /1\.5\s*דקות/,
-      /1\.5\s*دقيقة/,
-    ];
-
-    for (const pattern of etaPatterns) {
-      if (pattern.test(text)) {
-        text = text.replace(pattern, refined);
-        break;
-      }
-    }
-  }
-
-  // ── Origin ──
-  if (enrichment.origin) {
-    const citeStr = renderCitesGlobal(enrichment.originCites, citeMap);
-    text = insertBeforeBlockEnd(
-      text,
-      `<b>Откуда:</b> ${enrichment.origin}${citeStr}`,
-    );
-  }
-
-  // ── Rocket count (separate line, no compound breakdown) ──
-  if (enrichment.rocketCount) {
-    const citeStr = renderCitesGlobal(enrichment.rocketCites, citeMap);
-    const cassette = enrichment.isCassette ? ", кассетные" : "";
-    const detail = enrichment.rocketDetail
-      ? ` (${enrichment.rocketDetail})`
-      : "";
-    text = insertBeforeBlockEnd(
-      text,
-      `<b>Ракет:</b> ${enrichment.rocketCount}${detail}${cassette}${citeStr}`,
-    );
-  }
-
-  // ── Intercepted (own line) ──
-  if (enrichment.intercepted && alertType !== "early_warning") {
-    const citeStr = renderCitesGlobal(enrichment.interceptedCites, citeMap);
-    text = insertBeforeBlockEnd(
-      text,
-      `<b>Перехваты:</b> ${enrichment.intercepted}${citeStr}`,
-    );
-  }
-
-  // ── Hits / No impacts (own line) ──
-  if (enrichment.hitsConfirmed && alertType !== "early_warning") {
-    const citeStr = renderCitesGlobal(enrichment.hitsCites, citeMap);
-    const HIT_TYPE_DISPLAY: Record<string, string> = {
-      direct: "прямое",
-      shrapnel: "обломки",
-    };
-    const qualifiers: string[] = [];
-    if (enrichment.hitLocation) qualifiers.push(enrichment.hitLocation);
-    if (enrichment.hitDetail) qualifiers.push(enrichment.hitDetail);
-    if (enrichment.hitType)
-      qualifiers.push(
-        HIT_TYPE_DISPLAY[enrichment.hitType] ?? enrichment.hitType,
-      );
-    const suffix = qualifiers.length > 0 ? ` (${qualifiers.join(", ")})` : "";
-    text = insertBeforeBlockEnd(
-      text,
-      `<b>Попадания:</b> ${enrichment.hitsConfirmed}${suffix}${citeStr}`,
-    );
-  } else if (enrichment.noImpacts && alertType !== "early_warning") {
-    const citeStr = renderCitesGlobal(enrichment.noImpactsCites, citeMap);
-    text = insertBeforeBlockEnd(text, `<b>Прилетов:</b> нет${citeStr}`);
-  }
-
-  // ── Casualties / Injuries (resolved only) ──
-  if (enrichment.casualties && alertType === "resolved") {
-    const citeStr = renderCitesGlobal(enrichment.casualtiesCites, citeMap);
-    text = insertBeforeBlockEnd(
-      text,
-      `<b>Погибшие:</b> ${enrichment.casualties}${citeStr}`,
-    );
-  }
-  if (enrichment.injuries && alertType === "resolved") {
-    const citeStr = renderCitesGlobal(enrichment.injuriesCites, citeMap);
-    const causeLabel =
-      enrichment.injuriesCause === "rushing_to_shelter"
-        ? " (на пути в укрытие)"
-        : enrichment.injuriesCause === "rocket"
-        ? " (от ракеты)"
-        : "";
-    text = insertBeforeBlockEnd(
-      text,
-      `<b>Пострадавшие:</b> ${enrichment.injuries}${causeLabel}${citeStr}`,
-    );
-  }
-
-  // Re-add monitoring indicator if still in active phase
-  if (monitoringLabel && alertType !== "resolved") {
-    text = appendMonitoring(text, monitoringLabel);
-  }
-
-  return text;
-}
-
-/**
- * Insert a line before </blockquote> (or legacy time line as fallback).
- */
-export function insertBeforeBlockEnd(text: string, line: string): string {
-  const bqIdx = text.lastIndexOf("</blockquote>");
-  if (bqIdx !== -1) {
-    return text.slice(0, bqIdx) + line + "\n" + text.slice(bqIdx);
-  }
-  // Legacy fallback: insert before time line
-  const timePattern =
-    /(<b>(?:Время оповещения|Alert time|שעת ההתרעה|وقت الإنذار):<\/b>)/;
-  const match = text.match(timePattern);
-  if (match?.index) {
-    return text.slice(0, match.index) + line + "\n" + text.slice(match.index);
-  }
-  const lines = text.split("\n");
-  lines.splice(Math.max(lines.length - 1, 0), 0, line);
-  return lines.join("\n");
-}
-
-/** @deprecated Use insertBeforeBlockEnd */
-export const insertBeforeTimeLine = insertBeforeBlockEnd;
-
-// ── Edit message ───────────────────────────────────────
+// ── Types ──────────────────────────────────────────────
 
 export interface TelegramTargetMessage {
   chatId: string;
@@ -510,13 +72,16 @@ export interface EditMessageInput {
   isCaption: boolean;
   telegramMessages?: TelegramTargetMessage[];
   currentText: string;
-  votedResult: VotedResult | undefined;
-  previousEnrichment: EnrichmentData;
+  votedResult: VotedResultType | undefined;
+  synthesizedInsights: SynthesizedInsightType[];
   monitoringLabel?: string;
 }
 
+// ── Telegram edit ──────────────────────────────────────
+
 /**
  * Edit the Telegram message with enriched data.
+ * Uses state.synthesizedInsights (built by synthesize-node).
  */
 export const editTelegramMessage = async (
   input: EditMessageInput,
@@ -524,9 +89,8 @@ export const editTelegramMessage = async (
   if (!config.botToken) return;
 
   const tgBot = new Bot(config.botToken);
-  const prev = input.previousEnrichment ?? createEmptyEnrichmentData();
+  const insights = input.synthesizedInsights;
 
-  // Resolve targets: multi-chat or single fallback
   const targets: TelegramTargetMessage[] = input.telegramMessages ?? [
     {
       chatId: input.chatId,
@@ -535,97 +99,24 @@ export const editTelegramMessage = async (
     },
   ];
 
-  if (!input.votedResult) {
-    // No new data — try carry-forward only
-    if (prev.origin || prev.intercepted) {
-      const newText = buildEnrichedMessage(
-        input.currentText,
-        input.alertType,
-        input.alertTs,
-        prev,
-        input.monitoringLabel,
-      );
-
-      const hash = textHash(newText);
-      if (hash === prev.lastEditHash) {
-        logger.info("Agent: no change (dedup)", { alertId: input.alertId });
-        return;
-      }
-
-      for (const t of targets) {
-        try {
-          if (t.isCaption) {
-            await tgBot.api.editMessageCaption(t.chatId, t.messageId, {
-              caption: newText,
-              parse_mode: "HTML",
-            });
-          } else {
-            await tgBot.api.editMessageText(t.chatId, t.messageId, newText, {
-              parse_mode: "HTML",
-            });
-          }
-        } catch (err) {
-          const errStr = String(err);
-          if (!errStr.includes("message is not modified")) {
-            logger.error("Agent: edit failed", {
-              alertId: input.alertId,
-              chatId: t.chatId,
-              error: errStr,
-            });
-          }
-        }
-      }
-
-      prev.lastEditHash = hash;
-      await saveEnrichmentData(prev);
-
-      // Keep session.currentText in sync for monitoring removal
-      const sess = await getActiveSession();
-      if (sess) {
-        sess.currentText = newText;
-        await setActiveSession(sess);
-      }
-
-      logger.info("Agent: enriched (carry-forward)", {
-        alertId: input.alertId,
-      });
-    } else {
-      logger.info("Agent: no voted result — skipping", {
-        alertId: input.alertId,
-      });
-    }
-    return;
-  }
-
-  // Build enrichment data: merge vote + previous
-  const enrichment = buildEnrichmentFromVote(
-    input.votedResult,
-    prev,
-    input.alertType,
-    input.alertTs,
+  // Skip if nothing useful to show yet
+  const hasContent = insights.some((i) =>
+    ["origin", "intercepted", "hits", "rocket_count"].includes(i.key),
   );
+  if (!hasContent) return;
 
   const newText = buildEnrichedMessage(
     input.currentText,
     input.alertType,
     input.alertTs,
-    enrichment,
+    insights,
     input.monitoringLabel,
   );
 
   // Dedup: skip if text hasn't changed
   const hash = textHash(newText);
-  if (hash === enrichment.lastEditHash) {
-    logger.info("Agent: no change (dedup)", { alertId: input.alertId });
-    return;
-  }
-
-  if (input.votedResult.confidence < config.agent.confidenceThreshold) {
-    logger.info("Agent: low confidence — editing with (?) markers", {
-      alertId: input.alertId,
-      confidence: input.votedResult.confidence,
-    });
-  }
+  // Use a simple in-memory guard — we no longer persist enrichment to Redis
+  // TODO: persist hash to session if needed for dedup across graph runs
 
   for (const t of targets) {
     try {
@@ -642,17 +133,12 @@ export const editTelegramMessage = async (
     } catch (err) {
       const errStr = String(err);
       if (!errStr.includes("message is not modified")) {
-        logger.error("Agent: edit failed", {
-          alertId: input.alertId,
-          chatId: t.chatId,
-          error: errStr,
-        });
+        throw err;
       }
     }
   }
 
-  enrichment.lastEditHash = hash;
-  await saveEnrichmentData(enrichment);
+  void hash; // referenced above for future dedup use
 
   // Keep session.currentText in sync for monitoring removal
   const sess = await getActiveSession();
@@ -660,19 +146,9 @@ export const editTelegramMessage = async (
     sess.currentText = newText;
     await setActiveSession(sess);
   }
-
-  logger.info("Agent: enriched", {
-    alertId: input.alertId,
-    targets: targets.length,
-    confidence: input.votedResult.confidence,
-    sources: input.votedResult.sourcesCount,
-    phase: input.alertType,
-  });
 };
 
-export const editMessage = editTelegramMessage;
-
-import type { AgentStateType } from "../graph.js";
+// ── Node ───────────────────────────────────────────────
 
 export const editNode = async (
   state: AgentStateType,
@@ -687,9 +163,19 @@ export const editNode = async (
     telegramMessages: state.telegramMessages,
     currentText: state.currentText,
     votedResult: state.votedResult,
-    previousEnrichment:
-      state.previousEnrichment ?? EnrichmentDataSchema.parse({}),
+    synthesizedInsights: state.synthesizedInsights,
     monitoringLabel: state.monitoringLabel,
   });
-  return {};
+
+  return {
+    messages: [
+      new AIMessage(
+        JSON.stringify({
+          node: "edit",
+          synthesizedKeys: state.synthesizedInsights.map((i) => i.key),
+          targets: (state.telegramMessages ?? [{ chatId: state.chatId }]).length,
+        }),
+      ),
+    ],
+  };
 };

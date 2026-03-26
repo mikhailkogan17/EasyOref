@@ -51,7 +51,7 @@ const ruPack: LanguagePack = {
     },
     red_alert: {
       emoji: "🚨",
-      title: "Цева Адом",
+      title: "Cирена",
       description: "",
     },
     resolved: {
@@ -79,7 +79,7 @@ const enPack: LanguagePack = {
     },
     red_alert: {
       emoji: "🚨",
-      title: "Siren Alert",
+      title: "Red Alert",
       description: "Enter a protected space immediately.",
     },
     resolved: {
@@ -107,7 +107,7 @@ const hePack: LanguagePack = {
     },
     red_alert: {
       emoji: "🚨",
-      title: "צבע אדום",
+      title: "אזעקה",
       description: "היכנסו למרחב מוגן.",
     },
     resolved: {

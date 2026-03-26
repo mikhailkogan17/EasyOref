@@ -1,22 +1,20 @@
 /**
- * Tests for tool calling: tools.ts, clarify.ts, and shouldClarify routing.
+ * Tests for tools and routing logic.
  *
- * These tests mock external dependencies (GramJS, fetch, LLM) and verify:
- *   - Tool execution and error handling
- *   - ReAct loop flow (with/without tool calls)
- *   - Conditional edge routing logic
- *   - Contradiction detection
- *   - Area proximity resolution
+ * Tests:
+ *   1. readSourcesTool
+ *   2. alertHistoryTool
+ *   3. shouldClarify routing (pure logic)
+ *   4. contradiction detection (new architecture)
+ *   5. clarifyTools export
+ *   6. resolveAreaTool
+ *   7. formatOrefDate
+ *   8. betterstackLogTool
  */
 
-import {
-  VotedResultSchema,
-  type ValidatedExtraction,
-  type VotedResult,
-} from "@easyoref/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// ── Mocks (must be defined before imports) ─────────────
+// ── Mocks ────────────────────────────────────────────────
 
 vi.mock("@easyoref/shared", async () => {
   const actual = await vi.importActual("@easyoref/shared");
@@ -61,75 +59,6 @@ vi.mock("@easyoref/gramjs", () => ({
   fetchRecentChannelPosts: vi.fn(),
 }));
 
-// ── Helpers ────────────────────────────────────────────
-
-function makeVotedResult(overrides: Partial<VotedResult> = {}): VotedResult {
-  return VotedResultSchema.parse({
-    etaRefinedMinutes: undefined,
-    eta_citations: [],
-    countryOrigins: [{ name: "Lebanon", citations: [1] }],
-    rocketCountMin: 10,
-    rocketCountMax: 15,
-    rocket_citations: [1, 2],
-    rocket_confidence: 0.7,
-    isCassette: undefined,
-    isCassette_confidence: 0,
-    intercepted: 8,
-    interceptedQual: undefined,
-    interceptedConfidence: 0.6,
-    seaImpact: undefined,
-    seaImpactQual: undefined,
-    sea_confidence: 0,
-    openAreaImpact: undefined,
-    openAreaImpactQual: undefined,
-    open_area_confidence: 0,
-    hitsConfirmed: 1,
-    hits_citations: [2],
-    hits_confidence: 0.4,
-    casualties: undefined,
-    casualties_citations: [],
-    casualties_confidence: 0,
-    injuries: undefined,
-    injuries_citations: [],
-    injuries_confidence: 0,
-    confidence: 0.45,
-    sourcesCount: 2,
-    citedSources: [
-      { index: 1, channel: "@idf_telegram", messageUrl: undefined },
-      { index: 2, channel: "@N12LIVE", messageUrl: undefined },
-    ],
-    ...overrides,
-  });
-}
-
-function makeExtraction(
-  overrides: Partial<ValidatedExtraction> = {},
-): ValidatedExtraction {
-  return {
-    channel: "@idf_telegram",
-    regionRelevance: 0.9,
-    sourceTrust: 0.8,
-    tone: "calm",
-    timeRelevance: 0.9,
-    countryOrigin: "Lebanon",
-    rocketCount: 12,
-    isCassette: undefined,
-    intercepted: 8,
-    interceptedQual: undefined,
-    seaImpact: undefined,
-    seaImpactQual: undefined,
-    openAreaImpact: undefined,
-    openAreaImpactQual: undefined,
-    hitsConfirmed: 1,
-    casualties: undefined,
-    injuries: undefined,
-    etaRefinedMinutes: undefined,
-    confidence: 0.7,
-    valid: true,
-    ...overrides,
-  };
-}
-
 // ═════════════════════════════════════════════════════════
 // 1. readSourcesTool
 // ═════════════════════════════════════════════════════════
@@ -143,32 +72,18 @@ describe("readSourcesTool", () => {
     const toolsMod = await import("../src/tools/index.js");
     readSourcesTool = toolsMod.readSourcesTool;
     const gramjsMod = await import("@easyoref/gramjs");
-    fetchRecentChannelPosts = gramjsMod.fetchRecentChannelPosts as ReturnType<
-      typeof vi.fn
-    >;
+    fetchRecentChannelPosts = gramjsMod.fetchRecentChannelPosts as ReturnType<typeof vi.fn>;
   });
 
   afterEach(() => vi.restoreAllMocks());
 
   it("returns posts from channel", async () => {
     fetchRecentChannelPosts.mockResolvedValueOnce([
-      {
-        text: "IDF reports 12 rockets launched",
-        ts: 1700000000,
-        messageUrl: "https://t.me/idf/100",
-      },
-      {
-        text: "Iron Dome intercepted majority",
-        ts: 1700000001,
-        messageUrl: "https://t.me/idf/101",
-      },
+      { text: "IDF reports 12 rockets launched", ts: 1700000000, messageUrl: "https://t.me/idf/100" },
+      { text: "Iron Dome intercepted majority", ts: 1700000001, messageUrl: "https://t.me/idf/101" },
     ]);
 
-    const result = await readSourcesTool.invoke({
-      channel: "@idf_telegram",
-      limit: 3,
-    });
-
+    const result = await readSourcesTool.invoke({ channel: "@idf_telegram", limit: 3 });
     const parsed = JSON.parse(result);
     expect(parsed.channel).toBe("@idf_telegram");
     expect(parsed.posts).toHaveLength(2);
@@ -178,38 +93,22 @@ describe("readSourcesTool", () => {
   });
 
   it("limits posts to clarifyFetchCount", async () => {
-    fetchRecentChannelPosts.mockResolvedValueOnce([
-      { text: "Post1", ts: 1, messageUrl: undefined },
-    ]);
-
-    // limit=4 (max allowed by schema) should be capped to clarifyFetchCount=3
+    fetchRecentChannelPosts.mockResolvedValueOnce([{ text: "Post1", ts: 1, messageUrl: undefined }]);
     await readSourcesTool.invoke({ channel: "@test", limit: 4 });
     expect(fetchRecentChannelPosts).toHaveBeenCalledWith("@test", 3);
   });
 
   it("truncates long texts to 800 chars", async () => {
     const longText = "A".repeat(1500);
-    fetchRecentChannelPosts.mockResolvedValueOnce([
-      { text: longText, ts: 1, messageUrl: undefined },
-    ]);
-
-    const result = await readSourcesTool.invoke({
-      channel: "@test",
-      limit: 1,
-    });
-
+    fetchRecentChannelPosts.mockResolvedValueOnce([{ text: longText, ts: 1, messageUrl: undefined }]);
+    const result = await readSourcesTool.invoke({ channel: "@test", limit: 1 });
     const parsed = JSON.parse(result);
     expect(parsed.posts[0].text.length).toBe(800);
   });
 
   it("returns empty array when no posts", async () => {
     fetchRecentChannelPosts.mockResolvedValueOnce([]);
-
-    const result = await readSourcesTool.invoke({
-      channel: "@empty",
-      limit: 2,
-    });
-
+    const result = await readSourcesTool.invoke({ channel: "@empty", limit: 2 });
     const parsed = JSON.parse(result);
     expect(parsed.posts).toHaveLength(0);
     expect(parsed.note).toContain("No recent posts");
@@ -217,12 +116,7 @@ describe("readSourcesTool", () => {
 
   it("handles FLOOD error gracefully (retry: false)", async () => {
     fetchRecentChannelPosts.mockRejectedValueOnce(new Error("FLOOD_WAIT_420"));
-
-    const result = await readSourcesTool.invoke({
-      channel: "@flooded",
-      limit: 1,
-    });
-
+    const result = await readSourcesTool.invoke({ channel: "@flooded", limit: 1 });
     const parsed = JSON.parse(result);
     expect(parsed.error).toContain("Failed to fetch");
     expect(parsed.retry).toBe(false);
@@ -230,12 +124,7 @@ describe("readSourcesTool", () => {
 
   it("handles generic error gracefully (retry: true)", async () => {
     fetchRecentChannelPosts.mockRejectedValueOnce(new Error("Network timeout"));
-
-    const result = await readSourcesTool.invoke({
-      channel: "@broken",
-      limit: 1,
-    });
-
+    const result = await readSourcesTool.invoke({ channel: "@broken", limit: 1 });
     const parsed = JSON.parse(result);
     expect(parsed.error).toContain("Network timeout");
     expect(parsed.retry).toBe(true);
@@ -262,15 +151,8 @@ describe("alertHistoryTool", () => {
   });
 
   it("returns empty when no history", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValueOnce({
-      ok: true,
-      text: async () => "",
-    });
-
-    const result = await alertHistoryTool.invoke({
-      area: "תל אביב",
-      last_minutes: 30,
-    });
+    globalThis.fetch = vi.fn().mockResolvedValueOnce({ ok: true, text: async () => "" });
+    const result = await alertHistoryTool.invoke({ area: "תל אביב", last_minutes: 30 });
     const parsed = JSON.parse(result);
     expect(parsed.alerts).toEqual([]);
     expect(parsed.note).toContain("No alert history");
@@ -279,27 +161,12 @@ describe("alertHistoryTool", () => {
   it("filters history by area", async () => {
     globalThis.fetch = vi.fn().mockResolvedValueOnce({
       ok: true,
-      text: async () =>
-        JSON.stringify([
-          {
-            alertDate: "2024-01-15 10:30",
-            title: "ירי רקטות",
-            data: "תל אביב - דרום העיר ויפו",
-            category_desc: "Missiles",
-          },
-          {
-            alertDate: "2024-01-15 10:31",
-            title: "ירי רקטות",
-            data: "חיפה - מערב",
-            category_desc: "Missiles",
-          },
-        ]),
+      text: async () => JSON.stringify([
+        { alertDate: "2024-01-15 10:30", title: "ירי רקטות", data: "תל אביב - דרום העיר ויפו", category_desc: "Missiles" },
+        { alertDate: "2024-01-15 10:31", title: "ירי רקטות", data: "חיפה - מערב", category_desc: "Missiles" },
+      ]),
     });
-
-    const result = await alertHistoryTool.invoke({
-      area: "תל אביב",
-      last_minutes: 30,
-    });
+    const result = await alertHistoryTool.invoke({ area: "תל אביב", last_minutes: 30 });
     const parsed = JSON.parse(result);
     expect(parsed.alerts).toHaveLength(1);
     expect(parsed.total_in_period).toBe(2);
@@ -308,15 +175,8 @@ describe("alertHistoryTool", () => {
   });
 
   it("handles HTTP error", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValueOnce({
-      ok: false,
-      status: 503,
-    });
-
-    const result = await alertHistoryTool.invoke({
-      area: "test",
-      last_minutes: 30,
-    });
+    globalThis.fetch = vi.fn().mockResolvedValueOnce({ ok: false, status: 503 });
+    const result = await alertHistoryTool.invoke({ area: "test", last_minutes: 30 });
     const parsed = JSON.parse(result);
     expect(parsed.error).toContain("503");
     expect(parsed.retry).toBe(true);
@@ -324,11 +184,7 @@ describe("alertHistoryTool", () => {
 
   it("handles network failure", async () => {
     globalThis.fetch = vi.fn().mockRejectedValueOnce(new Error("fetch failed"));
-
-    const result = await alertHistoryTool.invoke({
-      area: "test",
-      last_minutes: 30,
-    });
+    const result = await alertHistoryTool.invoke({ area: "test", last_minutes: 30 });
     const parsed = JSON.parse(result);
     expect(parsed.error).toContain("fetch failed");
     expect(parsed.retry).toBe(true);
@@ -336,234 +192,107 @@ describe("alertHistoryTool", () => {
 });
 
 // ═════════════════════════════════════════════════════════
-// 3. shouldClarify routing logic
+// 3. shouldClarify routing logic (pure, no VotedResult needed)
 // ═════════════════════════════════════════════════════════
 
 describe("shouldClarify routing", () => {
-  // Test the pure routing logic by extracting the conditions
-  // (shouldClarify is not exported, so we test its logic directly)
-
+  // Inline the pure routing logic
   function shouldClarify(state: {
     clarifyAttempted: boolean;
     mcpToolsEnabled: boolean;
-    votedResult: VotedResult | undefined;
-    confidenceThreshold: number;
+    needsClarify: boolean;
   }): "clarify" | "editMessage" {
     if (state.clarifyAttempted) return "editMessage";
     if (!state.mcpToolsEnabled) return "editMessage";
-    if (!state.votedResult) return "editMessage";
-    if (state.votedResult.confidence < state.confidenceThreshold)
-      return "clarify";
+    if (state.needsClarify) return "clarify";
     return "editMessage";
   }
 
-  it("routes to clarify when confidence < threshold", () => {
-    const result = shouldClarify({
-      clarifyAttempted: false,
-      mcpToolsEnabled: true,
-      votedResult: makeVotedResult({ confidence: 0.4 }),
-      confidenceThreshold: 0.6,
-    });
-    expect(result).toBe("clarify");
+  it("routes to clarify when needsClarify=true", () => {
+    expect(shouldClarify({ clarifyAttempted: false, mcpToolsEnabled: true, needsClarify: true })).toBe("clarify");
   });
 
-  it("routes to editMessage when confidence >= threshold", () => {
-    const result = shouldClarify({
-      clarifyAttempted: false,
-      mcpToolsEnabled: true,
-      votedResult: makeVotedResult({ confidence: 0.8 }),
-      confidenceThreshold: 0.6,
-    });
-    expect(result).toBe("editMessage");
+  it("routes to editMessage when needsClarify=false", () => {
+    expect(shouldClarify({ clarifyAttempted: false, mcpToolsEnabled: true, needsClarify: false })).toBe("editMessage");
   });
 
   it("routes to editMessage when already clarified", () => {
-    const result = shouldClarify({
-      clarifyAttempted: true,
-      mcpToolsEnabled: true,
-      votedResult: makeVotedResult({ confidence: 0.3 }),
-      confidenceThreshold: 0.6,
-    });
-    expect(result).toBe("editMessage");
+    expect(shouldClarify({ clarifyAttempted: true, mcpToolsEnabled: true, needsClarify: true })).toBe("editMessage");
   });
 
   it("routes to editMessage when MCP tools disabled", () => {
-    const result = shouldClarify({
-      clarifyAttempted: false,
-      mcpToolsEnabled: false,
-      votedResult: makeVotedResult({ confidence: 0.3 }),
-      confidenceThreshold: 0.6,
-    });
-    expect(result).toBe("editMessage");
-  });
-
-  it("routes to editMessage when votedResult is undefined", () => {
-    const result = shouldClarify({
-      clarifyAttempted: false,
-      mcpToolsEnabled: true,
-      votedResult: undefined,
-      confidenceThreshold: 0.6,
-    });
-    expect(result).toBe("editMessage");
-  });
-
-  it("routes to clarify at exact boundary (0.59 < 0.6)", () => {
-    const result = shouldClarify({
-      clarifyAttempted: false,
-      mcpToolsEnabled: true,
-      votedResult: makeVotedResult({ confidence: 0.59 }),
-      confidenceThreshold: 0.6,
-    });
-    expect(result).toBe("clarify");
-  });
-
-  it("routes to editMessage at exact threshold (0.6 >= 0.6)", () => {
-    const result = shouldClarify({
-      clarifyAttempted: false,
-      mcpToolsEnabled: true,
-      votedResult: makeVotedResult({ confidence: 0.6 }),
-      confidenceThreshold: 0.6,
-    });
-    expect(result).toBe("editMessage");
+    expect(shouldClarify({ clarifyAttempted: false, mcpToolsEnabled: false, needsClarify: true })).toBe("editMessage");
   });
 });
 
 // ═════════════════════════════════════════════════════════
-// 4. Contradiction detection
+// 4. Contradiction detection (new ValidatedInsight architecture)
 // ═════════════════════════════════════════════════════════
 
 describe("contradiction detection", () => {
-  // Extracted from clarify.ts describeContradictions logic
-  function describeContradictions(
-    _extractions: ValidatedExtraction[],
-    voted: VotedResult,
-  ): string {
-    const issues: string[] = [];
-    if (voted.countryOrigins && voted.countryOrigins.length > 1) {
-      const names = voted.countryOrigins.map((c) => c.name).join(", ");
-      issues.push(`Multiple origin countries reported: ${names}`);
-    }
-    if (
-      voted.rocketCountMin !== undefined &&
-      voted.rocketCountMax !== undefined &&
-      voted.rocketCountMax - voted.rocketCountMin > 3
-    ) {
-      issues.push(
-        `Wide rocket count range: ${voted.rocketCountMin}–${voted.rocketCountMax}`,
-      );
-    }
-    if (voted.interceptedConfidence < 0.5 && voted.intercepted !== undefined) {
-      issues.push(
-        `Intercepted count (${
-          voted.intercepted
-        }) has low confidence: ${voted.interceptedConfidence.toFixed(2)}`,
-      );
-    }
-    if (voted.hitsConfidence < 0.5 && voted.hitsConfirmed !== undefined) {
-      issues.push(
-        `Hits confirmed (${
-          voted.hitsConfirmed
-        }) has low confidence: ${voted.hitsConfidence.toFixed(2)}`,
-      );
-    }
-    issues.push(`Overall confidence: ${voted.confidence}`);
-    issues.push(`Sources count: ${voted.sourcesCount}`);
-    return issues.join("\n");
+  // Import describeContradictions from utils/contradictions
+  let describeContradictions: typeof import("../src/utils/contradictions.js").describeContradictions;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const mod = await import("../src/utils/contradictions.js");
+    describeContradictions = mod.describeContradictions;
+  });
+
+  function makeInsight(kind: "country_origins" | "rocket_count", value: unknown, confidence = 0.8) {
+    return {
+      kind: { kind, value } as any,
+      source: { channelId: "@test", sourceType: "telegram_channel" as const, timestamp: Date.now(), text: "test" },
+      timeRelevance: 1,
+      regionRelevance: 1,
+      confidence,
+      timeStamp: new Date(),
+      isValid: true,
+    };
   }
 
   it("detects multiple country origins", () => {
-    const voted = makeVotedResult({
-      countryOrigins: [
-        { name: "Lebanon", citations: [1] },
-        { name: "Iran", citations: [2] },
-      ],
-    });
-    const result = describeContradictions([], voted);
+    const insights = [
+      makeInsight("country_origins", new Set(["Lebanon", "Iran"])),
+    ];
+    const result = describeContradictions(insights as any);
     expect(result).toContain("Multiple origin countries");
-    expect(result).toContain("Lebanon");
-    expect(result).toContain("Iran");
   });
 
   it("detects wide rocket count range", () => {
-    const voted = makeVotedResult({
-      rocketCountMin: 5,
-      rocketCountMax: 20,
-    });
-    const result = describeContradictions([], voted);
+    const insights = [
+      makeInsight("rocket_count", { type: "exact", value: 5 }),
+      makeInsight("rocket_count", { type: "exact", value: 20 }),
+    ];
+    const result = describeContradictions(insights as any);
     expect(result).toContain("Wide rocket count range: 5–20");
   });
 
-  it("detects low intercepted confidence", () => {
-    const voted = makeVotedResult({
-      intercepted: 5,
-      interceptedConfidence: 0.3,
-    });
-    const result = describeContradictions([], voted);
-    expect(result).toContain("Intercepted count (5) has low confidence: 0.30");
-  });
-
-  it("detects low hits confidence", () => {
-    const voted = makeVotedResult({
-      hitsConfirmed: 2,
-      hitsConfidence: 0.25,
-    });
-    const result = describeContradictions([], voted);
-    expect(result).toContain("Hits confirmed (2) has low confidence: 0.25");
-  });
-
   it("does not flag narrow rocket count range", () => {
-    const voted = makeVotedResult({
-      rocketCountMin: 10,
-      rocketCountMax: 12,
-    });
-    const result = describeContradictions([], voted);
+    const insights = [
+      makeInsight("rocket_count", { type: "exact", value: 10 }),
+      makeInsight("rocket_count", { type: "exact", value: 12 }),
+    ];
+    const result = describeContradictions(insights as any);
     expect(result).not.toContain("Wide rocket count range");
   });
 
-  it("always includes overall confidence and sources count", () => {
-    const voted = makeVotedResult({ confidence: 0.45, sourcesCount: 3 });
-    const result = describeContradictions([], voted);
-    expect(result).toContain("Overall confidence: 0.45");
-    expect(result).toContain("Sources count: 3");
+  it("flags low confidence insights", () => {
+    const insights = [makeInsight("rocket_count", { type: "exact", value: 5 }, 0.3)];
+    const result = describeContradictions(insights as any);
+    expect(result).toContain("low confidence");
+  });
+
+  it("always includes summary stats", () => {
+    const insights = [makeInsight("country_origins", new Set(["Iran"]))];
+    const result = describeContradictions(insights as any);
+    expect(result).toContain("Total valid insights:");
+    expect(result).toContain("Insight kinds:");
   });
 });
 
 // ═════════════════════════════════════════════════════════
-// 5. ClarifyOutput structure
-// ═════════════════════════════════════════════════════════
-
-describe("clarify output contract", () => {
-  it("ClarifyOutput has expected shape", () => {
-    // Type-level test: ensure the interface we expect
-    const output = {
-      newPosts: [{ channel: "@test", text: "test", ts: 1 }],
-      newExtractions: [makeExtraction()],
-      toolCallCount: 2,
-      clarified: true,
-    };
-    expect(output.newPosts).toHaveLength(1);
-    expect(output.newExtractions).toHaveLength(1);
-    expect(output.toolCallCount).toBe(2);
-    expect(output.clarified).toBe(true);
-  });
-
-  it("ClarifyInput has expected fields", () => {
-    const input = {
-      alertId: "test-1",
-      alertAreas: ["תל אביב"],
-      alertType: "red_alert" as const,
-      messageId: 123,
-      currentText: "text",
-      extractions: [makeExtraction()],
-      votedResult: makeVotedResult(),
-    };
-    expect(input.alertAreas).toContain("תל אביב");
-    expect(input.extractions).toHaveLength(1);
-  });
-});
-
-// ═════════════════════════════════════════════════════════
-// 6. clarifyTools array
+// 5. clarifyTools export
 // ═════════════════════════════════════════════════════════
 
 describe("clarifyTools export", () => {
@@ -586,12 +315,11 @@ describe("clarifyTools export", () => {
     const names = clarifyTools.map((t) => t.name);
     expect(names).not.toContain("telegram_mtproto_mcp_read_sources");
     expect(names).not.toContain("pikud_haoref_mcp");
-    expect(names).not.toContain("telegram_bot_mcp_read_target");
   });
 });
 
 // ═════════════════════════════════════════════════════════
-// 7. resolveAreaTool
+// 6. resolveAreaTool
 // ═════════════════════════════════════════════════════════
 
 describe("resolveAreaTool", () => {
@@ -605,18 +333,11 @@ describe("resolveAreaTool", () => {
 
   afterEach(() => vi.restoreAllMocks());
 
-  it("resolves direct match (תל אביב)", async () => {
-    const result = await resolveAreaTool.invoke({ location: "תל אביב" });
+  it("resolves direct match (הרצליה)", async () => {
+    const result = await resolveAreaTool.invoke({ location: "הרצליה" });
     const parsed = JSON.parse(result);
     expect(parsed.relevant).toBe(true);
     expect(parsed.reasoning).toContain("directly matches");
-  });
-
-  it("resolves same zone (פתח תקווה → הרצליה via שרון/גוש דן)", async () => {
-    const result = await resolveAreaTool.invoke({ location: "פתח תקווה" });
-    const parsed = JSON.parse(result);
-    expect(parsed.relevant).toBe(true);
-    expect(parsed.sameZone).toBeTruthy();
   });
 
   it("resolves region keyword (מרכז → תל אביב)", async () => {
@@ -625,7 +346,7 @@ describe("resolveAreaTool", () => {
     expect(parsed.relevant).toBe(true);
   });
 
-  it("rejects unrelated area (חיפה)", async () => {
+  it("rejects unrelated area (קריית שמונה — far north)", async () => {
     const result = await resolveAreaTool.invoke({ location: "קריית שמונה" });
     const parsed = JSON.parse(result);
     expect(parsed.relevant).toBe(false);
@@ -633,71 +354,65 @@ describe("resolveAreaTool", () => {
 });
 
 // ═════════════════════════════════════════════════════════
-// 8. resolveAreaProximity (unit)
+// 7. resolveArea (unit — 3-tier logic)
 // ═════════════════════════════════════════════════════════
 
-describe("resolveAreaProximity", () => {
-  let resolveAreaProximity: typeof import("../src/tools/index.js")._resolveAreaProximity;
+describe("resolveArea (unit)", () => {
+  let resolveArea: typeof import("../src/tools/resolve-area.js").resolveArea;
 
   beforeEach(async () => {
     vi.resetModules();
-    const toolsMod = await import("../src/tools/index.js");
-    resolveAreaProximity = toolsMod._resolveAreaProximity;
+    const mod = await import("../src/tools/resolve-area.js");
+    resolveArea = mod.resolveArea;
   });
 
   const monitored = ["הרצליה", "תל אביב - דרום העיר ויפו"];
 
-  it("direct match — exact monitored area", () => {
-    const r = resolveAreaProximity("הרצליה", monitored);
+  it("tier 1: exact match (הרצליה)", async () => {
+    const r = await resolveArea("הרצליה", monitored);
     expect(r.relevant).toBe(true);
-    expect(r.sameZone).toBeUndefined();
-    expect(r.monitoredMatch).toContain("הרצליה");
+    expect(r.tier).toBe("exact");
+    expect(r.matchedAreas).toContain("הרצליה");
   });
 
-  it("direct match — partial prefix (תל אביב)", () => {
-    const r = resolveAreaProximity("תל אביב", monitored);
+  it("tier 1: substring match (תל אביב)", async () => {
+    const r = await resolveArea("תל אביב", monitored);
     expect(r.relevant).toBe(true);
+    expect(r.tier).toBe("exact");
   });
 
-  it("zone match — פתח תקווה in גוש דן with תל אביב", () => {
-    const r = resolveAreaProximity("פתח תקווה", monitored);
+  it("tier 2: hierarchy match (מרכז → includes תל אביב zones)", async () => {
+    const r = await resolveArea("מרכז", monitored);
     expect(r.relevant).toBe(true);
-    expect(r.sameZone).toBe("גוש דן");
+    expect(["exact", "hierarchy"]).toContain(r.tier);
   });
 
-  it("zone match — רעננה in שרון with הרצליה", () => {
-    const r = resolveAreaProximity("רעננה", monitored);
+  it("tier 2: hierarchy match (גוש דן → includes תל אביב zones)", async () => {
+    const r = await resolveArea("גוש דן", monitored);
     expect(r.relevant).toBe(true);
-    expect(r.sameZone).toBe("שרון");
+    expect(["exact", "hierarchy"]).toContain(r.tier);
   });
 
-  it("region keyword — מרכז includes תל אביב", () => {
-    const r = resolveAreaProximity("מרכז", monitored);
-    expect(r.relevant).toBe(true);
-    expect(r.sameZone).toBe("מרכז");
-  });
-
-  it("no match — קריית שמונה (north)", () => {
-    const r = resolveAreaProximity("קריית שמונה", monitored);
+  it("none: unrelated area (קריית שמונה)", async () => {
+    const r = await resolveArea("קריית שמונה", monitored);
     expect(r.relevant).toBe(false);
-    expect(r.sameZone).toBe("גליל עליון");
+    expect(r.tier).toBe("none");
   });
 
-  it("no match — completely unknown area", () => {
-    const r = resolveAreaProximity("אום אל פחם", monitored);
+  it("returns none for empty userAreas", async () => {
+    const r = await resolveArea("תל אביב", []);
     expect(r.relevant).toBe(false);
-    expect(r.sameZone).toBeUndefined();
+    expect(r.tier).toBe("none");
   });
 
-  it("zone match — בני ברק in גוש דן", () => {
-    const r = resolveAreaProximity("בני ברק", monitored);
-    expect(r.relevant).toBe(true);
-    expect(r.sameZone).toBe("גוש דן");
+  it("returns none for empty mentioned", async () => {
+    const r = await resolveArea("", monitored);
+    expect(r.relevant).toBe(false);
   });
 });
 
 // ═════════════════════════════════════════════════════════
-// 9. formatOrefDate
+// 8. formatOrefDate
 // ═════════════════════════════════════════════════════════
 
 describe("formatOrefDate", () => {
@@ -715,7 +430,7 @@ describe("formatOrefDate", () => {
 });
 
 // ═════════════════════════════════════════════════════════
-// 10. betterstackLogTool
+// 9. betterstackLogTool
 // ═════════════════════════════════════════════════════════
 
 describe("betterstackLogTool", () => {
@@ -738,22 +453,12 @@ describe("betterstackLogTool", () => {
       ok: true,
       json: async () => ({
         results: [
-          {
-            timestamp: "2024-01-15T10:30:00Z",
-            message: "Alert processed",
-          },
-          {
-            timestamp: "2024-01-15T10:29:00Z",
-            message: "Enrichment started",
-          },
+          { timestamp: "2024-01-15T10:30:00Z", message: "Alert processed" },
+          { timestamp: "2024-01-15T10:29:00Z", message: "Enrichment started" },
         ],
       }),
     });
-
-    const result = await betterstackLogTool.invoke({
-      query: "enrichment",
-      lastMinutes: 15,
-    });
+    const result = await betterstackLogTool.invoke({ query: "enrichment", lastMinutes: 15 });
     const parsed = JSON.parse(result);
     expect(parsed.logs).toHaveLength(2);
     expect(parsed.logs[0].message).toBe("Alert processed");
@@ -766,11 +471,7 @@ describe("betterstackLogTool", () => {
       ok: true,
       json: async () => ({ results: [] }),
     });
-
-    const result = await betterstackLogTool.invoke({
-      query: "nonexistent",
-      lastMinutes: 5,
-    });
+    const result = await betterstackLogTool.invoke({ query: "nonexistent", lastMinutes: 5 });
     const parsed = JSON.parse(result);
     expect(parsed.logs).toHaveLength(0);
     expect(parsed.count).toBe(0);
@@ -782,11 +483,7 @@ describe("betterstackLogTool", () => {
       status: 401,
       text: async () => "Unauthorized",
     });
-
-    const result = await betterstackLogTool.invoke({
-      query: "test",
-      lastMinutes: 10,
-    });
+    const result = await betterstackLogTool.invoke({ query: "test", lastMinutes: 10 });
     const parsed = JSON.parse(result);
     expect(parsed.error).toContain("Invalid Better Stack credentials");
     expect(parsed.hint).toBeDefined();
@@ -794,11 +491,7 @@ describe("betterstackLogTool", () => {
 
   it("handles network failure", async () => {
     globalThis.fetch = vi.fn().mockRejectedValueOnce(new Error("ECONNREFUSED"));
-
-    const result = await betterstackLogTool.invoke({
-      query: "test",
-      lastMinutes: 10,
-    });
+    const result = await betterstackLogTool.invoke({ query: "test", lastMinutes: 10 });
     const parsed = JSON.parse(result);
     expect(parsed.error).toContain("ECONNREFUSED");
     expect(parsed.retry).toBe(true);
@@ -808,19 +501,10 @@ describe("betterstackLogTool", () => {
     vi.resetModules();
     vi.doMock("@easyoref/shared", async () => {
       const actual = await vi.importActual("@easyoref/shared");
-      return {
-        ...actual,
-        config: {
-          ...(actual.config ?? {}),
-          logtailToken: "",
-        },
-      };
+      return { ...actual, config: { ...(actual as any).config ?? {}, logtailToken: "" } };
     });
     const toolsMod = await import("../src/tools/index.js");
-    const result = await toolsMod.betterstackLogTool.invoke({
-      query: "test",
-      lastMinutes: 10,
-    });
+    const result = await toolsMod.betterstackLogTool.invoke({ query: "test", lastMinutes: 10 });
     const parsed = JSON.parse(result);
     expect(parsed.error).toContain("Better Stack token not configured");
   });
