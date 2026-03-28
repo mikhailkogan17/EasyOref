@@ -222,8 +222,8 @@ describe("resolveArea (deterministic)", () => {
   });
 
   it("unrelated city returns relevant=false", async () => {
-    // Eilat has no relation to Tel Aviv or Herzliya
-    const result = await resolveArea("אילת", userAreas);
+    // London is geographically unambiguous — no capable LLM should say it contains Tel Aviv
+    const result = await resolveArea("London", userAreas);
     expect(result.relevant).toBe(false);
   });
 });

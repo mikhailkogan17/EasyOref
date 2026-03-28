@@ -55,10 +55,10 @@ export const extractFallback = new ChatOpenRouter({
   maxTokens: 500,
 });
 
-/** Free auto-router model for cheap yes/no geography checks (resolve_area LLM-fallback) */
+/** Model for yes/no geography checks (resolve_area LLM-fallback). Pinned to avoid random auto-routing. */
 export const freeModel = new ChatOpenRouter({
   apiKey: config.agent.apiKey,
-  model: "openrouter/free",
+  model: "openai/gpt-oss-120b:free",
   temperature: 0,
   maxTokens: 50,
 });

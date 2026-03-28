@@ -132,6 +132,9 @@ const hePack: LanguagePack = {
     redAlertEta: "1.5 דקות",
     monitoring:
       '<tg-emoji emoji-id="5258052328455424397">⏳</tg-emoji> ההודעה מתעדכנת...',
+    metaRockets: "טילים",
+    metaArrival: "פגיעה משוערת",
+    metaCassette: "מצרר",
   },
 };
 
@@ -160,6 +163,9 @@ const arPack: LanguagePack = {
     redAlertEta: "1.5 دقيقة",
     monitoring:
       '<tg-emoji emoji-id="5258052328455424397">⏳</tg-emoji> الرسالة قيد التحديث...',
+    metaRockets: "صواريخ",
+    metaArrival: "الوصول المتوقع",
+    metaCassette: "عنقودي",
   },
 };
 
