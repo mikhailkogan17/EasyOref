@@ -18,11 +18,12 @@ import {
   toolStrategy,
 } from "langchain";
 import type { AgentStateType } from "../graph.js";
-import { preFilterModel } from "../models.js";
+import { preFilterFallback, preFilterModel } from "../models.js";
 import { clarifyTools } from "../tools/index.js";
 import { describeContradictions } from "../utils/contradictions.js";
+import * as logger from "@easyoref/monitoring";
 
-const clarifyAgent = createAgent({
+const clarifyAgentOpts = {
   model: preFilterModel,
   tools: clarifyTools,
   responseFormat: toolStrategy(ClarifyOutput),
@@ -50,7 +51,7 @@ You decide whether tools would help:
 
 Always respect an output format.
 `,
-});
+};
 
 export const clarifyNode = async (
   state: AgentStateType,
@@ -104,7 +105,21 @@ export const clarifyNode = async (
   const messages: BaseMessage[] = [new HumanMessage(userPrompt)];
 
   try {
-    const result = await clarifyAgent.invoke({ messages });
+    // Try primary model first, then fallback
+    let result: any;
+    try {
+      const agent = createAgent(clarifyAgentOpts as any);
+      result = await agent.invoke({ messages });
+    } catch (primaryErr) {
+      logger.warn("clarify-node: primary model failed, trying fallback", {
+        error: String(primaryErr),
+      });
+      const fallbackAgent = createAgent({
+        ...clarifyAgentOpts,
+        model: preFilterFallback,
+      } as any);
+      result = await fallbackAgent.invoke({ messages });
+    }
     const output = result.structuredResponse;
     messages.push(new AIMessage(JSON.stringify(output ?? {})));
 
@@ -119,7 +134,7 @@ export const clarifyNode = async (
 
     return {
       messages,
-      filteredInsights: [...state.filteredInsights, ...newInsights],
+      filteredInsights: [...(state.filteredInsights ?? []), ...newInsights],
       votedResult: undefined,
       clarifyAttempted: true,
     };

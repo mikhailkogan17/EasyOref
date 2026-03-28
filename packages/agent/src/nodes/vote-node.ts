@@ -92,7 +92,7 @@ function computeOptions(group: ValidatedInsightType[]): InsightOption[] {
 export async function voteNode(
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> {
-  const { filteredInsights, previousInsights } = state;
+  const { filteredInsights = [], previousInsights = [] } = state;
 
   // Convert previousInsights (VotedInsightType[]) back to ValidatedInsight-like for merging
   const prevAsValidated: ValidatedInsightType[] = previousInsights.flatMap(

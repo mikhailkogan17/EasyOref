@@ -58,7 +58,9 @@ interface ConfigYamlAi {
   enabled?: boolean;
   openrouter_api_key?: string;
   openrouter_filter_model?: string;
+  openrouter_filter_fallback_model?: string;
   openrouter_extract_model?: string;
+  openrouter_extract_fallback_model?: string;
   redis_url?: string;
   socks5_proxy?: string;
   enrich_delay_ms?: number;
@@ -235,8 +237,16 @@ export const config = {
       enabled: ai?.enabled ?? false,
       apiKey: ai?.openrouter_api_key ?? process.env.OPENROUTER_API_KEY ?? "",
       filterModel: ai?.openrouter_filter_model ?? "openai/gpt-oss-120b",
+      filterFallbackModel:
+        ai?.openrouter_filter_fallback_model ??
+        process.env.OPENROUTER_FILTER_FALLBACK_MODEL ??
+        "meta-llama/llama-3.3-70b-instruct:free",
       extractModel:
         ai?.openrouter_extract_model ?? "google/gemini-3.1-flash-lite-preview",
+      extractFallbackModel:
+        ai?.openrouter_extract_fallback_model ??
+        process.env.OPENROUTER_EXTRACT_FALLBACK_MODEL ??
+        "qwen/qwen3-coder:free",
       redisUrl:
         ai?.redis_url ?? process.env.REDIS_URL ?? "redis://localhost:6379",
       socks5Proxy: ai?.socks5_proxy ?? process.env.SOCKS5_PROXY ?? "",

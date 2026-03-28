@@ -20,12 +20,11 @@ import {
   AIMessage,
   type BaseMessage,
   HumanMessage,
-  createAgent,
   providerStrategy,
 } from "langchain";
 import { z } from "zod";
 import type { AgentStateType } from "../graph.js";
-import { preFilterModel } from "../models.js";
+import { invokeWithFallback, preFilterFallback, preFilterModel } from "../models.js";
 
 // ── Output schema ──────────────────────────────────────────
 
@@ -106,7 +105,7 @@ export async function synthesizeNode(
     ),
   ];
 
-  const agent = createAgent({
+  const agentOpts = {
     model: preFilterModel,
     responseFormat: providerStrategy(SynthesisOutput),
     systemPrompt: `You synthesize military intelligence insights into localized enrichment data for a Telegram alert message.
@@ -136,15 +135,20 @@ Rules:
 - earlyWarningTime: only if alertType is "early_warning", use the alertTime value
 - omit fields where there is no evidence
 - output only fields for which you have consensus data`,
-  });
+  };
 
-  const result = await agent.invoke({ messages });
+  const result = await invokeWithFallback({
+    agentOpts,
+    fallbackModel: preFilterFallback,
+    input: { messages },
+    label: "synthesize-node",
+  });
   const output = result.structuredResponse;
   messages.push(new AIMessage(JSON.stringify(output ?? {})));
 
   // Build SynthesizedInsight[] from output fields + consensus metadata
   const synthesized: SynthesizedInsightType[] = (output?.fields ?? []).map(
-    (f) => {
+    (f: { key: string; value: string }) => {
       // Find the matching consensus insight for confidence + sourceUrls
       const matchingKind = Object.entries(votedResult.consensus).find(
         ([kind]) => kind === fieldKeyToKind(f.key),
@@ -156,7 +160,7 @@ Rules:
         value: f.value,
         confidence: vi?.confidence ?? 0.5,
         sourceUrls:
-          vi?.sources.map((s) => s.sourceUrl ?? "").filter(Boolean) ?? [],
+          vi?.sources?.map((s) => s.sourceUrl ?? "").filter(Boolean) ?? [],
       };
     },
   );

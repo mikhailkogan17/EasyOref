@@ -14,12 +14,11 @@ import {
   AIMessage,
   type BaseMessage,
   HumanMessage,
-  createAgent,
   providerStrategy,
 } from "langchain";
 import { z } from "zod";
 import type { AgentStateType } from "../graph.js";
-import { extractModel } from "../models.js";
+import { extractFallback, extractModel, invokeWithFallback } from "../models.js";
 import { resolveArea } from "../tools/resolve-area.js";
 
 const LOCATION_INSIGHT_KINDS = new Set(["impact", "casualities"]);
@@ -58,14 +57,14 @@ export const postFilterNode = async (
   let validCount = 0;
   let invalidCount = 0;
 
-  const agent = createAgent({
+  const agentOpts = {
     model: extractModel,
     responseFormat: providerStrategy(SourceVerification),
     systemPrompt: `You verify whether a Telegram channel post actually supports a specific military intelligence claim.
 Given the post text and the extracted insight, determine if the post clearly contains evidence for this claim.
 Be strict: only return supported=true if the claim is clearly present in the post text.
 Also assign sourceTrust: IDF Spokesperson/N12/Kan = 0.9+; known mil channels = 0.7; unknown = 0.4.`,
-  });
+  };
 
   for (const insight of extractedInsights) {
     const sourceText = (insight.source as any).text ?? "";
@@ -96,7 +95,12 @@ Also assign sourceTrust: IDF Spokesperson/N12/Kan = 0.9+; known mil channels = 0
       ),
     ];
 
-    const result = await agent.invoke({ messages });
+    const result = await invokeWithFallback({
+      agentOpts,
+      fallbackModel: extractFallback,
+      input: { messages },
+      label: "post-filter-node",
+    });
     const verification = result.structuredResponse;
     messages.push(new AIMessage(JSON.stringify(verification ?? {})));
     allMessages.push(...messages);

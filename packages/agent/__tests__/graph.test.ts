@@ -24,7 +24,9 @@ vi.mock("@easyoref/shared", async () => {
     config: {
       agent: {
         filterModel: "google/gemini-2.5-flash-lite",
+        filterFallbackModel: "meta-llama/llama-3.3-70b-instruct:free",
         extractModel: "google/gemini-2.5-flash-lite",
+        extractFallbackModel: "meta-llama/llama-3.3-70b-instruct:free",
         apiKey: "test-key",
         mcpTools: false,
         clarifyFetchCount: 3,
@@ -505,5 +507,56 @@ describe("voteNode", () => {
     const state = makeState([], [prev]);
     const result = await voteNode(state as any);
     expect(result.votedResult!.consensus["country_origins"]).toBeDefined();
+  });
+
+  it("does not weight Hebrew channels differently from Russian channels", async () => {
+    // Hebrew and Russian channels report the same insight with equal confidence.
+    // The vote node must treat them identically — no language-based weighting.
+    const hebrewInsight = makeInsight(
+      { kind: "country_origins", value: ["Iran"] },
+      {
+        confidence: 0.85,
+        sourceTrust: 0.8,
+        source: makeSource("@kann_news"),  // Hebrew channel
+      },
+    );
+    const russianInsight = makeInsight(
+      { kind: "country_origins", value: ["Iran"] },
+      {
+        confidence: 0.85,
+        sourceTrust: 0.8,
+        source: makeSource("@rian_ru"),  // Russian channel
+      },
+    );
+
+    // Run with only Hebrew source
+    const heOnly = makeState([hebrewInsight]);
+    const heResult = await voteNode(heOnly as any);
+    const heCons = heResult.votedResult!.consensus["country_origins"]!;
+
+    // Run with only Russian source
+    const ruOnly = makeState([russianInsight]);
+    const ruResult = await voteNode(ruOnly as any);
+    const ruCons = ruResult.votedResult!.consensus["country_origins"]!;
+
+    // Confidence, sourceTrust, time/region relevance must be identical
+    expect(heCons.confidence).toBe(ruCons.confidence);
+    expect(heCons.sourceTrust).toBe(ruCons.sourceTrust);
+    expect(heCons.timeRelevance).toBe(ruCons.timeRelevance);
+    expect(heCons.regionRelevance).toBe(ruCons.regionRelevance);
+
+    // Run with mixed Hebrew + Russian — both contribute equally
+    const mixed = makeState([hebrewInsight, russianInsight]);
+    const mixedResult = await voteNode(mixed as any);
+    const mixedCons = mixedResult.votedResult!.consensus["country_origins"]!;
+
+    // Mixed consensus should average both (equal weight → same values)
+    expect(mixedCons.confidence).toBe(0.85);
+    expect(mixedCons.sourceTrust).toBe(0.8);
+    expect(mixedCons.sources).toHaveLength(2);
+    // Both channels present as sources
+    const channelIds = mixedCons.sources.map((s) => s.channelId);
+    expect(channelIds).toContain("@kann_news");
+    expect(channelIds).toContain("@rian_ru");
   });
 });

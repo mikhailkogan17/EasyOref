@@ -20,11 +20,10 @@ import {
   AIMessage,
   type BaseMessage,
   HumanMessage,
-  createAgent,
   providerStrategy,
 } from "langchain";
 import type { AgentStateType } from "../graph.js";
-import { preFilterModel } from "../models.js";
+import { invokeWithFallback, preFilterFallback, preFilterModel } from "../models.js";
 
 // ── Noise filter ──────────────────────────────────────────
 
@@ -118,7 +117,7 @@ export const filterNode = async (
     new HumanMessage(JSON.stringify(tracking.channelsWithUpdates)),
   ];
 
-  const agent = createAgent({
+  const agentOpts = {
     model: preFilterModel,
     responseFormat: providerStrategy(FilterOutput),
     systemPrompt: `You pre-filter Telegram channels for an Israeli missile alert system.
@@ -136,9 +135,14 @@ IGNORE channels that ONLY contain:
 - General commentary without actionable facts
 
 Return relevant channel names only.`,
-  });
+  };
 
-  const result = await agent.invoke({ messages });
+  const result = await invokeWithFallback({
+    agentOpts,
+    fallbackModel: preFilterFallback,
+    input: { messages },
+    label: "pre-filter-node",
+  });
   const relevantChannels: string[] = result.structuredResponse?.relevantChannels ?? [];
   messages.push(new AIMessage(JSON.stringify(result.structuredResponse ?? {})));
 

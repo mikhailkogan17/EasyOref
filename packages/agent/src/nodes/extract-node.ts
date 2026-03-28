@@ -9,17 +9,16 @@ import { Insight } from "@easyoref/shared";
 import {
   AIMessage,
   BaseMessage,
-  createAgent,
   HumanMessage,
   SystemMessage,
 } from "langchain";
 import z from "zod";
 import type { AgentStateType } from "../graph.js";
-import { extractModel } from "../models.js";
+import { extractFallback, extractModel, invokeWithFallback } from "../models.js";
 
-// --- Agent ---
+// --- Agent options (reused for primary + fallback) ---
 
-const extractionAgent = createAgent({
+const extractionAgentOpts = {
   model: extractModel,
   responseFormat: z.array(Insight),
   systemPrompt: `You analyze Telegram channel messages about a missile/rocket attack on Israel.
@@ -35,7 +34,7 @@ const extractionAgent = createAgent({
   - Only extract concrete numbers explicitly stated. Never guess.
   - Always respect exact qualitative value from source.
   `,
-});
+};
 
 // --- Node ---
 
@@ -50,8 +49,8 @@ export const extractNode = async (
 
   // Collect URLs already covered by previousInsights to avoid re-extraction
   const seenUrls = new Set<string>(
-    state.previousInsights.flatMap((vi) =>
-      vi.sources.map((s) => s.sourceUrl ?? "").filter(Boolean),
+    (state.previousInsights ?? []).flatMap((vi) =>
+      (vi.sources ?? []).map((s) => s.sourceUrl ?? "").filter(Boolean),
     ),
   );
 
@@ -97,7 +96,12 @@ export const extractNode = async (
     new HumanMessage(JSON.stringify(channelsToProcess)),
   );
 
-  const result = await extractionAgent.invoke({ messages });
+  const result = await invokeWithFallback({
+    agentOpts: extractionAgentOpts,
+    fallbackModel: extractFallback,
+    input: { messages },
+    label: "extract-node",
+  });
   const extracted = result.structuredResponse ?? [];
   messages.push(new AIMessage(JSON.stringify(extracted)));
 

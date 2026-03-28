@@ -76,6 +76,7 @@ import {
   config,
   validateSafe,
 } from "@easyoref/shared";
+import * as logger from "@easyoref/monitoring";
 import {
   END,
   MemorySaver,
@@ -177,20 +178,29 @@ export const runEnrichment = async (input: unknown): Promise<void> => {
 
   const validInput = validation.data;
 
-  await buildGraph().invoke(
-    {
+  try {
+    await buildGraph().invoke(
+      {
+        alertId: validInput.alertId,
+        alertTs: validInput.alertTs,
+        alertType: validInput.alertType,
+        alertAreas: validInput.alertAreas,
+        chatId: validInput.chatId,
+        messageId: validInput.messageId,
+        isCaption: validInput.isCaption,
+        telegramMessages: validInput.telegramMessages,
+        currentText: validInput.currentText,
+        previousInsights: [],
+        monitoringLabel: validInput.monitoringLabel,
+      },
+      { configurable: { thread_id: validInput.alertId } },
+    );
+  } catch (err) {
+    logger.error("runEnrichment: graph error", {
       alertId: validInput.alertId,
-      alertTs: validInput.alertTs,
-      alertType: validInput.alertType,
-      alertAreas: validInput.alertAreas,
-      chatId: validInput.chatId,
-      messageId: validInput.messageId,
-      isCaption: validInput.isCaption,
-      telegramMessages: validInput.telegramMessages,
-      currentText: validInput.currentText,
-      previousInsights: [],
-      monitoringLabel: validInput.monitoringLabel,
-    },
-    { configurable: { thread_id: validInput.alertId } },
-  );
+      error: String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    throw err;
+  }
 };

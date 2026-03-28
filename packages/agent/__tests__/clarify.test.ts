@@ -28,7 +28,9 @@ vi.mock("@easyoref/shared", async () => {
         clarifyFetchCount: 3,
         confidenceThreshold: 0.6,
         filterModel: "google/gemini-2.5-flash-lite",
+        filterFallbackModel: "meta-llama/llama-3.3-70b-instruct:free",
         extractModel: "google/gemini-3.1-flash-lite-preview",
+        extractFallbackModel: "meta-llama/llama-3.3-70b-instruct:free",
         channels: ["@idf_telegram", "@N12LIVE", "@kann_news"],
         areaLabels: { הרצליה: "Герцлия" },
       },
@@ -501,7 +503,26 @@ describe("betterstackLogTool", () => {
     vi.resetModules();
     vi.doMock("@easyoref/shared", async () => {
       const actual = await vi.importActual("@easyoref/shared");
-      return { ...actual, config: { ...(actual as any).config ?? {}, logtailToken: "" } };
+      return {
+        ...actual,
+        config: {
+          ...(actual as any).config ?? {},
+          agent: {
+            model: "test-model",
+            apiKey: "test-key",
+            mcpTools: true,
+            clarifyFetchCount: 3,
+            confidenceThreshold: 0.6,
+            filterModel: "google/gemini-2.5-flash-lite",
+            filterFallbackModel: "meta-llama/llama-3.3-70b-instruct:free",
+            extractModel: "google/gemini-3.1-flash-lite-preview",
+            extractFallbackModel: "meta-llama/llama-3.3-70b-instruct:free",
+            channels: ["@idf_telegram", "@N12LIVE", "@kann_news"],
+            areaLabels: { הרצליה: "Герцлия" },
+          },
+          logtailToken: "",
+        },
+      };
     });
     const toolsMod = await import("../src/tools/index.js");
     const result = await toolsMod.betterstackLogTool.invoke({ query: "test", lastMinutes: 10 });

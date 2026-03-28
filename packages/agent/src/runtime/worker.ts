@@ -153,6 +153,7 @@ export function startEnrichWorker(): void {
     logger.error("Enrich worker: job failed", {
       jobId: job?.id,
       error: String(err),
+      stack: err instanceof Error ? err.stack : undefined,
     });
   });
 
