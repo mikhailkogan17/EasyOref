@@ -429,6 +429,7 @@ export const ActiveSession = z.object({
   baseText: z.string().min(1),
   alertAreas: z.array(z.string().min(1)),
   telegramMessages: z.array(TelegramMessage).optional(),
+  metaMessageSent: z.boolean().optional(),
 });
 export type ActiveSessionType = z.infer<typeof ActiveSession>;
 

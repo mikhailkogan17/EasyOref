@@ -14,6 +14,7 @@ import {
   getActiveSession,
   setActiveSession,
   textHash,
+  getLanguagePack,
 } from "@easyoref/shared";
 import { AIMessage } from "langchain";
 import { Bot } from "grammy";
@@ -148,6 +149,73 @@ export const editTelegramMessage = async (
   }
 };
 
+// ── Silent meta reply ──────────────────────────────────
+
+/**
+ * Send a single silent reply with rocket count + ETA after early_warning.
+ * Sent strictly once per session thread (guarded by session.metaMessageSent).
+ * Only fires when:
+ *  - alertType === "early_warning"
+ *  - synthesizedInsights has both rocket_count AND eta_absolute
+ *  - session.metaMessageSent !== true
+ */
+export const sendMetaReply = async (
+  alertType: AlertType,
+  synthesizedInsights: SynthesizedInsightType[],
+  targets: TelegramTargetMessage[],
+): Promise<void> => {
+  if (alertType !== "early_warning") return;
+  if (!config.botToken) return;
+
+  const get = (key: string) =>
+    synthesizedInsights.find((i) => i.key === key)?.value;
+
+  const rocketCount = get("rocket_count");
+  const etaAbsolute = get("eta_absolute");
+  if (!rocketCount || !etaAbsolute) return;
+
+  const sess = await getActiveSession();
+  if (!sess) return;
+  if (sess.metaMessageSent) return;
+
+  const langPack = getLanguagePack(config.language);
+  const labels = langPack.labels;
+
+  const isCassette = get("is_cassette") === "true";
+  const origin = get("origin");
+
+  // "Ракет (Иран): 12, кассетные" or "Ракет: 12"
+  const originPart = origin ? ` (${origin})` : "";
+  const cassettePart = isCassette ? labels.metaCassette : "";
+  const line1 = `${labels.metaRockets}${originPart}: ${rocketCount}${cassettePart}`;
+  const line2 = `${labels.metaArrival}: ${etaAbsolute}`;
+  const text = `${line1}\n${line2}`;
+
+  const tgBot = new Bot(config.botToken);
+
+  for (const t of targets) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sendOpts: any = {
+        reply_to_message_id: t.messageId,
+        allow_sending_without_reply: true,
+        disable_notification: true,
+      };
+      await tgBot.api.sendMessage(t.chatId, text, sendOpts);
+    } catch (err) {
+      // Best-effort: only rethrow unexpected errors
+      const errStr = String(err);
+      if (!errStr.includes("message to be replied not found")) {
+        throw err;
+      }
+    }
+  }
+
+  // Mark sent — persist to session
+  sess.metaMessageSent = true;
+  await setActiveSession(sess);
+};
+
 // ── Node ───────────────────────────────────────────────
 
 export const editNode = async (
@@ -166,6 +234,11 @@ export const editNode = async (
     synthesizedInsights: state.synthesizedInsights,
     monitoringLabel: state.monitoringLabel,
   });
+
+  const targets = state.telegramMessages ?? [
+    { chatId: state.chatId, messageId: state.messageId, isCaption: state.isCaption },
+  ];
+  await sendMetaReply(state.alertType, state.synthesizedInsights, targets);
 
   return {
     messages: [

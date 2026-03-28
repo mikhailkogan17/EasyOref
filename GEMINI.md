@@ -206,13 +206,16 @@ npm run release:major
 ```
 
 This does:
-1. Bump versions in all 6 packages (`scripts/bump.js`)
-2. Auto-commit: `chore: bump to easyoref@X.Y.Z, @easyoref/shared@X.Y.Z, ...`
-3. Create git tag: `vX.Y.Z`
-4. Push commits + tag to remote
-5. Build all packages: `npm run build`
-6. Publish all packages to npm: `npm publish --workspaces --no-provenance`
-7. Trigger RPi update: `npm run rpi` (runs `easyoref update` on RPi)
+1. **Run all tests** (`scripts/test-ci.js`) — aborts if any test **fails or is skipped**
+   - Skipped tests mean `OPENROUTER_API_KEY` is not set and integration tests were not run
+   - Set `OPENROUTER_API_KEY` before releasing to pass all 141 tests
+2. Bump versions in all 6 packages (`scripts/bump.js`)
+3. Auto-commit: `chore: bump to easyoref@X.Y.Z, @easyoref/shared@X.Y.Z, ...`
+4. Create git tag: `vX.Y.Z`
+5. Push commits + tag to remote
+6. Build all packages: `npm run build`
+7. Publish all packages to npm: `npm publish --workspaces --no-provenance`
+8. Trigger RPi update: `npm run rpi` (runs `easyoref update` on RPi)
 
 ### Development Workflow
 
@@ -241,6 +244,7 @@ This does:
    ```
 
    This automatically:
+   - **Runs all tests** (aborts if any fail or are skipped — requires `OPENROUTER_API_KEY`)
    - Bumps versions in all packages
    - Commits version bump
    - Tags commit as `vX.Y.Z`

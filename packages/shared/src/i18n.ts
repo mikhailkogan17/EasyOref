@@ -31,6 +31,9 @@ export interface I18nLabels {
   earlyEta: string;
   redAlertEta: string;
   monitoring: string;
+  metaRockets: string;  // label before rocket count, e.g. "Ракет"
+  metaArrival: string;  // label before ETA, e.g. "Прилёт"
+  metaCassette: string; // suffix for cassette munitions, e.g. ", кассетные"
 }
 
 export interface LanguagePack {
@@ -67,6 +70,9 @@ const ruPack: LanguagePack = {
     redAlertEta: "1.5 мин",
     monitoring:
       '<tg-emoji emoji-id="5258052328455424397">⏳</tg-emoji> Сообщение обновляется...',
+    metaRockets: "Ракет",
+    metaArrival: "Прилёт",
+    metaCassette: ", кассетные",
   },
 };
 
@@ -95,6 +101,9 @@ const enPack: LanguagePack = {
     redAlertEta: "1.5 min",
     monitoring:
       '<tg-emoji emoji-id="5258052328455424397">⏳</tg-emoji> Message updating...',
+    metaRockets: "Rockets",
+    metaArrival: "Arrival",
+    metaCassette: ", cluster",
   },
 };
 
