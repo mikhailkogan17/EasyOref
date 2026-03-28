@@ -94,6 +94,16 @@ packages/
 - Configured in `config.yaml` under `ai.openrouter_model`
 - Base URL `https://openrouter.ai/api/v1` hardcoded in `graph.ts` — NOT configurable
 
+> **IMPORTANT — model IDs in tests:** Integration tests (`enrichment.integration.test.ts`) use
+> free OpenRouter models. **Do NOT hardcode model IDs from memory** — they change.
+> Always verify current free models before editing:
+> ```bash
+> curl -s https://openrouter.ai/api/v1/models | node -e \
+>   "const m=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).data; \
+>    m.filter(x=>x.pricing?.prompt==='0'&&x.pricing?.completion==='0').forEach(x=>console.log(x.id))"
+> ```
+> Current free models used in tests: `openai/gpt-oss-120b:free` (supports tool use, 120B params)
+
 ### Running Tests
 
 ```bash

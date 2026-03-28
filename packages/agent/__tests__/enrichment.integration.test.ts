@@ -38,10 +38,10 @@ vi.mock("@easyoref/shared", async () => {
     ...actual,
     config: {
       agent: {
-        filterModel: "google/gemini-2.5-flash-lite",
-        filterFallbackModel: "meta-llama/llama-3.3-70b-instruct:free",
-        extractModel: "google/gemini-2.5-flash-lite",
-        extractFallbackModel: "meta-llama/llama-3.3-70b-instruct:free",
+        filterModel: "openai/gpt-oss-120b:free",
+        filterFallbackModel: "openai/gpt-oss-120b:free",
+        extractModel: "openai/gpt-oss-120b:free",
+        extractFallbackModel: "openai/gpt-oss-120b:free",
         apiKey: process.env.OPENROUTER_API_KEY || "test-key",
         mcpTools: false,
         confidenceThreshold: 0.65,
