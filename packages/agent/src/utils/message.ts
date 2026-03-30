@@ -6,7 +6,8 @@
  * insertBeforeBlockEnd — positional insertion helper.
  */
 
-import type { AlertType, SynthesizedInsightType } from "@easyoref/shared";
+import type { AlertType, Language, SynthesizedInsightType } from "@easyoref/shared";
+import { config, getLanguagePack } from "@easyoref/shared";
 
 // ── Monitoring indicator ───────────────────────────────
 
@@ -61,6 +62,9 @@ export function buildEnrichedMessage(
 ): string {
   let text = stripMonitoring(currentText);
 
+  const lang = config.language as Language;
+  const lp = getLanguagePack(lang).labels;
+
   const get = (key: string) => insights.find((i) => i.key === key)?.value;
 
   // ── Refine ETA in-place ──
@@ -87,32 +91,32 @@ export function buildEnrichedMessage(
   // ── Origin ──
   const origin = get("origin");
   if (origin) {
-    text = insertBeforeBlockEnd(text, `<b>Откуда:</b> ${origin}`);
+    text = insertBeforeBlockEnd(text, `<b>${lp.metaOrigin}:</b> ${origin}`);
   }
 
   // ── Rocket count ──
   const rocketCount = get("rocket_count");
   if (rocketCount) {
-    const cassette = get("is_cassette") ? ", кассетные" : "";
-    text = insertBeforeBlockEnd(text, `<b>Ракет:</b> ${rocketCount}${cassette}`);
+    const cassette = get("is_cassette") ? lp.metaCassette : "";
+    text = insertBeforeBlockEnd(text, `<b>${lp.metaRockets}:</b> ${rocketCount}${cassette}`);
   }
 
   // ── Intercepted (not early_warning) ──
   const intercepted = get("intercepted");
   if (intercepted && alertType !== "early_warning") {
-    text = insertBeforeBlockEnd(text, `<b>Перехваты:</b> ${intercepted}`);
+    text = insertBeforeBlockEnd(text, `<b>${lp.metaIntercepted}:</b> ${intercepted}`);
   }
 
   // ── Hits (not early_warning) ──
   const hits = get("hits");
   if (hits && alertType !== "early_warning") {
-    text = insertBeforeBlockEnd(text, `<b>Попадания:</b> ${hits}`);
+    text = insertBeforeBlockEnd(text, `<b>${lp.metaHits}:</b> ${hits}`);
   }
 
   // ── Casualties (resolved only) ──
   const casualties = get("casualties");
   if (casualties && alertType === "resolved") {
-    text = insertBeforeBlockEnd(text, `<b>Погибшие:</b> ${casualties}`);
+    text = insertBeforeBlockEnd(text, `<b>${lp.metaCasualties}:</b> ${casualties}`);
   }
 
   if (monitoringLabel && alertType !== "resolved") {

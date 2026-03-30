@@ -51,7 +51,7 @@ function toNewsMessage(post: ChannelPostType): NewsMessageType {
   };
 }
 
-function buildTracking(
+export function buildTracking(
   posts: ChannelPostType[],
   sessionStartTs: number,
   lastUpdateTs: number,

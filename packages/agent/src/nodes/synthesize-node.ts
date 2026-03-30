@@ -78,7 +78,8 @@ export async function synthesizeNode(
   const consensusForPrompt = Object.fromEntries(
     Object.entries(votedResult.consensus).map(([kind, vi]) => {
       if (kind === "country_origins") {
-        const origins = vi.kind.value as Set<string>;
+        // kind.value is string[] per schema (InsightKind discriminated union)
+        const origins = vi.kind.value as string[];
         return [
           kind,
           {

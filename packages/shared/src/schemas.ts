@@ -481,7 +481,7 @@ export const RunEnrichmentInput = z.object({
   messageId: z.number().int().min(1),
   isCaption: z.boolean(),
   currentText: z.string().min(1),
-  telegramMessages: z.array(TelegramMessage),
+  telegramMessages: z.array(TelegramMessage).optional().default([]),
   monitoringLabel: z.string().optional(),
 });
 export type RunEnrichmentInputType = z.infer<typeof RunEnrichmentInput>;

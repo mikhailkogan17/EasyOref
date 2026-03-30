@@ -7,9 +7,38 @@
 
 import type {
   InsightLocationType,
+  InsightType,
   ValidatedInsightType as ValidatedInsight,
 } from "@easyoref/shared";
 import { config } from "@easyoref/shared";
+
+/**
+ * Local typed view of InsightType fields that post-filter-node reads.
+ * InsightKind is a discriminated union, so we can't directly access
+ * location/area/zone/extractionReason at the union level — they are present
+ * at runtime (set by the LLM) but not in the base schema.  We model them as
+ * optional so TypeScript (and us) know they may be absent.
+ */
+/**
+ * Local typed view of InsightType fields that post-filter-node reads.
+ * InsightKind is a discriminated union, so we can't directly access
+ * location/area/zone/extractionReason at the union level — they are present
+ * at runtime (set by the LLM) but not in the base schema.  We model them as
+ * optional so TypeScript (and us) know they may be absent.
+ */
+interface InsightWithExtras extends Omit<InsightType, "kind" | "source"> {
+  extractionReason?: string;
+  kind: InsightType["kind"] & {
+    value?: unknown;
+    location?: string;
+    area?: string;
+    zone?: string;
+  };
+  source: InsightType["source"] & {
+    text?: string;
+    channelId?: string;
+  };
+}
 import {
   AIMessage,
   type BaseMessage,
@@ -66,13 +95,15 @@ Be strict: only return supported=true if the claim is clearly present in the pos
 Also assign sourceTrust: IDF Spokesperson/N12/Kan = 0.9+; known mil channels = 0.7; unknown = 0.4.`,
   };
 
-  for (const insight of extractedInsights) {
-    const sourceText = (insight.source as any).text ?? "";
+  for (const rawInsight of extractedInsights) {
+    // Cast to typed view so we can access LLM-populated optional fields without `as any`
+    const insight = rawInsight as unknown as InsightWithExtras;
+    const sourceText = insight.source.text ?? "";
 
     if (!sourceText) {
       // No source text — mark invalid without LLM call
       validatedInsights.push({
-        ...(insight as any),
+        ...rawInsight,
         isValid: false,
         rejectionReason: "source_text_missing",
         sourceTrust: 0,
@@ -86,10 +117,10 @@ Also assign sourceTrust: IDF Spokesperson/N12/Kan = 0.9+; known mil channels = 0
         JSON.stringify({
           insight: {
             kind: insight.kind.kind,
-            value: (insight.kind as any).value,
-            extractionReason: (insight as any).extractionReason,
+            value: insight.kind.value,
+            extractionReason: insight.extractionReason,
           },
-          sourceChannel: (insight.source as any).channelId,
+          sourceChannel: insight.source.channelId,
           sourceText,
         }),
       ),
@@ -112,9 +143,9 @@ Also assign sourceTrust: IDF Spokesperson/N12/Kan = 0.9+; known mil channels = 0
       if (LOCATION_INSIGHT_KINDS.has(insightKind)) {
         // Extract mentioned location from insight value
         const mentionedLocation: string =
-          (insight.kind as any).location ??
-          (insight.kind as any).area ??
-          (insight.kind as any).zone ??
+          insight.kind.location ??
+          insight.kind.area ??
+          insight.kind.zone ??
           "";
 
         if (mentionedLocation && config.areas.length > 0) {
@@ -122,7 +153,7 @@ Also assign sourceTrust: IDF Spokesperson/N12/Kan = 0.9+; known mil channels = 0
           if (!areaResult.relevant) {
             // Region has zero overlap with user zones — mark invalid to drop in vote
             validatedInsights.push({
-              ...(insight as any),
+              ...rawInsight,
               isValid: false,
               rejectionReason: `location_not_user_zone: "${mentionedLocation}" not in user areas`,
               sourceTrust: verification.sourceTrust ?? 0.5,
@@ -140,22 +171,22 @@ Also assign sourceTrust: IDF Spokesperson/N12/Kan = 0.9+; known mil channels = 0
       }
 
       validatedInsights.push({
-        ...(insight as any),
+        ...rawInsight,
         isValid: true,
         sourceTrust: verification.sourceTrust ?? 0.5,
-        timeRelevance: (insight as any).timeRelevance ?? 1,
-        regionRelevance: (insight as any).regionRelevance ?? 1,
+        timeRelevance: rawInsight.timeRelevance ?? 1,
+        regionRelevance: rawInsight.regionRelevance ?? 1,
         insightLocation,
       });
       validCount++;
     } else {
       validatedInsights.push({
-        ...(insight as any),
+        ...rawInsight,
         isValid: false,
         rejectionReason: verification?.reason ?? "source_verification_failed",
         sourceTrust: verification?.sourceTrust ?? 0,
-        timeRelevance: (insight as any).timeRelevance ?? 0,
-        regionRelevance: (insight as any).regionRelevance ?? 0,
+        timeRelevance: rawInsight.timeRelevance ?? 0,
+        regionRelevance: rawInsight.regionRelevance ?? 0,
       });
       invalidCount++;
     }

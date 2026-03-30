@@ -31,9 +31,13 @@ export interface I18nLabels {
   earlyEta: string;
   redAlertEta: string;
   monitoring: string;
-  metaRockets: string;  // label before rocket count, e.g. "Ракет"
-  metaArrival: string;  // label before ETA, e.g. "Прилёт"
-  metaCassette: string; // suffix for cassette munitions, e.g. ", кассетные"
+  metaRockets: string;      // label before rocket count, e.g. "Ракет"
+  metaArrival: string;      // label before ETA, e.g. "Прилёт"
+  metaCassette: string;     // suffix for cassette munitions, e.g. ", кассетные"
+  metaOrigin: string;       // "Откуда" / "Origin" / "מקור" / "المصدر"
+  metaIntercepted: string;  // "Перехваты" / "Intercepted" / "יירוטים" / "اعتراضات"
+  metaHits: string;         // "Попадания" / "Hits" / "פגיעות" / "إصابات"
+  metaCasualties: string;   // "Погибшие" / "Casualties" / "נפגעים" / "إصابات بشرية"
 }
 
 export interface LanguagePack {
@@ -73,6 +77,10 @@ const ruPack: LanguagePack = {
     metaRockets: "Ракет",
     metaArrival: "Прилёт",
     metaCassette: ", кассетные",
+    metaOrigin: "Откуда",
+    metaIntercepted: "Перехваты",
+    metaHits: "Попадания",
+    metaCasualties: "Погибшие",
   },
 };
 
@@ -104,6 +112,10 @@ const enPack: LanguagePack = {
     metaRockets: "Rockets",
     metaArrival: "Arrival",
     metaCassette: ", cluster",
+    metaOrigin: "Origin",
+    metaIntercepted: "Intercepted",
+    metaHits: "Hits",
+    metaCasualties: "Casualties",
   },
 };
 
@@ -135,6 +147,10 @@ const hePack: LanguagePack = {
     metaRockets: "טילים",
     metaArrival: "פגיעה משוערת",
     metaCassette: "מצרר",
+    metaOrigin: "מקור",
+    metaIntercepted: "יירוטים",
+    metaHits: "פגיעות",
+    metaCasualties: "נפגעים",
   },
 };
 
@@ -166,6 +182,10 @@ const arPack: LanguagePack = {
     metaRockets: "صواريخ",
     metaArrival: "الوصول المتوقع",
     metaCassette: "عنقودي",
+    metaOrigin: "المصدر",
+    metaIntercepted: "اعتراضات",
+    metaHits: "إصابات",
+    metaCasualties: "إصابات بشرية",
   },
 };
 

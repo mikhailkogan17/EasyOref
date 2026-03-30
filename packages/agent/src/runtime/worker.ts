@@ -106,6 +106,16 @@ export function startEnrichWorker(): void {
       const langPack = getLanguagePack(config.language);
 
       // Run enrichment using latest alert's message as edit target
+      // Fallback: if session.telegramMessages is undefined (legacy sessions),
+      // build the array from the primary chat fields so RunEnrichmentInput
+      // schema validation always receives a non-undefined array.
+      const telegramMessages: TelegramMessage[] = session.telegramMessages ?? [
+        {
+          chatId: session.chatId,
+          messageId: session.latestMessageId,
+          isCaption: session.isCaption,
+        },
+      ];
       await runEnrichment({
         alertId: session.latestAlertId,
         alertTs: session.latestAlertTs,
@@ -114,7 +124,7 @@ export function startEnrichWorker(): void {
         chatId: session.chatId,
         messageId: session.latestMessageId,
         isCaption: session.isCaption,
-        telegramMessages: session.telegramMessages,
+        telegramMessages,
         currentText: session.baseText ?? session.currentText,
         monitoringLabel: langPack.labels.monitoring,
       });
