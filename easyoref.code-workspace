@@ -110,10 +110,7 @@
 
       // Utilities
       "editorconfig.editorconfig",
-      "streetsidesoftware.code-spell-checker",
-
-      // Antigravity
-      "n2ns.antigravity-panel"
+      "streetsidesoftware.code-spell-checker"
     ]
   },
   "launch": {
