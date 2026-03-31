@@ -32,6 +32,14 @@ const HAS_API = Boolean(API_KEY);
 
 // ── Mocks ──────────────────────────────────────────────
 
+vi.mock("@easyoref/monitoring", () => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+  flush: vi.fn(),
+}));
+
 vi.mock("@easyoref/shared", async () => {
   const actual = await vi.importActual("@easyoref/shared");
   return {
@@ -82,6 +90,7 @@ vi.mock("@easyoref/shared", async () => {
 
 // ── Imports (after mocks) ──────────────────────────────
 
+import * as logger from "@easyoref/monitoring";
 import {
   buildEnrichedMessage,
   insertBeforeBlockEnd,
@@ -244,4 +253,41 @@ describe.skipIf(!HAS_API)("resolveArea LLM tier-3 (real API)", () => {
     const result = await resolveArea("צפון", ["תל אביב - דרום העיר ויפו"]);
     expect(result.relevant).toBe(false);
   }, 30_000);
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Pipeline dry-run — no LLM, no network
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+describe("pipeline dry-run (no posts)", () => {
+  it("completes graph with zero posts and emits terminal warning", async () => {
+    const { runEnrichment } = await import("../src/graph.js");
+
+    await runEnrichment({
+      alertId: "test-dry-run-001",
+      alertTs: Date.now(),
+      alertType: "red_alert",
+      alertAreas: ["תל אביב - דרום העיר ויפו"],
+      chatId: "-1001234567890",
+      messageId: 42,
+      isCaption: false,
+      telegramMessages: [
+        { chatId: "-1001234567890", messageId: 42, isCaption: false },
+      ],
+      currentText: "<b>Test alert</b>",
+      monitoringLabel: "⏳ Мониторинг...",
+    });
+
+    // Terminal guard must fire: warn about zero synthesized insights
+    expect(logger.warn).toHaveBeenCalledWith(
+      "runEnrichment: pipeline completed with ZERO synthesized insights",
+      expect.objectContaining({ alertId: "test-dry-run-001" }),
+    );
+
+    // Node logging must fire: pre-filter should report no posts
+    expect(logger.info).toHaveBeenCalledWith(
+      "pre-filter-node: no posts found",
+      expect.objectContaining({ alertId: "test-dry-run-001" }),
+    );
+  });
 });

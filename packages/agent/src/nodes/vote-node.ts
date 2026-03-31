@@ -12,6 +12,7 @@
  * - Build VotedInsight with sources: BaseSourceMessage[]
  */
 
+import * as logger from "@easyoref/monitoring";
 import type {
   BaseSourceMessageType,
   InsightLocationType,
@@ -117,6 +118,10 @@ export async function voteNode(
   ];
 
   if (allInsights.length === 0) {
+    logger.info("vote-node: no valid insights to vote on", {
+      filteredTotal: filteredInsights.length,
+      previousTotal: previousInsights.length,
+    });
     return {
       messages: [new AIMessage("vote-node: no valid insights to vote on")],
       votedResult: {

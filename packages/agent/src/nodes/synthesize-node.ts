@@ -8,6 +8,7 @@
  * so the next phase can carry them forward into vote.
  */
 
+import * as logger from "@easyoref/monitoring";
 import {
   type Language,
   type SynthesizedInsightType,
@@ -51,6 +52,9 @@ export async function synthesizeNode(
   const { votedResult, alertAreas, alertType, alertTs } = state;
 
   if (!votedResult || Object.keys(votedResult.consensus).length === 0) {
+    logger.info("synthesize-node: no consensus to synthesize", {
+      hasVotedResult: !!votedResult,
+    });
     return {
       messages: [new AIMessage("synthesize-node: no consensus to synthesize")],
       synthesizedInsights: [],
@@ -166,6 +170,11 @@ Rules:
       };
     },
   );
+
+  logger.info("synthesize-node: synthesis done", {
+    consensusKinds: Object.keys(votedResult.consensus),
+    synthesizedKeys: synthesized.map((s) => s.key),
+  });
 
   // Update previousInsights with current consensus for next phase
   const newPreviousInsights = Object.values(votedResult.consensus);

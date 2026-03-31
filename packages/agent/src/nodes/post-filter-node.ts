@@ -5,6 +5,7 @@
  * No HTTP fetch required — source.text comes directly from the NewsMessage.
  */
 
+import * as logger from "@easyoref/monitoring";
 import type {
   InsightLocationType,
   InsightType,
@@ -76,6 +77,7 @@ export const postFilterNode = async (
   const { extractedInsights } = state;
 
   if (!extractedInsights || extractedInsights.length === 0) {
+    logger.info("post-filter-node: no extractions to verify");
     return {
       messages: [new AIMessage("post-filter-node: no extractions to verify")],
     };
@@ -202,6 +204,12 @@ Also assign sourceTrust: IDF Spokesperson/N12/Kan = 0.9+; known mil channels = 0
       }),
     ),
   );
+
+  logger.info("post-filter-node: verification done", {
+    total: validatedInsights.length,
+    valid: validCount,
+    invalid: invalidCount,
+  });
 
   return {
     messages: allMessages,

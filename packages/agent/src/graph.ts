@@ -179,7 +179,7 @@ export const runEnrichment = async (input: unknown): Promise<void> => {
   const validInput = validation.data;
 
   try {
-    await buildGraph().invoke(
+    const result = await buildGraph().invoke(
       {
         alertId: validInput.alertId,
         alertTs: validInput.alertTs,
@@ -195,6 +195,15 @@ export const runEnrichment = async (input: unknown): Promise<void> => {
       },
       { configurable: { thread_id: validInput.alertId } },
     );
+
+    // Terminal guard: warn if entire pipeline produced zero content
+    const synthesized = result?.synthesizedInsights ?? [];
+    if (synthesized.length === 0) {
+      logger.warn("runEnrichment: pipeline completed with ZERO synthesized insights", {
+        alertId: validInput.alertId,
+        alertType: validInput.alertType,
+      });
+    }
   } catch (err) {
     logger.error("runEnrichment: graph error", {
       alertId: validInput.alertId,
