@@ -5,6 +5,7 @@
  * to avoid re-extracting data from the same source across phases.
  */
 
+import * as logger from "@easyoref/monitoring";
 import { Insight } from "@easyoref/shared";
 import {
   AIMessage,
@@ -42,6 +43,9 @@ export const extractNode = async (
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> => {
   if (!state.tracking || state.tracking.channelsWithUpdates.length === 0) {
+    logger.info("extract-node: no updates to extract", {
+      hasTracking: !!state.tracking,
+    });
     return {
       messages: [new AIMessage("extract-node: no updates to extract")],
     };
@@ -63,6 +67,10 @@ export const extractNode = async (
   );
 
   if (channelsToProcess.length === 0) {
+    logger.info("extract-node: all channels already covered by previousInsights", {
+      seenUrls: seenUrls.size,
+      totalChannels: state.tracking.channelsWithUpdates.length,
+    });
     return {
       messages: [
         new AIMessage(
@@ -104,6 +112,12 @@ export const extractNode = async (
   });
   const extracted = result.structuredResponse ?? [];
   messages.push(new AIMessage(JSON.stringify(extracted)));
+
+  logger.info("extract-node: extraction done", {
+    channelsProcessed: channelsToProcess.length,
+    insightsExtracted: extracted.length,
+    insightKeys: extracted.map((i: { key?: string }) => i.key),
+  });
 
   return {
     messages,

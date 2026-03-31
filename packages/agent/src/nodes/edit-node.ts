@@ -8,6 +8,7 @@
  * Re-exports legacy helpers for backwards-compat.
  */
 
+import * as logger from "@easyoref/monitoring";
 import type { AlertType, SynthesizedInsightType, VotedResultType } from "@easyoref/shared";
 import {
   config,
@@ -104,7 +105,12 @@ export const editTelegramMessage = async (
   const hasContent = insights.some((i) =>
     ["origin", "intercepted", "hits", "rocket_count"].includes(i.key),
   );
-  if (!hasContent) return;
+  if (!hasContent) {
+    logger.info("edit-node: skipping edit — no actionable content", {
+      insightKeys: insights.map((i) => i.key),
+    });
+    return;
+  }
 
   const newText = buildEnrichedMessage(
     input.currentText,

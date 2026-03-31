@@ -273,6 +273,19 @@ export const config = {
   })(),
 };
 
+/**
+ * Set LANGSMITH_* env vars so the LangChain SDK auto-enables tracing.
+ * Call once at startup (before any LangChain import triggers).
+ */
+export function initLangSmithTracing(): void {
+  const key = config.agent.langsmithApiKey;
+  const project = config.agent.langsmithProject;
+  if (!key) return;
+  process.env.LANGSMITH_API_KEY = key;
+  process.env.LANGSMITH_TRACING = "true";
+  if (project) process.env.LANGSMITH_PROJECT = project;
+}
+
 /** Exported for testing */
 export {
   loadYaml as _loadYaml,

@@ -31,6 +31,7 @@ import {
   getActiveSession,
   getEnrichment,
   getLanguagePack,
+  initLangSmithTracing,
   initTranslations,
   PHASE_ENRICH_DELAY_MS,
   PHASE_INITIAL_DELAY_MS,
@@ -791,6 +792,7 @@ async function main(): Promise<void> {
 
   // Start agent subsystems if enabled
   if (config.agent.enabled) {
+    initLangSmithTracing();
     startEnrichWorker();
     await startMonitor();
     logger.info("Agent subsystems started", {

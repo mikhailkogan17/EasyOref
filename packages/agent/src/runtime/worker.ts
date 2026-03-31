@@ -28,6 +28,22 @@ import { enqueueEnrich, enrichQueueName, type EnrichJobData } from "./queue.js";
 
 let _worker: Worker | undefined = undefined;
 
+/** Fire-and-forget OpenRouter reachability check at startup */
+function checkOpenRouterConnectivity(): void {
+  fetch("https://openrouter.ai/api/v1/models", {
+    method: "HEAD",
+    signal: AbortSignal.timeout(5000),
+  })
+    .then((res) => {
+      logger.info("OpenRouter connectivity check passed", { status: res.status });
+    })
+    .catch((err) => {
+      logger.warn("OpenRouter connectivity check FAILED — LLM calls may fail", {
+        error: String(err),
+      });
+    });
+}
+
 /** Remove ⏳ monitoring indicator from all chat messages (best-effort) */
 async function removeMonitoringIndicator(session: {
   chatId: string;
@@ -73,6 +89,8 @@ async function removeMonitoringIndicator(session: {
 
 export function startEnrichWorker(): void {
   if (!config.agent.enabled) return;
+
+  checkOpenRouterConnectivity();
 
   const connection = {
     host: new URL(config.agent.redisUrl).hostname,

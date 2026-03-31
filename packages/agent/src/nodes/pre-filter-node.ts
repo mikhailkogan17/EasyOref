@@ -6,6 +6,7 @@
  * Step 3: Returns filtered ChannelTracking with only relevant channels.
  */
 
+import * as logger from "@easyoref/monitoring";
 import {
   FilterOutput,
   getActiveSession,
@@ -97,6 +98,7 @@ export const filterNode = async (
   const lastUpdateTs = await getLastUpdateTs();
 
   if (posts.length === 0) {
+    logger.info("pre-filter-node: no posts found", { alertId: state.alertId });
     return {
       messages: [new AIMessage("pre-filter-node: no posts found")],
       tracking: undefined,
@@ -106,6 +108,10 @@ export const filterNode = async (
   const tracking = buildTracking(posts, sessionStartTs, lastUpdateTs);
 
   if (tracking.channelsWithUpdates.length === 0) {
+    logger.info("pre-filter-node: all posts filtered as noise", {
+      alertId: state.alertId,
+      totalPosts: posts.length,
+    });
     return {
       messages: [new AIMessage("pre-filter-node: all posts filtered as noise")],
       tracking,
@@ -145,6 +151,12 @@ Return relevant channel names only.`,
   });
   const relevantChannels: string[] = result.structuredResponse?.relevantChannels ?? [];
   messages.push(new AIMessage(JSON.stringify(result.structuredResponse ?? {})));
+
+  logger.info("pre-filter-node: LLM filter done", {
+    alertId: state.alertId,
+    totalChannels: tracking.channelsWithUpdates.length,
+    relevantChannels,
+  });
 
   // Filter tracking to only relevant channels
   const filteredTracking: ChannelTrackingType = {
