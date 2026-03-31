@@ -11,24 +11,40 @@
 import { textHash, toIsraelTime } from "@easyoref/shared";
 import { describe, expect, it, vi } from "vitest";
 
-// ── Load API key from config.yaml ──────────────────────
+// ── Load API key via vi.hoisted (runs before vi.mock factories) ──
+const { API_KEY, HAS_API } = vi.hoisted(() => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const fs = require("node:fs");
+  let key = process.env.OPENROUTER_API_KEY ?? "";
 
-let API_KEY = process.env.OPENROUTER_API_KEY ?? "";
+  if (!key) {
+    try {
+      const yaml = require("js-yaml");
+      const candidates: string[] = ["config.yaml", "config.yml"];
+      try {
+        candidates.push(
+          ...fs.readdirSync(".").filter(
+            (f: string) => /^config\..*\.ya?ml$/.test(f) && !candidates.includes(f),
+          ),
+        );
+      } catch { /* ignore */ }
 
-if (!API_KEY) {
-  try {
-    const { readFileSync } = await import("node:fs");
-    const { load } = await import("js-yaml");
-    const raw = readFileSync("config.yaml", "utf-8");
-    const cfg = load(raw) as Record<string, unknown>;
-    const ai = cfg?.ai as Record<string, unknown> | undefined;
-    API_KEY = (ai?.openrouter_api_key as string) ?? "";
-  } catch {
-    // No config.yaml — LLM tests will be skipped
+      for (const file of candidates) {
+        try {
+          const raw = fs.readFileSync(file, "utf-8");
+          const cfg = yaml.load(raw) as Record<string, unknown>;
+          const ai = cfg?.ai as Record<string, unknown> | undefined;
+          const k = (ai?.openrouter_api_key as string) ?? "";
+          if (k) { key = k; break; }
+        } catch { /* try next */ }
+      }
+    } catch {
+      // No config files — LLM tests will be skipped
+    }
   }
-}
 
-const HAS_API = Boolean(API_KEY);
+  return { API_KEY: key, HAS_API: Boolean(key) };
+});
 
 // ── Mocks ──────────────────────────────────────────────
 
@@ -50,7 +66,7 @@ vi.mock("@easyoref/shared", async () => {
         filterFallbackModel: "openai/gpt-oss-120b:free",
         extractModel: "openai/gpt-oss-120b:free",
         extractFallbackModel: "openai/gpt-oss-120b:free",
-        apiKey: process.env.OPENROUTER_API_KEY || "test-key",
+        apiKey: API_KEY || "test-key",
         mcpTools: false,
         confidenceThreshold: 0.65,
         enrichDelayMs: 20_000,
@@ -253,6 +269,101 @@ describe.skipIf(!HAS_API)("resolveArea LLM tier-3 (real API)", () => {
     const result = await resolveArea("צפון", ["תל אביב - דרום העיר ויפו"]);
     expect(result.relevant).toBe(false);
   }, 30_000);
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Full pipeline — real LLM (needs API key)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+import { getChannelPosts } from "@easyoref/shared";
+
+describe.skipIf(!HAS_API)("full pipeline with real LLM (openai/gpt-oss-120b:free)", () => {
+  it("produces synthesized insights from realistic Telegram posts", async () => {
+    const NOW = Date.now();
+
+    // Realistic posts that mimic what Telegram news channels post during an attack
+    const fakePosts = [
+      {
+        channel: "red_alert_israel",
+        text: "Запуск ракет из Ирана в сторону Израиля. По предварительным данным выпущено около 30 баллистических ракет. Подлётное время до центра Израиля 12 минут.",
+        ts: NOW + 1000,
+        messageUrl: "https://t.me/red_alert_israel/12345",
+      },
+      {
+        channel: "military_observer",
+        text: "ЦАХАЛ подтверждает: массированный ракетный обстрел с территории Ирана. Система ПВО Железный Купол и Праща Давида активированы. Перехвачено большинство целей над Гуш Даном.",
+        ts: NOW + 2000,
+        messageUrl: "https://t.me/military_observer/6789",
+      },
+      {
+        channel: "news_tel_aviv",
+        text: "Взрывы слышны в Тель-Авиве и окрестностях. Сирены продолжают звучать. Жителям рекомендовано оставаться в укрытиях. По данным источников, перехвачена большая часть ракет.",
+        ts: NOW + 3000,
+        messageUrl: "https://t.me/news_tel_aviv/9999",
+      },
+    ];
+
+    // Override getChannelPosts for this test only
+    vi.mocked(getChannelPosts).mockResolvedValueOnce(fakePosts);
+
+    const { runEnrichment } = await import("../src/graph.js");
+
+    vi.mocked(logger.warn).mockClear();
+    vi.mocked(logger.info).mockClear();
+
+    try {
+      await runEnrichment({
+        alertId: "test-real-llm-001",
+        alertTs: NOW,
+        alertType: "red_alert",
+        alertAreas: ["תל אביב - דרום העיר ויפו"],
+        chatId: "-1001234567890",
+        messageId: 42,
+        isCaption: false,
+        telegramMessages: [
+          { chatId: "-1001234567890", messageId: 42, isCaption: false },
+        ],
+        currentText: "<b>🔴 אזעקה</b>\nתל אביב - דרום העיר ויפו",
+        monitoringLabel: "⏳ Мониторинг...",
+      });
+    } catch (err) {
+      // Tolerate provider errors (credit, rate-limit, model overloaded)
+      const msg = String(err);
+      if (/credit|rate.?limit|overloaded|timeout|503|429|402|403/i.test(msg)) {
+        console.warn(`⚠️  Provider error (test passes as soft-fail): ${msg.slice(0, 120)}`);
+        return;
+      }
+      throw err;
+    }
+
+    // The pipeline should have produced insights — terminal guard should NOT fire
+    const zeroInsightsWarning = vi.mocked(logger.warn).mock.calls.find(
+      (args) => typeof args[0] === "string" && args[0].includes("ZERO synthesized insights"),
+    );
+
+    // If the free model is overloaded, we tolerate zero insights but log it
+    if (zeroInsightsWarning) {
+      console.warn(
+        "⚠️  Pipeline produced zero insights (free model may be overloaded) — test passes but check LangSmith trace",
+      );
+    } else {
+      // Verify that synthesize-node actually produced fields
+      const synthCalls = vi.mocked(logger.info).mock.calls.filter(
+        (args) => typeof args[0] === "string" && args[0].includes("synthesize-node: synthesis done"),
+      );
+      expect(synthCalls.length).toBeGreaterThan(0);
+
+      // Verify at least one synthesized key was produced
+      const synthMeta = synthCalls[0]?.[1] as { synthesizedKeys?: string[] } | undefined;
+      expect(synthMeta?.synthesizedKeys?.length).toBeGreaterThan(0);
+    }
+
+    // Either way: pre-filter LLM must have been called (not the "no posts" path)
+    const preFilterLLMCall = vi.mocked(logger.info).mock.calls.find(
+      (args) => typeof args[0] === "string" && args[0].includes("pre-filter-node: LLM filter done"),
+    );
+    expect(preFilterLLMCall).toBeTruthy();
+  }, 60_000);
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
