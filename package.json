@@ -24,7 +24,7 @@
     "release": "npm run test:ci && npm run bump:patch && git push --tags && npm run publish && npm run rpi",
     "release:minor": "npm run test:ci && npm run bump:minor && git push --tags && npm run publish && npm run rpi",
     "release:major": "npm run test:ci && npm run bump:major && git push --tags && npm run publish && npm run rpi",
-    "rpi": "ssh pi@raspberrypi.local \"easyoref update\"",
+    "rpi": "ssh pi@raspberrypi.local \"nohup bash -c 'easyoref update > /tmp/easyoref-update.log 2>&1' &\" && echo '✅ RPi update started — tail /tmp/easyoref-update.log on RPi for progress'",
     "prepare": "husky"
   },
   "author": "Mikhail Kogan <kogan.mikhail@gmail.com>",
