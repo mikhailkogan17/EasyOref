@@ -358,11 +358,11 @@ describe.skipIf(!HAS_API)("full pipeline with real LLM (openai/gpt-oss-120b:free
       expect(synthMeta?.synthesizedKeys?.length).toBeGreaterThan(0);
     }
 
-    // Either way: pre-filter LLM must have been called (not the "no posts" path)
-    const preFilterLLMCall = vi.mocked(logger.info).mock.calls.find(
-      (args) => typeof args[0] === "string" && args[0].includes("pre-filter-node: LLM filter done"),
+    // Either way: pre-filter must have forwarded channels (not the "no posts" path)
+    const preFilterCall = vi.mocked(logger.info).mock.calls.find(
+      (args) => typeof args[0] === "string" && args[0].includes("pre-filter-node: pass-through"),
     );
-    expect(preFilterLLMCall).toBeTruthy();
+    expect(preFilterCall).toBeTruthy();
   }, 60_000);
 });
 

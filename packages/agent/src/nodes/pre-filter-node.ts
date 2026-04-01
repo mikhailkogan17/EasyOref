@@ -8,7 +8,6 @@
 
 import * as logger from "@easyoref/monitoring";
 import {
-  FilterOutput,
   getActiveSession,
   getChannelPosts,
   getLastUpdateTs,
@@ -19,12 +18,8 @@ import {
 } from "@easyoref/shared";
 import {
   AIMessage,
-  type BaseMessage,
-  HumanMessage,
-  providerStrategy,
 } from "langchain";
 import type { AgentStateType } from "../graph.js";
-import { invokeWithFallback, preFilterFallback, preFilterModel } from "../models.js";
 
 // ── Noise filter ──────────────────────────────────────────
 
@@ -118,56 +113,28 @@ export const filterNode = async (
     };
   }
 
-  // LLM: which channels have actionable intel?
-  const messages: BaseMessage[] = [
-    new HumanMessage(JSON.stringify(tracking.channelsWithUpdates)),
-  ];
+  // All non-noise channels pass through — deterministic isNoise() is sufficient.
+  // LLM pre-filter was consistently rejecting valid channels with the free model
+  // (returned relevantChannels: [] during real attacks). Bypassed in v1.26.0.
+  const allChannels = tracking.channelsWithUpdates.map((ch) => ch.channel);
 
-  const agentOpts = {
-    model: preFilterModel,
-    responseFormat: providerStrategy(FilterOutput),
-    systemPrompt: `You pre-filter Telegram channels for an Israeli missile alert system.
-Given channels with their latest messages, identify which contain IMPORTANT military intel:
-- Country of origin (where rockets/missiles launched from)
-- Impact location (where they hit)
-- Warhead type / cluster munitions
-- Damage / destruction reports
-- Interception reports (Iron Dome, David's Sling)
-- Casualty / injury reports
-
-IGNORE channels that ONLY contain:
-- Panic, emotion or hate speech
-- Rehashes of official alerts without new data
-- General commentary without actionable facts
-
-Return relevant channel names only.`,
-  };
-
-  const result = await invokeWithFallback({
-    agentOpts,
-    fallbackModel: preFilterFallback,
-    input: { messages },
-    label: "pre-filter-node",
-  });
-  const relevantChannels: string[] = result.structuredResponse?.relevantChannels ?? [];
-  messages.push(new AIMessage(JSON.stringify(result.structuredResponse ?? {})));
-
-  logger.info("pre-filter-node: LLM filter done", {
+  logger.info("pre-filter-node: pass-through (deterministic filter only)", {
     alertId: state.alertId,
-    totalChannels: tracking.channelsWithUpdates.length,
-    relevantChannels,
+    totalChannels: allChannels.length,
+    channels: allChannels,
+    channelPreviews: tracking.channelsWithUpdates.map((ch) => ({
+      channel: ch.channel,
+      msgCount: ch.unprocessedMessages.length,
+      firstMsgPreview: ch.unprocessedMessages[0]?.text?.slice(0, 80) ?? "",
+    })),
   });
-
-  // Filter tracking to only relevant channels
-  const filteredTracking: ChannelTrackingType = {
-    ...tracking,
-    channelsWithUpdates: tracking.channelsWithUpdates.filter((ch) =>
-      relevantChannels.includes(ch.channel),
-    ),
-  };
 
   return {
-    messages,
-    tracking: filteredTracking,
+    messages: [
+      new AIMessage(
+        `pre-filter-node: pass-through, ${allChannels.length} channels forwarded`,
+      ),
+    ],
+    tracking,
   };
 };
