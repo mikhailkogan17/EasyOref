@@ -9,10 +9,10 @@
  */
 
 import { textHash, toIsraelTime } from "@easyoref/shared";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 
 // ── Load API key via vi.hoisted (runs before vi.mock factories) ──
-const { API_KEY, HAS_API } = vi.hoisted(() => {
+const { API_KEY, HAS_API, FREE_PRIMARY, FREE_FALLBACK } = vi.hoisted(() => {
   /* eslint-disable @typescript-eslint/no-require-imports */
   const fs = require("node:fs");
   let key = process.env.OPENROUTER_API_KEY ?? "";
@@ -43,7 +43,12 @@ const { API_KEY, HAS_API } = vi.hoisted(() => {
     }
   }
 
-  return { API_KEY: key, HAS_API: Boolean(key) };
+  return {
+    API_KEY: key,
+    HAS_API: Boolean(key),
+    FREE_PRIMARY: "openai/gpt-oss-120b:free",
+    FREE_FALLBACK: "meta-llama/llama-3.3-70b-instruct:free",
+  };
 });
 
 // ── Mocks ──────────────────────────────────────────────
@@ -62,10 +67,10 @@ vi.mock("@easyoref/shared", async () => {
     ...actual,
     config: {
       agent: {
-        filterModel: "openai/gpt-oss-120b:free",
-        filterFallbackModel: "openai/gpt-oss-120b:free",
-        extractModel: "openai/gpt-oss-120b:free",
-        extractFallbackModel: "openai/gpt-oss-120b:free",
+        filterModel: FREE_PRIMARY,
+        filterFallbackModel: FREE_FALLBACK,
+        extractModel: FREE_PRIMARY,
+        extractFallbackModel: FREE_FALLBACK,
         apiKey: API_KEY || "test-key",
         mcpTools: false,
         confidenceThreshold: 0.65,
@@ -101,6 +106,8 @@ vi.mock("@easyoref/shared", async () => {
     saveCachedExtractions: vi.fn(),
     getLastUpdateTs: vi.fn().mockResolvedValue(0),
     setLastUpdateTs: vi.fn(),
+    getVotedInsights: vi.fn().mockResolvedValue([]),
+    saveVotedInsights: vi.fn(),
   };
 });
 
@@ -171,28 +178,23 @@ describe("buildEnrichedMessage", () => {
   const baseMsg = [
     "<b>🚀 Раннее предупреждение</b>",
     "Обнаружены запуски",
-    "",
-    "<b>Район:</b> Тель-Авив — Южный",
-    "<b>Подлётное время:</b> ~5–12 мин",
-    "<b>Время оповещения:</b> 16:30",
+    "Район: Тель-Авив — Южный",
   ].join("\n");
 
-  it("inserts origin before time line", () => {
+  it("inserts origin as enrichment line", () => {
     const insights = [
       { key: "origin", value: "Иран", confidence: 0.9, sourceUrls: [] },
     ];
     const result = buildEnrichedMessage(baseMsg, "early_warning", ALERT_TS, insights);
     expect(result).toContain("<b>Откуда:</b> Иран");
-    expect(result.indexOf("Откуда:")).toBeLessThan(result.indexOf("Время оповещения:"));
   });
 
-  it("replaces ETA range with absolute time in early_warning", () => {
+  it("adds ETA as enrichment line in early_warning", () => {
     const insights = [
       { key: "eta_absolute", value: "~16:42", confidence: 0.85, sourceUrls: [] },
     ];
     const result = buildEnrichedMessage(baseMsg, "early_warning", ALERT_TS, insights);
-    expect(result).not.toContain("~5–12 мин");
-    expect(result).toContain("~16:42");
+    expect(result).toContain("<b>Прилёт:</b> ~16:42");
   });
 
   it("intercepted visible in red_alert, hidden in early_warning", () => {
@@ -208,8 +210,7 @@ describe("buildEnrichedMessage", () => {
   it("casualties only in resolved phase", () => {
     const resolvedMsg = [
       "<b>😮‍💨 Инцидент завершён</b>",
-      "<b>Район:</b> Тель-Авив — Южный",
-      "<b>Время оповещения:</b> 17:00",
+      "Район: Тель-Авив — Южный",
     ].join("\n");
     const insights = [
       { key: "casualties", value: "2 погибших", confidence: 0.95, sourceUrls: [] },
@@ -258,6 +259,11 @@ describe("resolveArea (deterministic)", () => {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 describe.skipIf(!HAS_API)("resolveArea LLM tier-3 (real API)", () => {
+  // Cooldown between LLM-hitting tests to avoid rate limits on free models
+  beforeEach(async () => {
+    await new Promise((r) => setTimeout(r, 2_000));
+  });
+
   it("resolves מרכז (Center) as relevant macro region for Tel Aviv", async () => {
     // "מרכז" (Center) is not in ZONE_HIERARCHY but LLM should know Tel Aviv is in Center
     const result = await resolveArea("מרכז", ["תל אביב - דרום העיר ויפו"]);
@@ -329,7 +335,7 @@ describe.skipIf(!HAS_API)("full pipeline with real LLM (openai/gpt-oss-120b:free
     } catch (err) {
       // Tolerate provider errors (credit, rate-limit, model overloaded)
       const msg = String(err);
-      if (/credit|rate.?limit|overloaded|timeout|503|429|402|403/i.test(msg)) {
+      if (/credit|rate.?limit|overloaded|timeout|timed?\s*out|503|529|429|402|403/i.test(msg)) {
         console.warn(`⚠️  Provider error (test passes as soft-fail): ${msg.slice(0, 120)}`);
         return;
       }
@@ -363,7 +369,7 @@ describe.skipIf(!HAS_API)("full pipeline with real LLM (openai/gpt-oss-120b:free
       (args) => typeof args[0] === "string" && args[0].includes("pre-filter-node: pass-through"),
     );
     expect(preFilterCall).toBeTruthy();
-  }, 60_000);
+  }, 120_000);
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -74,6 +74,7 @@ import {
   VotedInsight,
   VotedResult,
   config,
+  getVotedInsights,
   validateSafe,
 } from "@easyoref/shared";
 import * as logger from "@easyoref/monitoring";
@@ -179,6 +180,15 @@ export const runEnrichment = async (input: unknown): Promise<void> => {
   const validInput = validation.data;
 
   try {
+    // Load carry-forward insights from previous enrichment runs (persisted in Redis)
+    const previousInsights = await getVotedInsights();
+    if (previousInsights.length > 0) {
+      logger.info("runEnrichment: loaded carry-forward insights from Redis", {
+        count: previousInsights.length,
+        kinds: previousInsights.map((vi) => vi.kind.kind),
+      });
+    }
+
     const result = await buildGraph().invoke(
       {
         alertId: validInput.alertId,
@@ -190,7 +200,7 @@ export const runEnrichment = async (input: unknown): Promise<void> => {
         isCaption: validInput.isCaption,
         telegramMessages: validInput.telegramMessages,
         currentText: validInput.currentText,
-        previousInsights: [],
+        previousInsights,
         monitoringLabel: validInput.monitoringLabel,
       },
       { configurable: { thread_id: validInput.alertId } },

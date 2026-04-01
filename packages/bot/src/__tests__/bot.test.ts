@@ -62,19 +62,32 @@ describe("isRelevantArea", () => {
 // ── i18n message format ──
 
 describe("message format", () => {
-  it("produces valid HTML with blockquote", () => {
+  it("produces valid HTML with plain district line, no blockquote in base", () => {
     const msg = [
       "<b>⚠️ Early Warning</b> (14:32)",
       "Rocket launches detected. Stay near a protected space.",
-      "",
-      "<blockquote>",
-      "<b>Area:</b> Tel Aviv - South And Jaffa",
-      "<b>Time to impact:</b> ~5–12 min",
-      "</blockquote>",
+      "Area: Tel Aviv - South And Jaffa",
     ].join("\n");
 
-    expect(msg).toContain("<blockquote>");
-    expect(msg).toContain("</blockquote>");
-    expect(msg).toContain("<b>Area:</b>");
+    expect(msg).not.toContain("<blockquote>");
+    expect(msg).toContain("Area: Tel Aviv");
+    expect(msg).toContain("<b>⚠️ Early Warning</b>");
+  });
+
+  it("siren/resolved enrichment is wrapped in blockquote", () => {
+    const base = [
+      "<b>🚨 Red Alert</b> (14:35)",
+      "",
+      "Area: Tel Aviv - South And Jaffa",
+    ].join("\n");
+
+    // Simulate enrichment appended by buildEnrichedMessage
+    const enriched = base + "\n<blockquote><b>Origin:</b> Iran</blockquote>";
+
+    expect(enriched).toContain("<blockquote>");
+    expect(enriched).toContain("</blockquote>");
+    expect(enriched).toContain("<b>Origin:</b> Iran");
+    // District stays outside blockquote
+    expect(enriched.indexOf("Area:")).toBeLessThan(enriched.indexOf("<blockquote>"));
   });
 });

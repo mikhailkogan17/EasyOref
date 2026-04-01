@@ -4,13 +4,14 @@
  * Supported languages: Russian (ru), English (en), Hebrew (he), Arabic (ar)
  * Default: ru (built for diaspora families)
  *
- * Message format:
- *   <b>⚠️ Title</b>
+ * Base message format (no blockquote):
+ *   <b>⚠️ Title</b> (HH:MM)
  *   Description
- *   <blockquote>
- *   <b>Key:</b> Value
- *   ...
- *   </blockquote>
+ *   Район: areas
+ *   ⏳ monitoring...
+ *
+ * Enrichment (siren/resolved): appended as <blockquote>...</blockquote>
+ * Enrichment (early_warning): appended as plain text; meta reply sent separately
  */
 
 export type Language = "ru" | "en" | "he" | "ar";

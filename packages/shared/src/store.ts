@@ -23,6 +23,7 @@ import type {
   ChannelPostType,
   EnrichmentType,
   TelegramMessageType,
+  VotedInsightType,
 } from "./schemas.js";
 import { createEmptyEnrichment } from "./schemas.js";
 
@@ -31,6 +32,7 @@ type AlertMeta = AlertMetaType;
 type ChannelPost = ChannelPostType;
 type ActiveSession = ActiveSessionType;
 type Enrichment = EnrichmentType;
+type VotedInsight = VotedInsightType;
 
 //  version for migration handling
 export const SCHEMA_VERSION = "2.0.0";
@@ -159,6 +161,7 @@ export async function clearSession(): Promise<void> {
     "session:enrichment",
     EXT_CACHE_KEY,
     LAST_UPDATE_KEY,
+    VOTED_INSIGHTS_KEY,
   );
 }
 
@@ -210,6 +213,29 @@ export async function getEnrichment(): Promise<Enrichment> {
   const redis = getRedis();
   const raw = await redis.get("session:enrichment");
   return raw ? (JSON.parse(raw) as Enrichment) : createEmptyEnrichment();
+}
+
+// ── Voted insights (cross-phase carry-forward) ────────
+
+const VOTED_INSIGHTS_KEY = "session:voted_insights";
+
+/**
+ * Persist consensus VotedInsight[] from synthesize-node so the next
+ * enrichment job can carry them forward as previousInsights.
+ */
+export async function saveVotedInsights(insights: VotedInsight[]): Promise<void> {
+  const redis = getRedis();
+  await redis.setex(VOTED_INSIGHTS_KEY, SESSION_TTL_S, JSON.stringify(insights));
+}
+
+/**
+ * Load previously saved VotedInsight[] for carry-forward into the next graph run.
+ * Returns empty array if nothing stored.
+ */
+export async function getVotedInsights(): Promise<VotedInsight[]> {
+  const redis = getRedis();
+  const raw = await redis.get(VOTED_INSIGHTS_KEY);
+  return raw ? (JSON.parse(raw) as VotedInsight[]) : [];
 }
 
 // ── Last update timestamp (tracks when last enrichment job ran) ──

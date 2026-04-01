@@ -14,6 +14,7 @@ import {
   type SynthesizedInsightType,
   type VotedInsightType,
   config,
+  saveVotedInsights,
   translateAreas,
   translateCountry,
 } from "@easyoref/shared";
@@ -139,8 +140,13 @@ Rules:
 - casualties: only populate if alertType is "resolved" and confidence >= 0.95.
     Apply the same insightLocation remark rule as hits.
 - earlyWarningTime: only if alertType is "early_warning", use the alertTime value
-- omit fields where there is no evidence
-- output only fields for which you have consensus data`,
+
+CRITICAL — anti-neuroslop rules (NEVER violate):
+- NEVER output a field where the value is "0", "Неизвестно", "Unknown", "לא ידוע", "غير معروف", "N/A", "нет данных", "?", or any placeholder
+- NEVER output rocket_count of "0" — if no rockets are confirmed, OMIT the field entirely
+- NEVER invent or hallucinate city names, numbers, or details not present in the consensus data
+- If a consensus value is empty, null, or has no meaningful data → OMIT the field, do NOT include it
+- Output ONLY fields where you have REAL data from consensus — when in doubt, omit`,
   };
 
   const result = await invokeWithFallback({
@@ -178,6 +184,9 @@ Rules:
 
   // Update previousInsights with current consensus for next phase
   const newPreviousInsights = Object.values(votedResult.consensus);
+
+  // Persist to Redis for cross-job carry-forward
+  await saveVotedInsights(newPreviousInsights);
 
   return {
     messages,

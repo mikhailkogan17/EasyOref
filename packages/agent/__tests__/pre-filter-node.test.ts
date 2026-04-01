@@ -175,6 +175,22 @@ describe("buildTracking", () => {
     expect(result.channelsWithUpdates).toHaveLength(0);
   });
 
+  it("allows Russian news posts with 'минут' (flight time info)", () => {
+    const posts = [
+      makePost({ channel: "@Trueisrael", text: "Иран запустил ракеты, через 12 минут прилёт", ts: LAST_UPDATE + 10 }),
+    ];
+    const result = buildTracking(posts, SESSION_START, LAST_UPDATE);
+    expect(result.channelsWithUpdates).toHaveLength(1);
+  });
+
+  it("allows IDF channel with normal-length update (<= 400 chars)", () => {
+    const posts = [
+      makePost({ channel: "@idf_telegram", text: "צה\"ל מודיע על יירוט מוצלח של רוב הטילים באזור המרכז", ts: LAST_UPDATE + 10 }),
+    ];
+    const result = buildTracking(posts, SESSION_START, LAST_UPDATE);
+    expect(result.channelsWithUpdates).toHaveLength(1);
+  });
+
   it("handles multiple channels independently", () => {
     const posts = [
       makePost({ channel: "@ch1", text: "intel from ch1", ts: LAST_UPDATE + 10 }),

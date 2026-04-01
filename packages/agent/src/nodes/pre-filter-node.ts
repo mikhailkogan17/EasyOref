@@ -22,6 +22,10 @@ import {
 import type { AgentStateType } from "../graph.js";
 
 // ── Noise filter ──────────────────────────────────────────
+//
+// Purpose: drop automated Kipat Barzel / Oref / Tzofar / IDF API dumps.
+// MUST NOT filter legitimate news posts in ANY language (Russian, Hebrew, Arabic, English).
+// Specifically: no language-specific patterns (e.g. "минут" killed @Trueisrael).
 
 const OREF_LINK_RE = /oref\.org\.il/i;
 const OREF_CHANNEL_RE = /pikud|פיקוד|oref/i;
@@ -32,7 +36,7 @@ function isNoise(post: ChannelPostType): boolean {
   if (OREF_LINK_RE.test(post.text)) return true;
   if ((post.text.match(/,/g) ?? []).length >= 8) return true;
   if ((post.text.match(/\(\d{1,2}:\d{2}\)/g) ?? []).length >= 2) return true;
-  if (/\d+\s+минут[ыа]?\b/i.test(post.text)) return true;
+  // REMOVED: /\d+\s+минут[ыа]?\b/i — was killing Russian-language channels (@Trueisrael)
   if (IDF_CHANNEL_RE.test(post.channel) && post.text.length > 400) return true;
   return false;
 }

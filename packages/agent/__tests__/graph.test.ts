@@ -252,11 +252,10 @@ describe("buildEnrichedMessage", () => {
     }));
   }
 
-  it("inserts origin before time line", () => {
+  it("inserts origin as enrichment line", () => {
     const insights = makeInsights([{ key: "origin", value: "Иран" }]);
     const result = buildEnrichedMessage(baseText, "early_warning", alertTs, insights);
     expect(result).toContain("<b>Откуда:</b> Иран");
-    expect(result.indexOf("Откуда:")).toBeLessThan(result.indexOf("Время оповещения:"));
   });
 
   it("inserts rocket count line", () => {
@@ -298,20 +297,19 @@ describe("buildEnrichedMessage", () => {
     expect(siren).not.toContain("Погибшие:");
   });
 
-  it("replaces ETA range with absolute time in early_warning", () => {
-    const text = "Header\n<b>Подлётное время:</b> ~5–12 мин\n<b>Время оповещения:</b> 18:00";
+  it("adds ETA as enrichment line in early_warning", () => {
+    const text = "Header\nРайон: Тель-Авив";
     const insights = makeInsights([{ key: "eta_absolute", value: "~18:07" }]);
     const result = buildEnrichedMessage(text, "early_warning", alertTs, insights);
-    expect(result).not.toContain("~5–12 мин");
-    expect(result).toContain("~18:07");
+    expect(result).toContain("<b>Прилёт:</b> ~18:07");
   });
 
-  it("does NOT replace ETA in resolved phase", () => {
-    const text = "Header\n~5–12 мин\n<b>Время оповещения:</b> 18:00";
+  it("does NOT add ETA in resolved phase", () => {
+    const text = "Header\nРайон: Тель-Авив";
     const insights = makeInsights([{ key: "eta_absolute", value: "~18:07" }]);
     const result = buildEnrichedMessage(text, "resolved", alertTs, insights);
-    // ETA replacement skipped for resolved
-    expect(result).toContain("~5–12 мин");
+    // ETA skipped for resolved
+    expect(result).not.toContain("Прилёт:");
   });
 
   it("appends monitoring label when not resolved", () => {

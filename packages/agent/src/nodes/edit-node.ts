@@ -22,7 +22,9 @@ import { Bot } from "grammy";
 import type { AgentStateType } from "../graph.js";
 import {
   appendMonitoring,
+  buildCitationMap,
   buildEnrichedMessage,
+  formatCitations,
   insertBeforeBlockEnd,
   MONITORING_RE,
   stripMonitoring,
@@ -158,11 +160,11 @@ export const editTelegramMessage = async (
 // ── Silent meta reply ──────────────────────────────────
 
 /**
- * Send a single silent reply with rocket count + ETA after early_warning.
+ * Send a single silent reply with key intel after early_warning.
  * Sent strictly once per session thread (guarded by session.metaMessageSent).
  * Only fires when:
  *  - alertType === "early_warning"
- *  - synthesizedInsights has both rocket_count AND eta_absolute
+ *  - synthesizedInsights has at least TWO of: origin, rocket_count, eta_absolute
  *  - session.metaMessageSent !== true
  */
 export const sendMetaReply = async (
@@ -174,11 +176,15 @@ export const sendMetaReply = async (
   if (!config.botToken) return;
 
   const get = (key: string) =>
-    synthesizedInsights.find((i) => i.key === key)?.value;
+    synthesizedInsights.find((i) => i.key === key);
 
-  const rocketCount = get("rocket_count");
-  const etaAbsolute = get("eta_absolute");
-  if (!rocketCount || !etaAbsolute) return;
+  const rocketCount = get("rocket_count")?.value;
+  const etaAbsolute = get("eta_absolute")?.value;
+  const origin = get("origin")?.value;
+
+  // Need at least 2 of 3 key fields to send a useful meta reply
+  const fieldCount = [rocketCount, etaAbsolute, origin].filter(Boolean).length;
+  if (fieldCount < 2) return;
 
   const sess = await getActiveSession();
   if (!sess) return;
@@ -187,15 +193,34 @@ export const sendMetaReply = async (
   const langPack = getLanguagePack(config.language);
   const labels = langPack.labels;
 
-  const isCassette = get("is_cassette") === "true";
-  const origin = get("origin");
+  const isCassette = get("is_cassette")?.value === "true";
 
-  // "Ракет (Иран): 12, кассетные" or "Ракет: 12"
-  const originPart = origin ? ` (${origin})` : "";
-  const cassettePart = isCassette ? labels.metaCassette : "";
-  const line1 = `${labels.metaRockets}${originPart}: ${rocketCount}${cassettePart}`;
-  const line2 = `${labels.metaArrival}: ${etaAbsolute}`;
-  const text = `${line1}\n${line2}`;
+  // Build citation map for consistent link numbering
+  const citationMap = buildCitationMap(synthesizedInsights);
+
+  // Build text lines dynamically — only include fields that exist
+  const lines: string[] = [];
+
+  if (rocketCount) {
+    const originPart = origin ? ` (${origin})` : "";
+    const cassettePart = isCassette ? labels.metaCassette : "";
+    const rocketInsight = get("rocket_count")!;
+    const cites = formatCitations(rocketInsight.sourceUrls, citationMap);
+    lines.push(`${labels.metaRockets}${originPart}: ${rocketCount}${cassettePart}${cites}`);
+  } else if (origin) {
+    const originInsight = get("origin")!;
+    const cites = formatCitations(originInsight.sourceUrls, citationMap);
+    lines.push(`${labels.metaOrigin}: ${origin}${cites}`);
+  }
+
+  if (etaAbsolute) {
+    const etaInsight = get("eta_absolute")!;
+    const cites = formatCitations(etaInsight.sourceUrls, citationMap);
+    lines.push(`${labels.metaArrival}: ${etaAbsolute}${cites}`);
+  }
+
+  if (lines.length === 0) return;
+  const text = lines.join("\n");
 
   const tgBot = new Bot(config.botToken);
 

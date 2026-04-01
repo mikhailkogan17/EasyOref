@@ -99,7 +99,7 @@ function classifyAlertType(title: string): AlertType {
 // Cooldown / Dedup
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const COOLDOWN_EARLY_MS = 2 * 60 * 1000; // 2 min (Oref sends multiple IDs per wave)
+const COOLDOWN_EARLY_MS = 3 * 60 * 1000; // 3 min (Oref sends multiple alert IDs per wave)
 const COOLDOWN_RED_ALERT_MS = 90 * 1000; // 1.5 min (no prior early warning)
 const COOLDOWN_RED_ALERT_AFTER_EARLY_MS = 3 * 60 * 1000; // 3 min (early warning already sent)
 const COOLDOWN_RESOLVED_MS = 5 * 60 * 1000; // 5 min
@@ -364,16 +364,9 @@ function formatMessage(alertType: AlertType, areas: string): string {
 
   const lines: string[] = [`<b>${emoji} ${title}</b> (${time})`];
   if (desc) lines.push(desc);
-  lines.push("");
-  lines.push("<blockquote>");
-  lines.push(`<b>${labels.area}:</b> ${localAreas}`);
 
-  if (alertType === "early_warning") {
-    lines.push(`<b>${labels.timeToImpact}:</b> ${labels.earlyEta}`);
-  } else if (alertType === "red_alert") {
-    lines.push(`<b>${labels.timeToImpact}:</b> ${labels.redAlertEta}`);
-  }
-  lines.push("</blockquote>");
+  // District line — always plain text, no blockquote
+  lines.push(`${labels.area}: ${localAreas}`);
 
   // Monitoring indicator for active enrichment phases
   if (config.agent.enabled && alertType !== "resolved") {
