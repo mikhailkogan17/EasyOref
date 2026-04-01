@@ -25,6 +25,7 @@ Thumbs.db
 # IDE
 .vscode/
 !.vscode/tasks.json
+.trunk/
 *.swp
 *.swo
 
