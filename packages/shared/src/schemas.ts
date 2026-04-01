@@ -184,7 +184,7 @@ export const Casuality = z.object({
   cause: z.enum(["rocket", "rushing_to_shelter"]),
 });
 
-export const InsightKind = z.discriminatedUnion("name", [
+export const InsightKind = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("eta"),
     value: ETAShhema,
@@ -482,7 +482,6 @@ export const RunEnrichmentInput = z.object({
   isCaption: z.boolean(),
   currentText: z.string().min(1),
   telegramMessages: z.array(TelegramMessage).optional().default([]),
-  monitoringLabel: z.string().optional(),
 });
 export type RunEnrichmentInputType = z.infer<typeof RunEnrichmentInput>;
 

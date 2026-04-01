@@ -117,7 +117,6 @@ import * as logger from "@easyoref/monitoring";
 import {
   buildEnrichedMessage,
   insertBeforeBlockEnd,
-  stripMonitoring,
 } from "../src/utils/message.js";
 import { resolveArea } from "../src/tools/resolve-area.js";
 
@@ -164,13 +163,6 @@ describe("insertBeforeBlockEnd", () => {
     const text = "Line\n<b>Время оповещения:</b> 18:00";
     const result = insertBeforeBlockEnd(text, "NEW");
     expect(result.indexOf("NEW")).toBeLessThan(result.indexOf("Время оповещения:"));
-  });
-});
-
-describe("stripMonitoring", () => {
-  it("removes monitoring emoji line", () => {
-    const text = 'Text\n<tg-emoji emoji-id="1">⏳</tg-emoji> Мониторинг...';
-    expect(stripMonitoring(text)).toBe("Text");
   });
 });
 
@@ -330,7 +322,6 @@ describe.skipIf(!HAS_API)("full pipeline with real LLM (openai/gpt-oss-120b:free
           { chatId: "-1001234567890", messageId: 42, isCaption: false },
         ],
         currentText: "<b>🔴 אזעקה</b>\nתל אביב - דרום העיר ויפו",
-        monitoringLabel: "⏳ Мониторинг...",
       });
     } catch (err) {
       // Tolerate provider errors (credit, rate-limit, model overloaded)
@@ -392,7 +383,6 @@ describe("pipeline dry-run (no posts)", () => {
         { chatId: "-1001234567890", messageId: 42, isCaption: false },
       ],
       currentText: "<b>Test alert</b>",
-      monitoringLabel: "⏳ Мониторинг...",
     });
 
     // Terminal guard must fire: warn about zero synthesized insights

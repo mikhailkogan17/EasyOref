@@ -15,15 +15,12 @@ import {
   clearSession,
   config,
   getActiveSession,
-  getLanguagePack,
   isPhaseExpired,
   PHASE_ENRICH_DELAY_MS,
   type TelegramMessageType as TelegramMessage,
 } from "@easyoref/shared";
 import { Worker } from "bullmq";
-import { Bot } from "grammy";
 import { runEnrichment } from "../graph.js";
-import { MONITORING_RE, stripMonitoring } from "../nodes/edit-node.js";
 import { enqueueEnrich, enrichQueueName, type EnrichJobData } from "./queue.js";
 
 let _worker: Worker | undefined = undefined;
@@ -42,49 +39,6 @@ function checkOpenRouterConnectivity(): void {
         error: String(err),
       });
     });
-}
-
-/** Remove ⏳ monitoring indicator from all chat messages (best-effort) */
-async function removeMonitoringIndicator(session: {
-  chatId: string;
-  latestMessageId: number;
-  isCaption: boolean;
-  currentText: string;
-  telegramMessages?: TelegramMessage[];
-}): Promise<void> {
-  if (!config.botToken || !MONITORING_RE.test(session.currentText)) return;
-  const cleaned = stripMonitoring(session.currentText);
-  const tgBot = new Bot(config.botToken);
-  const targets: TelegramMessage[] = session.telegramMessages ?? [
-    {
-      chatId: session.chatId,
-      messageId: session.latestMessageId,
-      isCaption: session.isCaption,
-    },
-  ];
-  for (const cm of targets) {
-    try {
-      if (cm.isCaption) {
-        await tgBot.api.editMessageCaption(cm.chatId, cm.messageId, {
-          caption: cleaned,
-          parse_mode: "HTML",
-        });
-      } else {
-        await tgBot.api.editMessageText(cm.chatId, cm.messageId, cleaned, {
-          parse_mode: "HTML",
-        });
-      }
-    } catch (err) {
-      const errStr = String(err);
-      if (!errStr.includes("message is not modified")) {
-        logger.error("Failed to remove monitoring indicator", {
-          error: errStr,
-          chatId: cm.chatId,
-        });
-      }
-    }
-  }
-  logger.info("Removed monitoring indicator", { targets: targets.length });
 }
 
 export function startEnrichWorker(): void {
@@ -116,12 +70,9 @@ export function startEnrichWorker(): void {
           alertId: session.latestAlertId,
           phase: session.phase,
         });
-        await removeMonitoringIndicator(session);
         await clearSession();
         return;
       }
-
-      const langPack = getLanguagePack(config.language);
 
       // Run enrichment using latest alert's message as edit target
       // Fallback: if session.telegramMessages is undefined (legacy sessions),
@@ -144,7 +95,6 @@ export function startEnrichWorker(): void {
         isCaption: session.isCaption,
         telegramMessages,
         currentText: session.baseText ?? session.currentText,
-        monitoringLabel: langPack.labels.monitoring,
       });
 
       // Re-check session after enrichment (may have changed phase)
@@ -158,7 +108,6 @@ export function startEnrichWorker(): void {
             phase: after.phase,
           },
         );
-        await removeMonitoringIndicator(after);
         await clearSession();
         return;
       }

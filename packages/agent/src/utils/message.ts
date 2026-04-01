@@ -2,26 +2,12 @@
  * Message text building utilities.
  *
  * buildEnrichedMessage — inserts enrichment lines into Telegram HTML text.
- * stripMonitoring / appendMonitoring — monitoring-indicator helpers.
  * insertBeforeBlockEnd — positional insertion helper.
  * formatCitations — builds inline source links [1][2]... for enrichment fields.
  */
 
 import type { AlertType, Language, SynthesizedInsightType } from "@easyoref/shared";
 import { config, getLanguagePack } from "@easyoref/shared";
-
-// ── Monitoring indicator ───────────────────────────────
-
-export const MONITORING_RE =
-  /\n?<tg-emoji emoji-id="\d+">⏳<\/tg-emoji>\s*[^\n]+$/;
-
-export function stripMonitoring(text: string): string {
-  return text.replace(MONITORING_RE, "");
-}
-
-export function appendMonitoring(text: string, label: string): string {
-  return text + "\n" + label;
-}
 
 // ── Positional insertion ───────────────────────────────
 
@@ -137,9 +123,8 @@ export function buildEnrichedMessage(
   alertType: AlertType,
   _alertTs: number,
   insights: SynthesizedInsightType[],
-  monitoringLabel?: string,
 ): string {
-  let text = stripMonitoring(currentText);
+  let text = currentText;
 
   // Strip any existing <blockquote>...</blockquote> so we rebuild cleanly
   text = text.replace(/\n?<blockquote>[\s\S]*?<\/blockquote>/g, "").trimEnd();
@@ -207,10 +192,6 @@ export function buildEnrichedMessage(
       // Siren / resolved: wrap enrichment in blockquote
       text += "\n<blockquote>" + enrichLines.join("\n") + "</blockquote>";
     }
-  }
-
-  if (monitoringLabel && alertType !== "resolved") {
-    text = appendMonitoring(text, monitoringLabel);
   }
 
   return text;

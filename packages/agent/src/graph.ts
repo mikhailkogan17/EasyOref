@@ -121,7 +121,6 @@ export const AgentState = new StateSchema({
   synthesizedInsights: new ReducedValue(z.array(SynthesizedInsight), {
     reducer: (_previous, current) => current,
   }),
-  monitoringLabel: z.string().optional(),
   telegramMessages: new ReducedValue(z.array(TelegramMessage), {
     reducer: (previous, current) => [...previous, ...current],
   }),
@@ -181,7 +180,23 @@ export const runEnrichment = async (input: unknown): Promise<void> => {
 
   try {
     // Load carry-forward insights from previous enrichment runs (persisted in Redis)
-    const previousInsights = await getVotedInsights();
+    // Defensive: re-validate after JSON round-trip to catch schema drift
+    let previousInsights: z.infer<typeof VotedInsight>[] = [];
+    try {
+      const raw = await getVotedInsights();
+      const parsed = z.array(VotedInsight).safeParse(raw);
+      if (parsed.success) {
+        previousInsights = parsed.data;
+      } else {
+        logger.warn("runEnrichment: carry-forward insights failed validation — starting fresh", {
+          error: parsed.error.message.slice(0, 200),
+        });
+      }
+    } catch (redisErr) {
+      logger.warn("runEnrichment: failed to load carry-forward insights from Redis", {
+        error: String(redisErr).slice(0, 200),
+      });
+    }
     if (previousInsights.length > 0) {
       logger.info("runEnrichment: loaded carry-forward insights from Redis", {
         count: previousInsights.length,
@@ -201,7 +216,6 @@ export const runEnrichment = async (input: unknown): Promise<void> => {
         telegramMessages: validInput.telegramMessages,
         currentText: validInput.currentText,
         previousInsights,
-        monitoringLabel: validInput.monitoringLabel,
       },
       { configurable: { thread_id: validInput.alertId } },
     );

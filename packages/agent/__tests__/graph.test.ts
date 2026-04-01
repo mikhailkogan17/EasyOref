@@ -3,8 +3,7 @@
  *
  * Tests pure/deterministic logic only — no LLM, no network.
  * Covers: voteNode, insertBeforeBlockEnd, buildEnrichedMessage,
- *         stripMonitoring, appendMonitoring, describeContradictions,
- *         getClarifyNeed, textHash, toIsraelTime.
+ *         describeContradictions, getClarifyNeed, textHash, toIsraelTime.
  */
 
 import type {
@@ -65,10 +64,8 @@ vi.mock("@easyoref/monitoring", () => ({
 // ── Imports (after mocks) ──────────────────────────────────
 
 import {
-  appendMonitoring,
   buildEnrichedMessage,
   insertBeforeBlockEnd,
-  stripMonitoring,
 } from "../src/utils/message.js";
 import { describeContradictions } from "../src/utils/contradictions.js";
 import { voteNode } from "../src/nodes/vote-node.js";
@@ -211,29 +208,6 @@ describe("insertBeforeBlockEnd", () => {
 });
 
 // ─────────────────────────────────────────────────────────
-// stripMonitoring / appendMonitoring
-// ─────────────────────────────────────────────────────────
-
-describe("stripMonitoring", () => {
-  it("removes monitoring indicator line", () => {
-    const text = 'Message\n<tg-emoji emoji-id="12345">⏳</tg-emoji> Мониторинг';
-    expect(stripMonitoring(text)).toBe("Message");
-  });
-
-  it("is idempotent when no monitoring line present", () => {
-    const text = "Clean message";
-    expect(stripMonitoring(text)).toBe("Clean message");
-  });
-});
-
-describe("appendMonitoring", () => {
-  it("appends monitoring label to text", () => {
-    const result = appendMonitoring("Message", "⏳ Мониторинг");
-    expect(result).toBe("Message\n⏳ Мониторинг");
-  });
-});
-
-// ─────────────────────────────────────────────────────────
 // buildEnrichedMessage
 // ─────────────────────────────────────────────────────────
 
@@ -310,27 +284,6 @@ describe("buildEnrichedMessage", () => {
     const result = buildEnrichedMessage(text, "resolved", alertTs, insights);
     // ETA skipped for resolved
     expect(result).not.toContain("Прилёт:");
-  });
-
-  it("appends monitoring label when not resolved", () => {
-    const insights: SynthesizedInsightType[] = [];
-    const result = buildEnrichedMessage(baseText, "early_warning", alertTs, insights, "⏳ Мониторинг");
-    expect(result).toContain("⏳ Мониторинг");
-  });
-
-  it("does NOT append monitoring label for resolved phase", () => {
-    const insights: SynthesizedInsightType[] = [];
-    const result = buildEnrichedMessage(baseText, "resolved", alertTs, insights, "⏳ Мониторинг");
-    expect(result).not.toContain("⏳ Мониторинг");
-  });
-
-  it("strips existing monitoring before inserting new content", () => {
-    const textWithMonitoring =
-      'Header\n<b>Время оповещения:</b> 18:00\n<tg-emoji emoji-id="123">⏳</tg-emoji> Old label';
-    const insights = makeInsights([{ key: "origin", value: "Иран" }]);
-    const result = buildEnrichedMessage(textWithMonitoring, "early_warning", alertTs, insights);
-    expect(result).not.toContain("Old label");
-    expect(result).toContain("<b>Откуда:</b> Иран");
   });
 });
 

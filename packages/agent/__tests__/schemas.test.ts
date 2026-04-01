@@ -131,17 +131,6 @@ describe("RunEnrichmentInput schema", () => {
     }
   });
 
-  it("accepts optional monitoringLabel", () => {
-    const result = RunEnrichmentInput.safeParse({
-      ...baseInput,
-      monitoringLabel: "⏳ Updating...",
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.monitoringLabel).toBe("⏳ Updating...");
-    }
-  });
-
   it("round-trips: parse → serialize → parse", () => {
     const parsed = RunEnrichmentInput.parse({
       ...baseInput,

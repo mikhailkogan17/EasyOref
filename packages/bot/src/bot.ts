@@ -16,10 +16,8 @@
 import {
   buildEnrichedMessage,
   enqueueEnrich,
-  MONITORING_RE,
   startEnrichWorker,
   stopEnrichWorker,
-  stripMonitoring,
 } from "@easyoref/agent";
 import { startMonitor, stopMonitor } from "@easyoref/gramjs";
 import * as logger from "@easyoref/monitoring";
@@ -362,16 +360,11 @@ function formatMessage(alertType: AlertType, areas: string): string {
   const title = config.titleOverride[cfgKey] ?? defaults.title;
   const desc = config.descriptionOverride[cfgKey] ?? defaults.description;
 
-  const lines: string[] = [`<b>${emoji} ${title}</b> (${time})`];
+  const lines: string[] = [`<b>${emoji} ${title}</b> (${time})`, ""];
   if (desc) lines.push(desc);
 
   // District line — always plain text, no blockquote
   lines.push(`${labels.area}: ${localAreas}`);
-
-  // Monitoring indicator for active enrichment phases
-  if (config.agent.enabled && alertType !== "resolved") {
-    lines.push(labels.monitoring);
-  }
 
   return lines.join("\n");
 }
@@ -464,38 +457,6 @@ async function sendTelegram(
   }
 }
 
-/** Remove monitoring indicator from ALL chat messages in a session (best-effort) */
-async function removeMonitoringFromAll(
-  botInst: Bot,
-  session: ActiveSession,
-): Promise<void> {
-  if (!MONITORING_RE.test(session.currentText)) return;
-  const cleaned = stripMonitoring(session.currentText);
-  const targets: TelegramMessage[] = session.telegramMessages ?? [
-    {
-      chatId: session.chatId,
-      messageId: session.latestMessageId,
-      isCaption: session.isCaption,
-    },
-  ];
-  for (const cm of targets) {
-    try {
-      if (cm.isCaption) {
-        await botInst.api.editMessageCaption(cm.chatId, cm.messageId, {
-          caption: cleaned,
-          parse_mode: "HTML",
-        });
-      } else {
-        await botInst.api.editMessageText(cm.chatId, cm.messageId, cleaned, {
-          parse_mode: "HTML",
-        });
-      }
-    } catch {
-      // Best-effort: ignore edit failures
-    }
-  }
-}
-
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Alert Processing
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -578,7 +539,6 @@ async function processAlert(alert: OrefAlert): Promise<void> {
           alertType,
           alertTs,
           legacyInsights,
-          alertType !== "resolved" ? langPack.labels.monitoring : undefined,
         );
       }
     }
@@ -621,8 +581,6 @@ async function processAlert(alert: OrefAlert): Promise<void> {
       if (alertType === "resolved") {
         // ── Resolved: switch existing session to resolved phase ──
         if (existingSession) {
-          if (bot) await removeMonitoringFromAll(bot, existingSession);
-
           const updated: ActiveSession = {
             ...existingSession,
             phase: "resolved",
@@ -652,8 +610,6 @@ async function processAlert(alert: OrefAlert): Promise<void> {
         // ── Early warning / Red Alert ──
         if (existingSession && existingSession.phase !== "resolved") {
           // Upgrade session phase (early → red_alert, or same-type refresh)
-          if (bot) await removeMonitoringFromAll(bot, existingSession);
-
           const updated: ActiveSession = {
             ...existingSession,
             phase: alertType,

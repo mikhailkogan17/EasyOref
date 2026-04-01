@@ -62,9 +62,10 @@ describe("isRelevantArea", () => {
 // ── i18n message format ──
 
 describe("message format", () => {
-  it("produces valid HTML with plain district line, no blockquote in base", () => {
+  it("produces valid HTML with plain district line, empty line after title, no blockquote in base", () => {
     const msg = [
       "<b>⚠️ Early Warning</b> (14:32)",
+      "",
       "Rocket launches detected. Stay near a protected space.",
       "Area: Tel Aviv - South And Jaffa",
     ].join("\n");

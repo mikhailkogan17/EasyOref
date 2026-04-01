@@ -21,20 +21,14 @@ import { AIMessage } from "langchain";
 import { Bot } from "grammy";
 import type { AgentStateType } from "../graph.js";
 import {
-  appendMonitoring,
   buildCitationMap,
   buildEnrichedMessage,
   formatCitations,
   insertBeforeBlockEnd,
-  MONITORING_RE,
-  stripMonitoring,
 } from "../utils/message.js";
 
 // Re-exports for backwards-compat
 export {
-  MONITORING_RE,
-  stripMonitoring,
-  appendMonitoring,
   insertBeforeBlockEnd,
   buildEnrichedMessage,
 };
@@ -78,7 +72,6 @@ export interface EditMessageInput {
   currentText: string;
   votedResult: VotedResultType | undefined;
   synthesizedInsights: SynthesizedInsightType[];
-  monitoringLabel?: string;
 }
 
 // ── Telegram edit ──────────────────────────────────────
@@ -119,7 +112,6 @@ export const editTelegramMessage = async (
     input.alertType,
     input.alertTs,
     insights,
-    input.monitoringLabel,
   );
 
   // Dedup: skip if text hasn't changed
@@ -265,7 +257,6 @@ export const editNode = async (
     currentText: state.currentText,
     votedResult: state.votedResult,
     synthesizedInsights: synthesized,
-    monitoringLabel: state.monitoringLabel,
   });
 
   const targets = state.telegramMessages ?? [
