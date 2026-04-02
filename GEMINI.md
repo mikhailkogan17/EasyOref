@@ -88,10 +88,12 @@ packages/
 
 **Tests:** `npm test` (vitest runs all `packages/*/__tests__/*.test.ts` and `packages/*/src/**/*.test.ts`)
 
-### Model
+### Models
 
-- **google/gemini-3-flash-preview** via OpenRouter (no RPD limits)
-- Configured in `config.yaml` under `ai.openrouter_model`
+- **Filter** (pre-filter + post-filter): `openai/gpt-oss-120b` — free 117B MoE, good for cheap first-pass
+- **Extract** (structured extraction): `google/gemini-3.1-flash-lite-preview` — paid, precise
+- **Fallback** (both): `openai/gpt-oss-120b:free` (`:free` suffix required)
+- Configured in `config.yaml` under `ai.openrouter_filter_model` / `ai.openrouter_extract_model`
 - Base URL `https://openrouter.ai/api/v1` hardcoded in `graph.ts` — NOT configurable
 
 > **IMPORTANT — model IDs in tests:** Integration tests (`enrichment.integration.test.ts`) use
@@ -122,14 +124,19 @@ LLM integration tests are **skipped** without `OPENROUTER_API_KEY` env variable.
 ai:
   enabled: true
   openrouter_api_key: "sk-or-v1-..."
-  openrouter_model: "google/gemini-3.1-flash-lite-preview"
+  openrouter_filter_model: "openai/gpt-oss-120b"              # free, cheap first-pass
+  openrouter_filter_fallback_model: "openai/gpt-oss-120b:free" # fallback if primary fails
+  openrouter_extract_model: "google/gemini-3.1-flash-lite-preview" # paid, structured extraction
+  openrouter_extract_fallback_model: "openai/gpt-oss-120b:free"   # fallback if primary fails
   enrich_delay_ms: 20000
   mtproto:
     api_id: 2040
     api_hash: "..."
     session_string: "1AgAOMTQ5..."
-  redis_url: "redis://redis:6379"   # Docker network hostname, NOT localhost
+  redis_url: "redis://localhost:6379"   # systemd/native: localhost; Docker: redis:6379
 ```
+
+**Config is YAML-only SSOT** — no `process.env` fallbacks. Only `EASYOREF_CONFIG` env var (path to YAML file) is read from environment.
 
 ### Enrichment Format
 
@@ -159,9 +166,9 @@ Unicode superscript citations (¹²³), absolute ETA (~HH:MM¹), inline key:valu
   # Update
   easyoref update
   ```
-- Config: `~/.easyoref/config.yaml` (created by `easyoref init`)
-- Docker compose: local build on RPi (not GHCR)
-- Logs: `docker logs easyoref`
+- Config: `~/.easyoref/config.{ru,he}_tlv-south.yaml` (per-language instance)
+- Two systemd services: `easyoref-ru_tlv-south` + `easyoref-he_tlv-south`
+- Logs: `journalctl -u easyoref-ru_tlv-south -n 50`
 
 ### ЗАПРЕЩЕНО (Lethal Laws)
 
@@ -311,3 +318,56 @@ easyoref update
 - RPi deploy is ALWAYS via `easyoref update` command, NEVER manual git clone
 - systemd service runs as root with `Environment=HOME=/home/pi` (config lookup)
 - No Docker on RPi production — only systemd service + redis container
+
+---
+
+## RPi Verification — 2026-04-02
+
+### Environment
+
+| Item | Value |
+|---|---|
+| **Version** | `easyoref@1.27.1` (npm global) |
+| **Services** | `easyoref-ru_tlv-south.service` ✅ active running |
+| | `easyoref-he_tlv-south.service` ✅ active running |
+| **Redis** | Docker container, `redis://localhost:6379` |
+| **Config path (ru)** | `/home/pi/.easyoref/config.ru_tlv-south.yaml` |
+| **Config path (he)** | `/home/pi/.easyoref/config.he_tlv-south.yaml` |
+| **Systemd env** | `EASYOREF_CONFIG` → per-language YAML file, no other env vars |
+
+### Plan Items — Verification
+
+| # | Fix | Code | RPi Config | Status |
+|---|---|---|---|---|
+| 1 | GramJS channel ID cache | `gramjs/src/index.ts` — `channelCache` Map, `getChannelEntity()` | N/A (code-level) | ✅ |
+| 2 | GramJS `backfillChannelPosts()` | `gramjs/src/index.ts` — exported, called from pre-filter | N/A | ✅ |
+| 3 | GramJS warn logging on getChat fail | `gramjs/src/index.ts` — `logger.warn()` | N/A | ✅ |
+| 4 | Post-filter soft pass for critical phases | `agent/src/nodes/post-filter-node.ts` — `early_warning`, `red_alert` bypass | N/A | ✅ |
+| 5 | Config: two explicit model keys | `shared/src/config.ts` — `filterModel` + `extractModel` | Both configs: `openrouter_filter_model` + `openrouter_extract_model` ✅ | ✅ |
+| 6 | Config: YAML-only SSOT | `shared/src/config.ts` — zero `process.env` fallbacks (only `EASYOREF_CONFIG`) | systemd: only `EASYOREF_CONFIG` env var ✅ | ✅ |
+| 7 | Remove `confidence_threshold` | Removed from config.ts interface | Not in RPi configs ✅ | ✅ |
+| 8 | Remove `langsmith_tracing` / `langsmith_endpoint` | Removed from config.ts interface | Not in RPi configs ✅ | ✅ |
+| 9 | Model: filter=`openai/gpt-oss-120b` | Default in config.ts | Both RPi configs ✅ | ✅ |
+| 10 | Model: extract=`google/gemini-3.1-flash-lite-preview` | Default in config.ts | Both RPi configs ✅ | ✅ |
+| 11 | Fallbacks=`openai/gpt-oss-120b:free` | Default in config.ts | Both RPi configs ✅ | ✅ |
+| 12 | Remove `process.env.AREAS` from bot.ts | `bot/src/bot.ts` — removed | N/A | ✅ |
+
+### Tests
+
+- **203 tests** across 11 test files — all passing
+- Integration tests require `OPENROUTER_API_KEY` env var (skipped without it)
+
+### RPi Config Snapshot (models section)
+
+Both ru and he configs have identical AI blocks:
+```yaml
+ai:
+  openrouter_filter_model: "openai/gpt-oss-120b"
+  openrouter_filter_fallback_model: "openai/gpt-oss-120b:free"
+  openrouter_extract_model: "google/gemini-3.1-flash-lite-preview"
+  openrouter_extract_fallback_model: "openai/gpt-oss-120b:free"
+```
+
+### Note
+
+RPi is running v1.27.1. Next `npm run release` + `easyoref update` will deploy v1.27.2+ with all code fixes.
