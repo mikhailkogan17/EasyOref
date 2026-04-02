@@ -64,7 +64,6 @@ interface ConfigYamlAi {
   redis_url?: string;
   socks5_proxy?: string;
   enrich_delay_ms?: number;
-  confidence_threshold?: number;
   window_minutes?: number;
   timeout_minutes?: number;
   /** Enable MCP tool calling for low-confidence clarification */
@@ -149,7 +148,7 @@ function parseAlertTypes(raw?: AlertTypeConfig[]): AlertTypeConfig[] {
 const yml = loadYaml();
 
 const parsedChatIds: string[] = (() => {
-  const raw = yml.telegram?.chat_id ?? process.env.CHAT_ID ?? "";
+  const raw = yml.telegram?.chat_id ?? "";
   if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
   return String(raw)
     .split(",")
@@ -159,9 +158,7 @@ const parsedChatIds: string[] = (() => {
 
 export const config = {
   /** Telegram bot token */
-  botToken:
-    yml.telegram?.bot_token ??
-    readSecret("BOT_TOKEN", ["/run/secrets/bot_token", "secrets/bot_token"]),
+  botToken: yml.telegram?.bot_token ?? readSecret("BOT_TOKEN", ["/run/secrets/bot_token", "secrets/bot_token"]),
 
   /** All Telegram chat IDs to broadcast to */
   chatIds: parsedChatIds,
@@ -183,7 +180,7 @@ export const config = {
 
   /** Message language */
   language: ((): Language => {
-    const raw = (yml.language ?? process.env.LANGUAGE ?? "ru").toLowerCase();
+    const raw = (yml.language ?? "ru").toLowerCase();
     return isValidLanguage(raw) ? raw : "ru";
   })(),
 
@@ -193,7 +190,7 @@ export const config = {
    * BullMQ queue name is also scoped: `{redisPrefix}:enrich-alert` (or plain when empty).
    * Env var: REDIS_PREFIX
    */
-  redisPrefix: yml.redis_prefix ?? process.env.REDIS_PREFIX ?? "",
+  redisPrefix: yml.redis_prefix ?? "",
 
   /** Emoji overrides per alert type */
   emojiOverride: yml.emoji_override ?? {},
@@ -205,60 +202,50 @@ export const config = {
   descriptionOverride: yml.description_override ?? {},
 
   /** Oref API polling interval (ms) */
-  pollIntervalMs:
-    yml.poll_interval_ms ?? Number(process.env.OREF_POLL_INTERVAL_MS ?? "2000"),
+  pollIntervalMs: yml.poll_interval_ms ?? 2000,
 
   /** Health endpoint port */
-  healthPort: yml.health_port ?? Number(process.env.HEALTH_PORT ?? "3100"),
+  healthPort: yml.health_port ?? 3100,
 
   /** Oref API URL */
   orefApiUrl:
     yml.oref_api_url ??
-    process.env.OREF_API_URL ??
     "https://www.oref.org.il/WarningMessages/alert/alerts.json",
 
   /** Oref alert history URL (base, without date params) */
-  orefHistoryUrl: yml.oref_history_url ?? process.env.OREF_HISTORY_URL ?? "",
+  orefHistoryUrl: yml.oref_history_url ?? "",
 
   /** Better Stack Logtail token */
-  logtailToken:
-    yml.observability?.betterstack_token ?? process.env.LOGTAIL_TOKEN ?? "",
+  logtailToken: yml.observability?.betterstack_token ?? "",
 
   /** GIF mode */
-  gifMode: parseGifMode(yml.gif_mode ?? process.env.GIF_MODE ?? "none"),
+  gifMode: parseGifMode(yml.gif_mode ?? "none"),
 
   /** Path for persistent data */
-  dataDir: yml.data_dir ?? process.env.DATA_DIR ?? join(CONFIG_DIR, "data"),
+  dataDir: yml.data_dir ?? join(CONFIG_DIR, "data"),
 
   /** AI enrichment config (YAML key: `ai`) */
   agent: (() => {
     const ai = yml.ai;
     return {
       enabled: ai?.enabled ?? false,
-      apiKey: ai?.openrouter_api_key ?? process.env.OPENROUTER_API_KEY ?? "",
+      apiKey: ai?.openrouter_api_key ?? "",
       filterModel: ai?.openrouter_filter_model ?? "openai/gpt-oss-120b",
       filterFallbackModel:
-        ai?.openrouter_filter_fallback_model ??
-        process.env.OPENROUTER_FILTER_FALLBACK_MODEL ??
-        "openrouter/free",
+        ai?.openrouter_filter_fallback_model ?? "openai/gpt-oss-120b:free",
       extractModel:
         ai?.openrouter_extract_model ?? "openai/gpt-oss-120b",
       extractFallbackModel:
-        ai?.openrouter_extract_fallback_model ??
-        process.env.OPENROUTER_EXTRACT_FALLBACK_MODEL ??
-        "openrouter/free",
-      redisUrl:
-        ai?.redis_url ?? process.env.REDIS_URL ?? "redis://localhost:6379",
-      socks5Proxy: ai?.socks5_proxy ?? process.env.SOCKS5_PROXY ?? "",
+        ai?.openrouter_extract_fallback_model ?? "openai/gpt-oss-120b:free",
+      redisUrl: ai?.redis_url ?? "redis://localhost:6379",
+      socks5Proxy: ai?.socks5_proxy ?? "",
       enrichDelayMs: ai?.enrich_delay_ms ?? 20_000,
-      confidenceThreshold: ai?.confidence_threshold ?? 0.7,
       windowMinutes: ai?.window_minutes ?? 2,
       timeoutMinutes: ai?.timeout_minutes ?? 15,
       mtproto: {
-        apiId: ai?.mtproto?.api_id ?? Number(process.env.TG_API_ID ?? "0"),
-        apiHash: ai?.mtproto?.api_hash ?? process.env.TG_API_HASH ?? "",
-        sessionString:
-          ai?.mtproto?.session_string ?? process.env.TG_SESSION ?? "",
+        apiId: ai?.mtproto?.api_id ?? 0,
+        apiHash: ai?.mtproto?.api_hash ?? "",
+        sessionString: ai?.mtproto?.session_string ?? "",
       },
       channels: ai?.channels ?? [],
       areaLabels: ai?.area_labels ?? {},

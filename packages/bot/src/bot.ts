@@ -47,7 +47,7 @@ import { initGifState, pickGif } from "./gif-state.js";
 const langPack = getLanguagePack(config.language);
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Area Filter (configurable via AREAS env var)
+// Area Filter (from config.yaml city_ids)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /** Check if alert data contains any of our monitored areas. */
@@ -723,12 +723,6 @@ async function main(): Promise<void> {
       city_ids: config.cityIds,
       areas: config.areas,
     });
-  } else if (process.env.AREAS) {
-    // Legacy fallback: AREAS env var (comma-separated Hebrew names)
-    config.areas = process.env.AREAS.split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    logger.info("Using legacy AREAS env var", { areas: config.areas });
   }
 
   if (config.areas.length === 0) {

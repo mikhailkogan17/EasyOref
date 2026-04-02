@@ -332,9 +332,9 @@ describe("model resolution fallback", () => {
   it("uses filter model when set", () => {
     expect(
       resolveFilterModel({
-        openrouter_filter_model: "google/gemini-2.5-flash-lite",
+        openrouter_filter_model: "openai/gpt-oss-120b",
       }),
-    ).toBe("google/gemini-2.5-flash-lite");
+    ).toBe("openai/gpt-oss-120b");
   });
 
   it("falls back to free default when keys are absent", () => {
@@ -346,13 +346,13 @@ describe("model resolution fallback", () => {
   it("YAML round-trip preserves model keys correctly", () => {
     const aiConfig = {
       ai: {
-        openrouter_filter_model: "google/gemini-3-flash-preview",
+        openrouter_filter_model: "openai/gpt-oss-120b",
         openrouter_extract_model: "google/gemini-3.1-flash-lite-preview",
       },
     };
     const dumped = yaml.dump(aiConfig);
     const parsed = yaml.load(dumped) as { ai?: Record<string, string> };
     expect(resolveExtractModel(parsed.ai)).toBe("google/gemini-3.1-flash-lite-preview");
-    expect(resolveFilterModel(parsed.ai)).toBe("google/gemini-3-flash-preview");
+    expect(resolveFilterModel(parsed.ai)).toBe("openai/gpt-oss-120b");
   });
 });

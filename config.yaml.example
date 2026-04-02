@@ -83,8 +83,9 @@ gif_mode: none
 #
 #   # OpenRouter API key — get at openrouter.ai/settings/keys
 #   openrouter_api_key: "sk-or-v1-..."
-#   openrouter_filter_model: google/gemini-2.5-flash-lite          # channel pre-filter
-#   openrouter_extract_model: google/gemini-3.1-flash-lite-preview  # per-post structured extraction
+#   openrouter_filter_model: openai/gpt-oss-120b         # channel pre-filter (free)
+#   openrouter_extract_model: google/gemini-3.1-flash-lite-preview # per-post extraction (paid)
+#   # Fallback: openai/gpt-oss-120b:free (if keys missing)
 #
 #   # Redis (also used by BullMQ queue)
 #   redis_url: redis://redis:6379  # use redis://localhost:6379 outside Docker
@@ -94,10 +95,7 @@ gif_mode: none
 #
 #   # Delay before running agent after alert (ms). Default 2 min.
 #   enrich_delay_ms: 120000
-#
-#   # Minimum confidence to edit message (0–1). Default 0.7.
-#   confidence_threshold: 0.7
-#
+##
 #   # MCP tool calling in clarify node (requires GramJS + Redis).
 #   # When true, low-confidence results get an extra LLM call with 2 MCP tools:
 #   #   - telegram_mtproto_mcp_read_sources (fetch last N posts from channels)
@@ -117,7 +115,7 @@ gif_mode: none
 #   # Burner Telegram account credentials (run `npx tsx src/agent/auth.ts` for QR login)
 #   mtproto:
 #     api_id: 2040       # Telegram Desktop public app_id — not secret
-#     api_hash: "b18441a1ff607e10a989891a5462e627"
+#     api_hash: "..."
 #     session_string: "" # filled by auth.ts after first login
 #   area_labels:
 #     "תל אביב": "Дан центр"

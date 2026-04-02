@@ -124,10 +124,9 @@ ai:
   openrouter_api_key: "sk-or-v1-..."
   openrouter_model: "google/gemini-3.1-flash-lite-preview"
   enrich_delay_ms: 20000
-  confidence_threshold: 0.65
   mtproto:
     api_id: 2040
-    api_hash: "b18441a1ff607e10a989891a5462e627"
+    api_hash: "..."
     session_string: "1AgAOMTQ5..."
   redis_url: "redis://redis:6379"   # Docker network hostname, NOT localhost
 ```
