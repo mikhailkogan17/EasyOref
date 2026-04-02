@@ -329,9 +329,10 @@ describe.skipIf(!HAS_API)("full pipeline with real LLM (openai/gpt-oss-120b:free
         currentText: "<b>🔴 אזעקה</b>\nתל אביב - דרום העיר ויפו",
       });
     } catch (err) {
-      // Tolerate provider errors (credit, rate-limit, model overloaded)
+      // Tolerate provider errors (credit, rate-limit, model overloaded, spend limit)
       const msg = String(err);
-      if (/credit|rate.?limit|overloaded|timeout|timed?\s*out|503|529|429|402|403/i.test(msg)) {
+      const code = (err as { code?: number })?.code;
+      if (/credit|rate.?limit|overloaded|timeout|timed?\s*out|spend.?limit|503|529|429|402|403/i.test(msg) || code === 402 || code === 429) {
         console.warn(`⚠️  Provider error (test passes as soft-fail): ${msg.slice(0, 120)}`);
         return;
       }
