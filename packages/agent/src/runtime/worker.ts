@@ -17,6 +17,7 @@ import {
   getActiveSession,
   isPhaseExpired,
   PHASE_ENRICH_DELAY_MS,
+  setLastUpdateTs,
   type TelegramMessageType as TelegramMessage,
 } from "@easyoref/shared";
 import { Worker } from "bullmq";
@@ -96,6 +97,11 @@ export function startEnrichWorker(): void {
         telegramMessages,
         currentText: session.baseText ?? session.currentText,
       });
+
+      // Advance watermark so the next job only processes posts arriving after this point.
+      // Without this, buildTracking() never classifies posts as "previous", and
+      // the extract-node's URL dedup filters out all channels on subsequent runs.
+      await setLastUpdateTs(Date.now());
 
       // Re-check session after enrichment (may have changed phase)
       const after = await getActiveSession();

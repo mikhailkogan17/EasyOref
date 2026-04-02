@@ -145,8 +145,10 @@ CRITICAL — anti-neuroslop rules (NEVER violate):
 - NEVER output a field where the value is "0", "Неизвестно", "Unknown", "לא ידוע", "غير معروف", "N/A", "нет данных", "?", or any placeholder
 - NEVER output rocket_count of "0" — if no rockets are confirmed, OMIT the field entirely
 - NEVER invent or hallucinate city names, numbers, or details not present in the consensus data
+- NEVER use alertTime as eta_absolute — they are DIFFERENT concepts. eta_absolute must come ONLY from an "eta" kind in consensus. If no "eta" kind exists, do NOT output eta_absolute
 - If a consensus value is empty, null, or has no meaningful data → OMIT the field, do NOT include it
-- Output ONLY fields where you have REAL data from consensus — when in doubt, omit`,
+- Output ONLY fields that have a MATCHING consensus kind — if there is no consensus entry for a field, you MUST NOT output it
+- When in doubt, omit`,
   };
 
   const result = await invokeWithFallback({
@@ -159,7 +161,22 @@ CRITICAL — anti-neuroslop rules (NEVER violate):
   messages.push(new AIMessage(JSON.stringify(output ?? {})));
 
   // Build SynthesizedInsight[] from output fields + consensus metadata
-  const synthesized: SynthesizedInsightType[] = (output?.fields ?? []).map(
+  // Post-synthesis validation: reject hallucinated fields with no consensus backing
+  const consensusKinds = new Set(Object.keys(votedResult.consensus));
+  const synthesized: SynthesizedInsightType[] = (output?.fields ?? [])
+    .filter((f: { key: string; value: string }) => {
+      const expectedKind = fieldKeyToKind(f.key);
+      if (!consensusKinds.has(expectedKind)) {
+        logger.warn("synthesize-node: rejecting hallucinated field — no consensus backing", {
+          key: f.key,
+          expectedKind,
+          availableKinds: [...consensusKinds],
+        });
+        return false;
+      }
+      return true;
+    })
+    .map(
     (f: { key: string; value: string }) => {
       // Find the matching consensus insight for confidence + sourceUrls
       const matchingKind = Object.entries(votedResult.consensus).find(

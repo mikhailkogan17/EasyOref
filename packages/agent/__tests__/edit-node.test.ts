@@ -200,6 +200,7 @@ describe("sendMetaReply", () => {
     expect(text).toContain("Прилёт: ~14:23");
     expect(opts.disable_notification).toBe(true);
     expect(opts.reply_to_message_id).toBe(defaultTarget.messageId);
+    expect(opts.parse_mode).toBe("HTML");
   });
 
   it("includes origin in parentheses when present", async () => {
@@ -419,5 +420,70 @@ describe("editNode", () => {
     // The AIMessage should contain synthesizedKeys: [] since insights were empty
     const msgContent = JSON.parse(result.messages![0].content as string);
     expect(msgContent.synthesizedKeys).toEqual([]);
+  });
+
+  it("does NOT edit early_warning messages inline — only meta reply sends metadata", async () => {
+    const state = {
+      messages: [],
+      alertId: "alert-1",
+      alertTs: Date.now(),
+      alertType: "early_warning" as const,
+      alertAreas: ["תל אביב"],
+      chatId: "-1001234567890",
+      messageId: 100,
+      isCaption: false,
+      currentText: "⚠️ Early warning",
+      votedResult: undefined,
+      synthesizedInsights: makeInsights([
+        { key: "origin", value: "Иран" },
+        { key: "rocket_count", value: "10" },
+        { key: "eta_absolute", value: "~14:30" },
+      ]),
+      clarifyAttempted: false,
+      extractedInsights: [],
+      filteredInsights: [],
+      previousInsights: [],
+      telegramMessages: undefined,
+    };
+
+    await editNode(state as any);
+
+    // editMessageText should NOT be called for early_warning
+    expect(mockEditMessageText).not.toHaveBeenCalled();
+    expect(mockEditMessageCaption).not.toHaveBeenCalled();
+
+    // BUT sendMessage (meta reply) SHOULD be called
+    expect(mockSendMessage).toHaveBeenCalledOnce();
+  });
+
+  it("DOES edit red_alert messages inline with enrichment", async () => {
+    const state = {
+      messages: [],
+      alertId: "alert-1",
+      alertTs: Date.now(),
+      alertType: "red_alert" as const,
+      alertAreas: ["תל אביב"],
+      chatId: "-1001234567890",
+      messageId: 100,
+      isCaption: false,
+      currentText: "🔴 Red Alert: Tel Aviv",
+      votedResult: undefined,
+      synthesizedInsights: makeInsights([
+        { key: "origin", value: "Иран" },
+        { key: "rocket_count", value: "10" },
+      ]),
+      clarifyAttempted: false,
+      extractedInsights: [],
+      filteredInsights: [],
+      previousInsights: [],
+      telegramMessages: undefined,
+    };
+
+    await editNode(state as any);
+
+    // editMessageText SHOULD be called for red_alert
+    expect(mockEditMessageText).toHaveBeenCalledOnce();
+    // sendMessage (meta reply) should NOT be called — not early_warning
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 });

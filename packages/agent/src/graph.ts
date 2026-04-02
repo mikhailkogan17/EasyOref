@@ -80,7 +80,6 @@ import {
 import * as logger from "@easyoref/monitoring";
 import {
   END,
-  MemorySaver,
   MessagesValue,
   ReducedValue,
   START,
@@ -141,7 +140,9 @@ const shouldClarify = (state: AgentStateType): "clarify" | "edit" => {
   return "edit";
 };
 
-const checkpointer = new MemorySaver();
+// Checkpointer removed: MemorySaver caused messages to accumulate across
+// worker retries (same thread_id), crashing OpenRouter with deserialization
+// errors. Carry-forward uses Redis (saveVotedInsights/getVotedInsights).
 
 export const buildGraph = () =>
   new StateGraph(AgentState)
@@ -165,7 +166,7 @@ export const buildGraph = () =>
     .addEdge("clarify", "revote")
     .addEdge("revote", "synthesize")
     .addEdge("edit", END)
-    .compile({ checkpointer });
+    .compile();
 
 export type { RunEnrichmentInputType } from "@easyoref/shared";
 export { RunEnrichmentInput };
@@ -217,7 +218,6 @@ export const runEnrichment = async (input: unknown): Promise<void> => {
         currentText: validInput.currentText,
         previousInsights,
       },
-      { configurable: { thread_id: validInput.alertId } },
     );
 
     // Terminal guard: warn if entire pipeline produced zero content

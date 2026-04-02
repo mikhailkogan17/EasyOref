@@ -222,6 +222,7 @@ export const sendMetaReply = async (
         reply_to_message_id: t.messageId,
         allow_sending_without_reply: true,
         disable_notification: true,
+        parse_mode: "HTML",
       };
       await tgBot.api.sendMessage(t.chatId, text, sendOpts);
     } catch (err) {
@@ -245,18 +246,22 @@ export const editNode = async (
 ): Promise<Partial<AgentStateType>> => {
   const synthesized = state.synthesizedInsights ?? [];
 
-  await editTelegramMessage({
-    alertId: state.alertId,
-    alertTs: state.alertTs,
-    alertType: state.alertType,
-    chatId: state.chatId,
-    messageId: state.messageId,
-    isCaption: state.isCaption,
-    telegramMessages: state.telegramMessages,
-    currentText: state.currentText,
-    votedResult: state.votedResult,
-    synthesizedInsights: synthesized,
-  });
+  // Per spec: early_warning messages are NOT edited with enrichment inline.
+  // Only the meta reply (sendMetaReply) provides metadata for early_warning.
+  if (state.alertType !== "early_warning") {
+    await editTelegramMessage({
+      alertId: state.alertId,
+      alertTs: state.alertTs,
+      alertType: state.alertType,
+      chatId: state.chatId,
+      messageId: state.messageId,
+      isCaption: state.isCaption,
+      telegramMessages: state.telegramMessages,
+      currentText: state.currentText,
+      votedResult: state.votedResult,
+      synthesizedInsights: synthesized,
+    });
+  }
 
   const targets = state.telegramMessages ?? [
     { chatId: state.chatId, messageId: state.messageId, isCaption: state.isCaption },
