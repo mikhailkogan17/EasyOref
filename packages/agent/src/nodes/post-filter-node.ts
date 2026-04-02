@@ -181,6 +181,22 @@ Also assign sourceTrust: IDF Spokesperson/N12/Kan = 0.9+; known mil channels = 0
         insightLocation,
       });
       validCount++;
+    } else if (
+      state.alertType === "early_warning" || state.alertType === "red_alert"
+    ) {
+      // Soft pass during critical phases — LLM verification is unreliable on
+      // free models, but dropping insights during active attack is worse.
+      // Low confidence + trust lets vote-node apply consensus logic.
+      validatedInsights.push({
+        ...rawInsight,
+        isValid: true,
+        rejectionReason: "soft_pass_critical_phase",
+        sourceTrust: 0.2,
+        confidence: rawInsight.confidence ?? 0.3,
+        timeRelevance: rawInsight.timeRelevance ?? 0.5,
+        regionRelevance: rawInsight.regionRelevance ?? 0.5,
+      });
+      validCount++;
     } else {
       validatedInsights.push({
         ...rawInsight,

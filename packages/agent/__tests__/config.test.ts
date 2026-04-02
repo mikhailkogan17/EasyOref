@@ -302,3 +302,57 @@ describe("secret fallback logic", () => {
     expect(readSecret(undefined, null)).toBe("");
   });
 });
+
+// ── Model Resolution Fallback Chain ──────────────────────
+// Simulates the config.ts logic: specific key → free default
+
+describe("model resolution fallback", () => {
+  const FREE_DEFAULT = "openai/gpt-oss-120b";
+
+  function resolveExtractModel(ai?: {
+    openrouter_extract_model?: string;
+  }): string {
+    return ai?.openrouter_extract_model ?? FREE_DEFAULT;
+  }
+
+  function resolveFilterModel(ai?: {
+    openrouter_filter_model?: string;
+  }): string {
+    return ai?.openrouter_filter_model ?? FREE_DEFAULT;
+  }
+
+  it("uses extract model when set", () => {
+    expect(
+      resolveExtractModel({
+        openrouter_extract_model: "google/gemini-3.1-flash-lite-preview",
+      }),
+    ).toBe("google/gemini-3.1-flash-lite-preview");
+  });
+
+  it("uses filter model when set", () => {
+    expect(
+      resolveFilterModel({
+        openrouter_filter_model: "google/gemini-2.5-flash-lite",
+      }),
+    ).toBe("google/gemini-2.5-flash-lite");
+  });
+
+  it("falls back to free default when keys are absent", () => {
+    expect(resolveExtractModel({})).toBe(FREE_DEFAULT);
+    expect(resolveFilterModel({})).toBe(FREE_DEFAULT);
+    expect(resolveExtractModel(undefined)).toBe(FREE_DEFAULT);
+  });
+
+  it("YAML round-trip preserves model keys correctly", () => {
+    const aiConfig = {
+      ai: {
+        openrouter_filter_model: "google/gemini-3-flash-preview",
+        openrouter_extract_model: "google/gemini-3.1-flash-lite-preview",
+      },
+    };
+    const dumped = yaml.dump(aiConfig);
+    const parsed = yaml.load(dumped) as { ai?: Record<string, string> };
+    expect(resolveExtractModel(parsed.ai)).toBe("google/gemini-3.1-flash-lite-preview");
+    expect(resolveFilterModel(parsed.ai)).toBe("google/gemini-3-flash-preview");
+  });
+});

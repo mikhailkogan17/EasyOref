@@ -16,6 +16,7 @@ import {
   type NewsChannelWithUpdatesType,
   type NewsMessageType,
 } from "@easyoref/shared";
+import { backfillChannelPosts } from "@easyoref/gramjs";
 import {
   AIMessage,
 } from "langchain";
@@ -91,10 +92,22 @@ export function buildTracking(
 export const filterNode = async (
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> => {
-  const posts = await getChannelPosts(state.alertId);
+  let posts = await getChannelPosts(state.alertId);
   const session = await getActiveSession();
   const sessionStartTs = session?.sessionStartTs ?? state.alertTs;
   const lastUpdateTs = await getLastUpdateTs();
+
+  // Fallback: if event-based collection yielded 0 posts, try active polling
+  if (posts.length === 0) {
+    const backfilled = await backfillChannelPosts(sessionStartTs);
+    if (backfilled > 0) {
+      logger.info("pre-filter-node: fallback polling fetched posts", {
+        alertId: state.alertId,
+        count: backfilled,
+      });
+      posts = await getChannelPosts(state.alertId);
+    }
+  }
 
   if (posts.length === 0) {
     logger.info("pre-filter-node: no posts found", { alertId: state.alertId });

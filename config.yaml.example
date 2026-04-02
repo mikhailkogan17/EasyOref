@@ -83,10 +83,8 @@ gif_mode: none
 #
 #   # OpenRouter API key — get at openrouter.ai/settings/keys
 #   openrouter_api_key: "sk-or-v1-..."
-#   openrouter_filter_model: google/gemini-2.5-flash-lite          # cheap channel pre-filter
-#   openrouter_filter_fallback_model: meta-llama/llama-3.3-70b-instruct:free  # free fallback
+#   openrouter_filter_model: google/gemini-2.5-flash-lite          # channel pre-filter
 #   openrouter_extract_model: google/gemini-3.1-flash-lite-preview  # per-post structured extraction
-#   openrouter_extract_fallback_model: qwen/qwen3-coder:free        # free fallback
 #
 #   # Redis (also used by BullMQ queue)
 #   redis_url: redis://redis:6379  # use redis://localhost:6379 outside Docker

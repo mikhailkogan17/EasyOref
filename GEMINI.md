@@ -122,7 +122,7 @@ LLM integration tests are **skipped** without `OPENROUTER_API_KEY` env variable.
 ai:
   enabled: true
   openrouter_api_key: "sk-or-v1-..."
-  openrouter_model: "google/gemini-3-flash-preview"
+  openrouter_model: "google/gemini-3.1-flash-lite-preview"
   enrich_delay_ms: 20000
   confidence_threshold: 0.65
   mtproto:

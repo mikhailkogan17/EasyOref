@@ -7,7 +7,7 @@
  */
 
 import type { ChannelPostType } from "@easyoref/shared";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Mocks ──────────────────────────────────────────────────
 
@@ -212,5 +212,88 @@ describe("buildTracking", () => {
     const ch = result.channelsWithUpdates[0];
     expect(ch.processedMessages).toHaveLength(0);
     expect(ch.unprocessedMessages).toHaveLength(2);
+  });
+});
+
+// ── filterNode (with backfill fallback) ────────────────────
+
+const mockBackfill = vi.fn();
+vi.mock("@easyoref/gramjs", () => ({
+  backfillChannelPosts: (...args: unknown[]) => mockBackfill(...args),
+}));
+
+import { filterNode } from "../src/nodes/pre-filter-node.js";
+import {
+  getChannelPosts as _getChannelPosts,
+  getActiveSession as _getActiveSession,
+  getLastUpdateTs as _getLastUpdateTs,
+} from "@easyoref/shared";
+
+const mockGetChannelPosts = _getChannelPosts as ReturnType<typeof vi.fn>;
+const mockGetActiveSession = _getActiveSession as ReturnType<typeof vi.fn>;
+const mockGetLastUpdateTs = _getLastUpdateTs as ReturnType<typeof vi.fn>;
+
+function makeFilterState(overrides: Record<string, unknown> = {}) {
+  return {
+    messages: [],
+    alertId: "alert-1",
+    alertTs: SESSION_START,
+    alertType: "red_alert" as const,
+    alertAreas: ["תל אביב"],
+    chatId: "-1001234567890",
+    messageId: 100,
+    isCaption: false,
+    currentText: "Red Alert",
+    extractedInsights: [],
+    filteredInsights: [],
+    synthesizedInsights: [],
+    votedResult: undefined,
+    clarifyAttempted: false,
+    previousInsights: [],
+    telegramMessages: [],
+    ...overrides,
+  };
+}
+
+describe("filterNode — backfill fallback", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetActiveSession.mockResolvedValue(null);
+    mockGetLastUpdateTs.mockResolvedValue(0);
+  });
+
+  it("triggers backfill when getChannelPosts returns empty", async () => {
+    // First call: empty. After backfill: has posts
+    mockGetChannelPosts
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        makePost({ channel: "@N12LIVE", text: "rockets launched", ts: SESSION_START + 100 }),
+      ]);
+    mockBackfill.mockResolvedValue(1);
+
+    const result = await filterNode(makeFilterState());
+    expect(mockBackfill).toHaveBeenCalledOnce();
+    expect(result.tracking).toBeDefined();
+    expect(result.tracking!.channelsWithUpdates).toHaveLength(1);
+  });
+
+  it("returns 'no posts found' when backfill also finds nothing", async () => {
+    mockGetChannelPosts.mockResolvedValue([]);
+    mockBackfill.mockResolvedValue(0);
+
+    const result = await filterNode(makeFilterState());
+    expect(mockBackfill).toHaveBeenCalledOnce();
+    expect(result.tracking).toBeUndefined();
+    expect(result.messages[0].content).toContain("no posts found");
+  });
+
+  it("skips backfill when posts already exist", async () => {
+    mockGetChannelPosts.mockResolvedValue([
+      makePost({ channel: "@N12LIVE", text: "intel", ts: SESSION_START + 100 }),
+    ]);
+
+    const result = await filterNode(makeFilterState());
+    expect(mockBackfill).not.toHaveBeenCalled();
+    expect(result.tracking!.channelsWithUpdates).toHaveLength(1);
   });
 });

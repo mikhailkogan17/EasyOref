@@ -61,6 +61,11 @@ vi.mock("@easyoref/monitoring", () => ({
   flush: vi.fn(),
 }));
 
+vi.mock("@easyoref/gramjs", () => ({
+  backfillChannelPosts: vi.fn().mockResolvedValue(0),
+  MONITORED_CHANNELS: [],
+}));
+
 vi.mock("@easyoref/shared", async () => {
   const actual = await vi.importActual("@easyoref/shared");
   return {
@@ -396,5 +401,50 @@ describe("pipeline dry-run (no posts)", () => {
       "pre-filter-node: no posts found",
       expect.objectContaining({ alertId: "test-dry-run-001" }),
     );
+  });
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Backfill fallback — delayed data
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+import { backfillChannelPosts } from "@easyoref/gramjs";
+
+describe("pipeline backfill fallback (delayed data)", () => {
+  it("triggers backfill when first getChannelPosts returns empty, then retries", async () => {
+    const NOW = Date.now();
+    const mockBackfill = vi.mocked(backfillChannelPosts);
+
+    // First call: no posts (event-based failed). Second call: posts available (after backfill)
+    const fakePosts = [
+      {
+        channel: "test_channel",
+        text: "Ракеты в сторону центра, подлёт 12 минут",
+        ts: NOW + 1000,
+        messageUrl: "https://t.me/test/123",
+      },
+    ];
+    vi.mocked(getChannelPosts)
+      .mockResolvedValueOnce([])    // first call: empty
+      .mockResolvedValueOnce(fakePosts); // second call: after backfill
+
+    mockBackfill.mockResolvedValueOnce(1); // simulate 1 post backfilled
+
+    const { filterNode } = await import("../src/nodes/pre-filter-node.js");
+    const result = await filterNode({
+      alertId: "test-backfill-001",
+      alertTs: NOW,
+      alertType: "red_alert",
+      messages: [],
+    } as any);
+
+    expect(mockBackfill).toHaveBeenCalledWith(NOW);
+    expect(logger.info).toHaveBeenCalledWith(
+      "pre-filter-node: fallback polling fetched posts",
+      expect.objectContaining({ alertId: "test-backfill-001", count: 1 }),
+    );
+    // Should have produced tracking with the channel
+    expect(result.tracking).toBeDefined();
+    expect(result.tracking!.channelsWithUpdates.length).toBeGreaterThan(0);
   });
 });

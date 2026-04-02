@@ -168,13 +168,13 @@ describe("postFilterNode", () => {
     expect(result.filteredInsights![0].rejectionReason).toBe("source_text_missing");
   });
 
-  it("marks insight invalid when LLM returns supported=false", async () => {
+  it("marks insight invalid when LLM returns supported=false (resolved phase)", async () => {
     mockInvokeWithFallback.mockResolvedValueOnce({
       structuredResponse: { supported: false, reason: "not in post", sourceTrust: 0.3 },
     });
 
     const insight = makeInsight({ sourceText: "Some post text" });
-    const state = makeBaseState({ extractedInsights: [insight] });
+    const state = makeBaseState({ extractedInsights: [insight], alertType: "resolved" });
 
     const result = await postFilterNode(state as any);
 
@@ -182,6 +182,40 @@ describe("postFilterNode", () => {
     expect(result.filteredInsights![0].isValid).toBe(false);
     expect(result.filteredInsights![0].rejectionReason).toBe("not in post");
     expect(result.filteredInsights![0].sourceTrust).toBe(0.3);
+  });
+
+  it("soft-passes insight during red_alert when LLM returns supported=false", async () => {
+    mockInvokeWithFallback.mockResolvedValueOnce({
+      structuredResponse: { supported: false, reason: "not in post", sourceTrust: 0.3 },
+    });
+
+    const insight = makeInsight({ sourceText: "Some post text" });
+    const state = makeBaseState({ extractedInsights: [insight], alertType: "red_alert" });
+
+    const result = await postFilterNode(state as any);
+
+    expect(result.filteredInsights).toHaveLength(1);
+    expect(result.filteredInsights![0].isValid).toBe(true);
+    expect(result.filteredInsights![0].rejectionReason).toBe("soft_pass_critical_phase");
+    expect(result.filteredInsights![0].sourceTrust).toBe(0.2);
+    // confidence preserved from original insight (0.8), fallback 0.3 only when undefined
+    expect(result.filteredInsights![0].confidence).toBe(0.8);
+  });
+
+  it("soft-passes insight during early_warning when LLM returns supported=false", async () => {
+    mockInvokeWithFallback.mockResolvedValueOnce({
+      structuredResponse: { supported: false, reason: "weak evidence", sourceTrust: 0.4 },
+    });
+
+    const insight = makeInsight({ sourceText: "Possible launch detected" });
+    const state = makeBaseState({ extractedInsights: [insight], alertType: "early_warning" });
+
+    const result = await postFilterNode(state as any);
+
+    expect(result.filteredInsights).toHaveLength(1);
+    expect(result.filteredInsights![0].isValid).toBe(true);
+    expect(result.filteredInsights![0].rejectionReason).toBe("soft_pass_critical_phase");
+    expect(result.filteredInsights![0].sourceTrust).toBe(0.2);
   });
 
   it("marks insight valid when LLM returns supported=true for non-location insight", async () => {
@@ -265,7 +299,7 @@ describe("postFilterNode", () => {
       makeInsight({ sourceText: "first post" }),
       makeInsight({ sourceText: "second post" }),
     ];
-    const state = makeBaseState({ extractedInsights: insights });
+    const state = makeBaseState({ extractedInsights: insights, alertType: "resolved" });
     const result = await postFilterNode(state as any);
 
     expect(result.filteredInsights).toHaveLength(2);
@@ -273,16 +307,29 @@ describe("postFilterNode", () => {
     expect(result.filteredInsights![1].isValid).toBe(false);
   });
 
-  it("handles null structuredResponse gracefully (LLM failure path)", async () => {
+  it("handles null structuredResponse gracefully during resolved phase (LLM failure path)", async () => {
     mockInvokeWithFallback.mockResolvedValueOnce({ structuredResponse: null });
 
     const insight = makeInsight({ sourceText: "some post" });
-    const state = makeBaseState({ extractedInsights: [insight] });
+    const state = makeBaseState({ extractedInsights: [insight], alertType: "resolved" });
 
     const result = await postFilterNode(state as any);
 
-    // null verification.supported → falsy → invalid
+    // null verification.supported → falsy → invalid (resolved = strict)
     expect(result.filteredInsights![0].isValid).toBe(false);
     expect(result.filteredInsights![0].rejectionReason).toBe("source_verification_failed");
+  });
+
+  it("soft-passes null structuredResponse during red_alert (LLM failure path)", async () => {
+    mockInvokeWithFallback.mockResolvedValueOnce({ structuredResponse: null });
+
+    const insight = makeInsight({ sourceText: "some post" });
+    const state = makeBaseState({ extractedInsights: [insight], alertType: "red_alert" });
+
+    const result = await postFilterNode(state as any);
+
+    // null verification.supported → falsy → but red_alert triggers soft pass
+    expect(result.filteredInsights![0].isValid).toBe(true);
+    expect(result.filteredInsights![0].rejectionReason).toBe("soft_pass_critical_phase");
   });
 });

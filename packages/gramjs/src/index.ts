@@ -39,9 +39,16 @@ type TelegramClientOpts = {
 
 let _client: TelegramClient | undefined = undefined;
 
+/**
+ * Channel ID → @username cache.
+ * Populated from getDialogs() at startup so handleNewMessage() can resolve
+ * channels from peerId.channelId without calling the expensive getChat() API.
+ */
+const _channelIdCache = new Map<string, string>();
+
 // ── Monitored channels (hardcoded) ────────────────────
 
-const MONITORED_CHANNELS = [
+export const MONITORED_CHANNELS = [
   // Original 5 channels
   "@newsflashhhj",
   "@yediotnews25",
@@ -160,14 +167,23 @@ export async function startMonitor(): Promise<void> {
       // Public channel username
       if (entity && "username" in entity && entity.username) {
         existingChannels.add(String(entity.username).toLowerCase());
+        // Populate channel ID cache: entity.id → @username
+        if ("id" in entity) {
+          _channelIdCache.set(String(entity.id), `@${entity.username}`);
+        }
       }
       // Private channel ID
       if (entity && "id" in entity) {
         existingPrivateIds.add(String(entity.id));
       }
     }
+    // Also cache private channels by their known IDs
+    for (const priv of PRIVATE_CHANNELS) {
+      _channelIdCache.set(priv.channelId, priv.title);
+    }
     logger.info("GramJS: fetched existing dialogs", {
       total: dialogs.length,
+      cachedChannelIds: _channelIdCache.size,
     });
   } catch (err) {
     logger.warn("GramJS: failed to fetch dialogs, will try joining anyway", {
@@ -262,33 +278,49 @@ async function handleNewMessage(event: NewMessageEvent): Promise<void> {
   let channelId = ""; // for private channels
   let isPrivate = false;
 
-  try {
-    const chat = await event.message.getChat();
+  // Step 1: Extract channelId from peerId (always available without API call)
+  if (msg.peerId && "channelId" in msg.peerId) {
+    channelId = String(msg.peerId.channelId);
+  }
 
-    // Try to extract channel ID from peerId (for private channels)
-    if (msg.peerId && "channelId" in msg.peerId) {
-      // channelId is stored as bigint, convert to string
-      const rawId = String(msg.peerId.channelId);
-      channelId = rawId;
-    }
+  // Step 2: Try channel ID cache first (avoids getChat() API call)
+  const cachedChannel = channelId ? _channelIdCache.get(channelId) : undefined;
+  if (cachedChannel) {
+    channel = cachedChannel;
+    // Check if it's a private channel
+    isPrivate = PRIVATE_CHANNELS.some((p) => p.channelId === channelId);
+  } else {
+    // Step 3: Fallback to getChat() for unknown channels
+    try {
+      const chat = await event.message.getChat();
 
-    // Check if it's a monitored private channel
-    const privateMatch = PRIVATE_CHANNELS.find(
-      (p) => p.channelId === channelId,
-    );
-    if (privateMatch) {
-      channel = privateMatch.title;
-      isPrivate = true;
-    } else if (chat && "username" in chat && chat.username) {
-      channel = `@${chat.username}`;
-    } else if (chat && "title" in chat && chat.title) {
-      channel = String(chat.title);
-    } else {
-      logger.debug("GramJS: skipped message (unidentifiable chat)");
-      return; // Not a channel we can identify
+      // Check if it's a monitored private channel
+      const privateMatch = PRIVATE_CHANNELS.find(
+        (p) => p.channelId === channelId,
+      );
+      if (privateMatch) {
+        channel = privateMatch.title;
+        isPrivate = true;
+        // Cache for next time
+        _channelIdCache.set(channelId, privateMatch.title);
+      } else if (chat && "username" in chat && chat.username) {
+        channel = `@${chat.username}`;
+        // Cache for next time
+        if (channelId) _channelIdCache.set(channelId, channel);
+      } else if (chat && "title" in chat && chat.title) {
+        channel = String(chat.title);
+      } else {
+        logger.debug("GramJS: skipped message (unidentifiable chat)");
+        return;
+      }
+    } catch (err) {
+      logger.warn("GramJS: getChat() failed — message dropped", {
+        channelId,
+        messageId: msg.id,
+        error: String(err),
+      });
+      return;
     }
-  } catch {
-    return;
   }
 
   // Only care about configured channels (public or private)
@@ -343,6 +375,58 @@ async function handleNewMessage(event: NewMessageEvent): Promise<void> {
     text_len: msg.text.length,
     private: isPrivate,
   });
+}
+
+// ── Backfill (active polling fallback) ─────────────────
+
+/**
+ * Active polling fallback: fetch recent posts from all monitored channels.
+ * Called by pre-filter-node when event-based collection yields 0 posts.
+ * Uses the existing fetchRecentChannelPosts() with 3 messages per channel.
+ *
+ * @param sessionStartTs — only store posts newer than session start
+ * @returns number of posts stored
+ */
+export async function backfillChannelPosts(
+  sessionStartTs: number,
+): Promise<number> {
+  const active = await getActiveAlert();
+  if (!active) return 0;
+
+  if (!_client?.connected) {
+    logger.warn("GramJS: backfill skipped — client not connected");
+    return 0;
+  }
+
+  let stored = 0;
+  for (const ch of MONITORED_CHANNELS) {
+    try {
+      const posts = await fetchRecentChannelPosts(ch, 3);
+      for (const post of posts) {
+        if (post.ts < sessionStartTs) continue;
+        await pushChannelPost(active.alertId, {
+          channel: ch,
+          text: post.text,
+          ts: post.ts,
+          messageUrl: post.messageUrl,
+        });
+        stored++;
+      }
+    } catch (err) {
+      logger.debug("GramJS: backfill failed for channel", {
+        channel: ch,
+        error: String(err),
+      });
+    }
+  }
+
+  if (stored > 0) {
+    logger.info("GramJS: backfill stored posts", {
+      count: stored,
+      alertId: active.alertId,
+    });
+  }
+  return stored;
 }
 
 export async function stopMonitor(): Promise<void> {
