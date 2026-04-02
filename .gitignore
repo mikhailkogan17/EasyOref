@@ -39,3 +39,6 @@ logs/
 # Backup files
 *.bak
 *.tsbuildinfo
+
+# Playwright MCP
+.playwright-mcp/
