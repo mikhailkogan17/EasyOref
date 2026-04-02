@@ -22,6 +22,7 @@ Israeli Home Front Command alerts — delivered to your loved ones' Telegram cha
 During a rocket attack, your loved ones abroad see "MISSILES HIT TEL AVIV" on news.
 
 They don't know:
+
 - Is it your neighborhood or 200 km away?
 - Are you safe?
 - Should they worry?
@@ -103,6 +104,7 @@ systemctl status easyoref
 > Guides: [RPi](docs/rpi.md) · [Local](docs/local.md)
 
 ### Update
+
 To update the deployed instance, run:
 
 ```bash
@@ -114,28 +116,45 @@ easyoref update
 EasyOref runs two layers:
 
 **Core layer** — always on, <1s latency
+
 - Polls Pikud HaOref API every 2 seconds
 - Filters alerts by city ID (Iron Dome zone-aware)
 - Delivers to Telegram instantly
 
 **Agentic enrichment layer** — LangGraph pipeline per alert
 
-```
-collectAndFilter → extract → vote → [clarify → revote] → editMessage
+```mermaid
+graph LR
+    A["Pre-Filter<br/>Deterministic<br/>Fetch posts, remove noise"] --> B["Extract<br/>LLM 2-Stage<br/>Cheap relevance + expensive structured"]
+    B --> C["Post-Filter<br/>Deterministic<br/>Validate extraction"]
+    C --> D["Vote<br/>Deterministic<br/>Consensus voting"]
+    D --> E{"Synthesize<br/>Router<br/>Check confidence"}
+    E -->|Low conf / suspicious| F["Clarify<br/>LLM + Tools<br/>ReAct tool calling"]
+    F --> G["Revote<br/>Deterministic<br/>Re-consensus"]
+    G --> E
+    E -->|High conf / disabled| H["Edit<br/>Deterministic<br/>Format & send"]
+    style A fill:#e1f5ff
+    style B fill:#fff3e0
+    style C fill:#f3e5f5
+    style D fill:#e8f5e9
+    style E fill:#fce4ec
+    style F fill:#fff9c4
+    style G fill:#e8f5e9
+    style H fill:#c8e6c9
 ```
 
-1. **collectAndFilter** — fetches channel posts, deterministic noise filter, channel tracking
-2. **extract** — two-stage LLM: cheap channel relevance pre-filter → expensive structured extraction (rocket count, intercepts, impact zone, country origin)
-3. **vote** — consensus across multiple extractions, confidence scoring
-4. **clarify** *(conditional)* — triggered on low confidence or suspicious single-source claims; LLM invokes tools to resolve:
-   - `read_telegram_sources` — live MTProto fetch from IDF/news channels
-   - `alert_history` — verifies claims against Pikud HaOref history API
-   - `resolve_area` — Iron Dome zone proximity check
-   - `betterstack_log` — queries enrichment pipeline logs
-5. **revote** — re-runs consensus with clarified data
-6. **editMessage** — in-place Telegram edit with citations
+| Node | Description |
+|------|-------------|
+| ![#e1f5ff](https://placehold.co/10x10/e1f5ff/e1f5ff.png) **Pre-Filter** | Fetches Telegram channel posts from Redis, removes noise (IDF press releases, area summaries) |
+| ![#fff3e0](https://placehold.co/10x10/fff3e0/fff3e0.png) **Extract** | Two-stage LLM: cheap model filters for relevance, expensive model extracts structured data (rocket count, intercepts, impact zone, origin) |
+| ![#f3e5f5](https://placehold.co/10x10/f3e5f5/f3e5f5.png) **Post-Filter** | Deterministic validation: time relevance check (alert time vs. post time), region overlap |
+| ![#e8f5e9](https://placehold.co/10x10/e8f5e9/e8f5e9.png) **Vote** | Aggregates extractions into consensus with confidence scoring |
+| ![#fce4ec](https://placehold.co/10x10/fce4ec/fce4ec.png) **Synthesize** | Routes: low confidence or suspicious single-source claims → Clarify; otherwise → Edit |
+| ![#fff9c4](https://placehold.co/10x10/fff9c4/fff9c4.png) **Clarify** | ReAct agent that calls tools (`read_telegram_sources`, `alert_history`, `resolve_area`, `betterstack_log`) to resolve contradictions |
+| ![#e8f5e9](https://placehold.co/10x10/e8f5e9/e8f5e9.png) **Revote** | Re-runs consensus with additional data from Clarify |
+| ![#c8e6c9](https://placehold.co/10x10/c8e6c9/c8e6c9.png) **Edit** | Formats the enriched message and updates the Telegram post in-place |
 
-LangGraph `MemorySaver` checkpoints state per `alertId`. Graceful degradation: `ai.enabled: false` → deterministic delivery only, zero LLM dependency.
+`MemorySaver` checkpoints state per `alertId`. `ai.enabled: false` disables enrichment entirely — core delivery continues with zero LLM dependency.
 
 ## Configuration
 
@@ -176,6 +195,7 @@ npm run release:major # Major: 1.21.0 → 2.0.0
 ```
 
 **What `npm run release` does:**
+
 1. Bumps all 6 package versions
 2. Creates git commit: `chore: bump to easyoref@X.Y.Z, ...`
 3. Creates git tag: `vX.Y.Z`
