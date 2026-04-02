@@ -123,21 +123,35 @@ describe("sendMetaReply", () => {
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
-  it("does nothing when rocket_count is missing", async () => {
+  it("sends when only eta_absolute is present (no rocket_count)", async () => {
     mockGetActiveSession.mockResolvedValue(makeSession());
     await sendMetaReply(
       "early_warning",
       makeInsights([{ key: "eta_absolute", value: "~14:30" }]),
       [defaultTarget],
     );
-    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockSendMessage).toHaveBeenCalledOnce();
+    const text = mockSendMessage.mock.calls[0][1] as string;
+    expect(text).toContain("Прилёт: ~14:30");
   });
 
-  it("does nothing when eta_absolute is missing", async () => {
+  it("sends when only rocket_count is present (no eta_absolute)", async () => {
     mockGetActiveSession.mockResolvedValue(makeSession());
     await sendMetaReply(
       "early_warning",
       makeInsights([{ key: "rocket_count", value: "10" }]),
+      [defaultTarget],
+    );
+    expect(mockSendMessage).toHaveBeenCalledOnce();
+    const text = mockSendMessage.mock.calls[0][1] as string;
+    expect(text).toContain("Ракет: 10");
+  });
+
+  it("does nothing when neither rocket_count nor eta_absolute is present (only origin)", async () => {
+    mockGetActiveSession.mockResolvedValue(makeSession());
+    await sendMetaReply(
+      "early_warning",
+      makeInsights([{ key: "origin", value: "Иран" }]),
       [defaultTarget],
     );
     expect(mockSendMessage).not.toHaveBeenCalled();

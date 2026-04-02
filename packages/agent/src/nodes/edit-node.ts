@@ -156,7 +156,7 @@ export const editTelegramMessage = async (
  * Sent strictly once per session thread (guarded by session.metaMessageSent).
  * Only fires when:
  *  - alertType === "early_warning"
- *  - synthesizedInsights has at least TWO of: origin, rocket_count, eta_absolute
+ *  - synthesizedInsights has at least rocket_count OR eta_absolute
  *  - session.metaMessageSent !== true
  */
 export const sendMetaReply = async (
@@ -174,9 +174,8 @@ export const sendMetaReply = async (
   const etaAbsolute = get("eta_absolute")?.value;
   const origin = get("origin")?.value;
 
-  // Need at least 2 of 3 key fields to send a useful meta reply
-  const fieldCount = [rocketCount, etaAbsolute, origin].filter(Boolean).length;
-  if (fieldCount < 2) return;
+  // Need at least rocket_count or eta_absolute to send a useful meta reply
+  if (!rocketCount && !etaAbsolute) return;
 
   const sess = await getActiveSession();
   if (!sess) return;
