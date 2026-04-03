@@ -71,10 +71,12 @@ const LAST_UPDATE = 1_001_000;
 
 describe("buildTracking", () => {
   it("returns empty channelsWithUpdates for empty posts", () => {
-    const result = buildTracking([], SESSION_START, LAST_UPDATE);
-    expect(result.channelsWithUpdates).toHaveLength(0);
-    expect(result.trackStartTimestamp).toBe(SESSION_START);
-    expect(result.lastUpdateTimestamp).toBe(LAST_UPDATE);
+    const { tracking, stats } = buildTracking([], SESSION_START, LAST_UPDATE);
+    expect(tracking.channelsWithUpdates).toHaveLength(0);
+    expect(tracking.trackStartTimestamp).toBe(SESSION_START);
+    expect(tracking.lastUpdateTimestamp).toBe(LAST_UPDATE);
+    expect(stats.totalPosts).toBe(0);
+    expect(stats.passedPosts).toBe(0);
   });
 
   it("filters posts before sessionStartTs", () => {
@@ -82,16 +84,17 @@ describe("buildTracking", () => {
       makePost({ channel: "@ch1", text: "old post", ts: SESSION_START - 1 }),
       makePost({ channel: "@ch1", text: "new post", ts: SESSION_START + 100 }),
     ];
-    const result = buildTracking(posts, SESSION_START, 0);
-    expect(result.channelsWithUpdates).toHaveLength(1);
-    expect(result.channelsWithUpdates[0].unprocessedMessages).toHaveLength(1);
-    expect(result.channelsWithUpdates[0].unprocessedMessages[0].text).toBe("new post");
+    const { tracking, stats } = buildTracking(posts, SESSION_START, 0);
+    expect(tracking.channelsWithUpdates).toHaveLength(1);
+    expect(tracking.channelsWithUpdates[0].unprocessedMessages).toHaveLength(1);
+    expect(tracking.channelsWithUpdates[0].unprocessedMessages[0].text).toBe("new post");
+    expect(stats.tooEarly).toBe(1);
   });
 
   it("posts at exactly sessionStartTs are included", () => {
     const posts = [makePost({ channel: "@ch1", text: "exact start", ts: SESSION_START })];
-    const result = buildTracking(posts, SESSION_START, 0);
-    expect(result.channelsWithUpdates).toHaveLength(1);
+    const { tracking } = buildTracking(posts, SESSION_START, 0);
+    expect(tracking.channelsWithUpdates).toHaveLength(1);
   });
 
   it("buckets posts into previous/latest by lastUpdateTs", () => {
@@ -99,8 +102,8 @@ describe("buildTracking", () => {
       makePost({ channel: "@ch1", text: "old", ts: LAST_UPDATE - 100 }),
       makePost({ channel: "@ch1", text: "new", ts: LAST_UPDATE + 100 }),
     ];
-    const result = buildTracking(posts, SESSION_START, LAST_UPDATE);
-    const ch = result.channelsWithUpdates[0];
+    const { tracking } = buildTracking(posts, SESSION_START, LAST_UPDATE);
+    const ch = tracking.channelsWithUpdates[0];
     expect(ch.processedMessages).toHaveLength(1);
     expect(ch.processedMessages[0].text).toBe("old");
     expect(ch.unprocessedMessages).toHaveLength(1);
@@ -111,9 +114,9 @@ describe("buildTracking", () => {
     const posts = [
       makePost({ channel: "@ch1", text: "old only", ts: LAST_UPDATE - 100 }),
     ];
-    const result = buildTracking(posts, SESSION_START, LAST_UPDATE);
+    const { tracking } = buildTracking(posts, SESSION_START, LAST_UPDATE);
     // No latest messages → channel excluded
-    expect(result.channelsWithUpdates).toHaveLength(0);
+    expect(tracking.channelsWithUpdates).toHaveLength(0);
   });
 
   it("deduplicates channels — multiple posts from same channel are grouped", () => {
@@ -122,9 +125,9 @@ describe("buildTracking", () => {
       makePost({ channel: "@ch1", text: "post B", ts: LAST_UPDATE + 20 }),
       makePost({ channel: "@ch1", text: "post C", ts: LAST_UPDATE + 30 }),
     ];
-    const result = buildTracking(posts, SESSION_START, LAST_UPDATE);
-    expect(result.channelsWithUpdates).toHaveLength(1);
-    expect(result.channelsWithUpdates[0].unprocessedMessages).toHaveLength(3);
+    const { tracking } = buildTracking(posts, SESSION_START, LAST_UPDATE);
+    expect(tracking.channelsWithUpdates).toHaveLength(1);
+    expect(tracking.channelsWithUpdates[0].unprocessedMessages).toHaveLength(3);
   });
 
   it("unprocessedMessages are sorted ascending by timestamp", () => {
@@ -133,8 +136,8 @@ describe("buildTracking", () => {
       makePost({ channel: "@ch1", text: "first", ts: LAST_UPDATE + 100 }),
       makePost({ channel: "@ch1", text: "second", ts: LAST_UPDATE + 200 }),
     ];
-    const result = buildTracking(posts, SESSION_START, LAST_UPDATE);
-    const msgs = result.channelsWithUpdates[0].unprocessedMessages;
+    const { tracking } = buildTracking(posts, SESSION_START, LAST_UPDATE);
+    const msgs = tracking.channelsWithUpdates[0].unprocessedMessages;
     expect(msgs[0].text).toBe("first");
     expect(msgs[1].text).toBe("second");
     expect(msgs[2].text).toBe("third");
@@ -144,8 +147,9 @@ describe("buildTracking", () => {
     const posts = [
       makePost({ channel: "@random", text: "see oref.org.il for details", ts: LAST_UPDATE + 10 }),
     ];
-    const result = buildTracking(posts, SESSION_START, LAST_UPDATE);
-    expect(result.channelsWithUpdates).toHaveLength(0);
+    const { tracking, stats } = buildTracking(posts, SESSION_START, LAST_UPDATE);
+    expect(tracking.channelsWithUpdates).toHaveLength(0);
+    expect(stats.rejectedByReason["oref_link"]).toBe(1);
   });
 
   it("filters pikud channels with long text (>300 chars) as noise", () => {
@@ -153,8 +157,9 @@ describe("buildTracking", () => {
     const posts = [
       makePost({ channel: "@pikudHaoref", text: longText, ts: LAST_UPDATE + 10 }),
     ];
-    const result = buildTracking(posts, SESSION_START, LAST_UPDATE);
-    expect(result.channelsWithUpdates).toHaveLength(0);
+    const { tracking, stats } = buildTracking(posts, SESSION_START, LAST_UPDATE);
+    expect(tracking.channelsWithUpdates).toHaveLength(0);
+    expect(stats.rejectedByReason["oref_channel_long"]).toBe(1);
   });
 
   it("allows pikud channels with short text", () => {
@@ -162,8 +167,8 @@ describe("buildTracking", () => {
     const posts = [
       makePost({ channel: "@pikudHaoref", text: shortText, ts: LAST_UPDATE + 10 }),
     ];
-    const result = buildTracking(posts, SESSION_START, LAST_UPDATE);
-    expect(result.channelsWithUpdates).toHaveLength(1);
+    const { tracking } = buildTracking(posts, SESSION_START, LAST_UPDATE);
+    expect(tracking.channelsWithUpdates).toHaveLength(1);
   });
 
   it("filters posts with 8+ commas as noise (area list)", () => {
@@ -171,24 +176,25 @@ describe("buildTracking", () => {
     const posts = [
       makePost({ channel: "@ch1", text: commaText, ts: LAST_UPDATE + 10 }),
     ];
-    const result = buildTracking(posts, SESSION_START, LAST_UPDATE);
-    expect(result.channelsWithUpdates).toHaveLength(0);
+    const { tracking, stats } = buildTracking(posts, SESSION_START, LAST_UPDATE);
+    expect(tracking.channelsWithUpdates).toHaveLength(0);
+    expect(stats.rejectedByReason["comma_list"]).toBe(1);
   });
 
   it("allows Russian news posts with 'минут' (flight time info)", () => {
     const posts = [
       makePost({ channel: "@Trueisrael", text: "Иран запустил ракеты, через 12 минут прилёт", ts: LAST_UPDATE + 10 }),
     ];
-    const result = buildTracking(posts, SESSION_START, LAST_UPDATE);
-    expect(result.channelsWithUpdates).toHaveLength(1);
+    const { tracking } = buildTracking(posts, SESSION_START, LAST_UPDATE);
+    expect(tracking.channelsWithUpdates).toHaveLength(1);
   });
 
   it("allows IDF channel with normal-length update (<= 400 chars)", () => {
     const posts = [
       makePost({ channel: "@idf_telegram", text: "צה\"ל מודיע על יירוט מוצלח של רוב הטילים באזור המרכז", ts: LAST_UPDATE + 10 }),
     ];
-    const result = buildTracking(posts, SESSION_START, LAST_UPDATE);
-    expect(result.channelsWithUpdates).toHaveLength(1);
+    const { tracking } = buildTracking(posts, SESSION_START, LAST_UPDATE);
+    expect(tracking.channelsWithUpdates).toHaveLength(1);
   });
 
   it("handles multiple channels independently", () => {
@@ -196,9 +202,9 @@ describe("buildTracking", () => {
       makePost({ channel: "@ch1", text: "intel from ch1", ts: LAST_UPDATE + 10 }),
       makePost({ channel: "@ch2", text: "intel from ch2", ts: LAST_UPDATE + 20 }),
     ];
-    const result = buildTracking(posts, SESSION_START, LAST_UPDATE);
-    expect(result.channelsWithUpdates).toHaveLength(2);
-    const channels = result.channelsWithUpdates.map((c) => c.channel);
+    const { tracking } = buildTracking(posts, SESSION_START, LAST_UPDATE);
+    expect(tracking.channelsWithUpdates).toHaveLength(2);
+    const channels = tracking.channelsWithUpdates.map((c) => c.channel);
     expect(channels).toContain("@ch1");
     expect(channels).toContain("@ch2");
   });
@@ -208,8 +214,8 @@ describe("buildTracking", () => {
       makePost({ channel: "@ch1", text: "post1", ts: SESSION_START + 100 }),
       makePost({ channel: "@ch1", text: "post2", ts: SESSION_START + 200 }),
     ];
-    const result = buildTracking(posts, SESSION_START, 0);
-    const ch = result.channelsWithUpdates[0];
+    const { tracking } = buildTracking(posts, SESSION_START, 0);
+    const ch = tracking.channelsWithUpdates[0];
     expect(ch.processedMessages).toHaveLength(0);
     expect(ch.unprocessedMessages).toHaveLength(2);
   });
@@ -244,6 +250,7 @@ function makeFilterState(overrides: Record<string, unknown> = {}) {
     messageId: 100,
     isCaption: false,
     currentText: "Red Alert",
+    tracking: undefined,
     extractedInsights: [],
     filteredInsights: [],
     synthesizedInsights: [],
@@ -284,7 +291,7 @@ describe("filterNode — backfill fallback", () => {
     const result = await filterNode(makeFilterState());
     expect(mockBackfill).toHaveBeenCalledOnce();
     expect(result.tracking).toBeUndefined();
-    expect(result.messages[0].content).toContain("no posts found");
+    expect(result.messages![0].content).toContain("no posts found");
   });
 
   it("skips backfill when posts already exist", async () => {
