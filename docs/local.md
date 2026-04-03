@@ -128,4 +128,4 @@ npm run release:minor   # Minor: 1.22.0 → 1.23.0
 npm run release:major   # Major: 1.22.0 → 2.0.0
 ```
 
-See [GEMINI.md](../GEMINI.md) for full workflow.
+See [AGENTS.md](../AGENTS.md) for full workflow.

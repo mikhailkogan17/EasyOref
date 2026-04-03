@@ -371,3 +371,110 @@ ai:
 ### Note
 
 RPi is running v1.27.1. Next `npm run release` + `easyoref update` will deploy v1.27.2+ with all code fixes.
+
+---
+
+## Enrichment Pipeline — Deep Dive
+
+### Graph Pipeline Flow
+
+```
+pre-filter → extract → post-filter → vote → synthesize → [shouldClarify?] → clarify/edit
+```
+
+### Phase Timing Constants
+
+| Phase | Initial Delay | Enrich Interval |
+|---|---|---|
+| `early_warning` | 120s | 60s |
+| `red_alert` | 15s | 45s |
+| `resolved` | 90s | 150s |
+
+### Watermark Mechanism (buildTracking)
+
+`buildTracking()` in `pre-filter-node.ts` partitions channel posts into `previous` (ts < lastUpdateTs) and `latest` (ts >= lastUpdateTs) buckets. After each enrichment run, `worker.ts` calls `setLastUpdateTs(Date.now())`.
+
+**v1.27.6 fix:** Channels with only `previous` posts are now re-surfaced for retry extraction. Previously they were excluded from `channelsWithUpdates` entirely, causing data loss when the first LLM call failed.
+
+### Noise Filter Rules (pre-filter-node.ts)
+
+| Rule | Condition | Reason |
+|---|---|---|
+| `oref_channel_long` | OREF_CHANNEL_RE + text > 300 chars | noise |
+| `oref_link` | oref.org.il link | noise |
+| `comma_list` | 8+ commas | noise (area lists) |
+| `time_pattern_list` | 2+ time patterns like (HH:MM) | noise |
+| `idf_channel_long` | IDF channel + text > 400 chars | noise |
+
+### Monitored Channels (17 total)
+
+`@newsflashhhj`, `@yediotnews25`, `@Trueisrael`, `@israelsecurity`, `@N12LIVE`, `@moriahdoron`, `@divuhim1234`, `@GLOBAL_Telegram_MOKED`, `@pkpoi`, `@lieldaphna`, `@News_cabinet_news`, `@yaronyanir1299`, `@ynetalerts`, `@idf_telegram`, `@israel_9`, `@stranacoil` + 1 private channel
+
+### GramJS Post Timestamps
+
+- **Event-based** (real-time): `ts: Date.now()` — when message received
+- **Backfill** (historical): `msg.date * 1000` — Telegram server timestamp
+- Watermark comparison uses `Date.now()` values
+
+### Carry-Forward (Cross-Phase Persistence)
+
+Voted insights are saved to Redis via `saveVotedInsights()` in synthesize-node. When a new phase starts (e.g., `red_alert` after `early_warning`), `runEnrichment()` in `graph.ts` loads previous insights as `previousInsights`. Vote-node merges them into the consensus. Extract-node deduplicates via `seenUrls` from `previousInsights` to prevent double-extraction.
+
+### LangSmith Integration
+
+- Project name: `easyoref` (single project for both HE and RU instances)
+- Traces include: phase, alertType, alertAreas, channelsWithUpdates, extraction results
+- Useful for post-mortem analysis of why enrichment failed on specific attacks
+
+---
+
+## Postmortem — April 1-3 2026 Attacks
+
+### Root Cause — Watermark Data Loss
+
+**The `buildTracking()` watermark mechanism was too aggressive:**
+
+1. **T=0**: Alert fires, session created, initial enrichment enqueued with delay
+2. **T=2min**: First enrichment runs. `lastUpdateTs=0` → all posts go to `latest` → LLM extracts (or fails). `setLastUpdateTs(Date.now())` after.
+3. **T=3min**: Second enrichment. Posts from before T=2min have `ts < lastUpdateTs` → `previous` only. If no NEW posts arrived → `channelsWithUpdates=[]` → **skip entirely**.
+4. This continues for the ENTIRE phase window.
+
+**If the first LLM call fails or returns `{}` (empty), ALL channel data is LOST FOREVER** — subsequent runs won't see those posts again because they're all watermarked as "previous" and channels with only "previous" posts were excluded from `channelsWithUpdates`.
+
+### Evidence from LangSmith
+
+- **April 1**: HE early_warning first run → `"no posts found"` (too early, channels hadn't posted yet). RU early_warning → found @N12LIVE posts but LLM returned `{}` (empty extraction). All subsequent runs for both instances had `channelsWithUpdates: []` → zero insights.
+- **April 3 16:11**: All RU traces show `"pre-filter-node: all posts filtered as noise"` with `previousInsights: []` — same pattern.
+- **April 3 03:12**: Only `@divuhim1234` and `@N12LIVE` contributed data; HE extracted `country_origins: Iran` and `eta: 2 minutes` but RU got nothing.
+
+### Fix (v1.27.6)
+
+Modified `buildTracking()` in `pre-filter-node.ts` to re-surface channels that have ONLY `previous` (already-watermarked) posts. Previously-seen posts are moved to `unprocessedMessages` so extract-node can retry extraction. URL dedup in extract-node (`seenUrls` from `previousInsights`) prevents double-extraction when carry-forward data exists.
+
+### Tests Updated
+
+- Changed test "channel with only old posts (no new) is excluded" → "channel with only old posts is re-surfaced for retry extraction"
+- **206 tests** across 11 test files — all passing (v1.27.6)
+
+---
+
+## Version History (Recent)
+
+| Version | Date | Changes |
+|---|---|---|
+| v1.27.6 | 2026-04-04 | fix: re-surface watermarked posts for retry extraction |
+| v1.27.5 | 2026-04-03 | feat: add @stranacoil channel + noise filter rejection tracking |
+| v1.27.4 | 2026-04-02 | fix: 5 critical bugs from April 2 attack postmortem |
+| v1.27.1 | 2026-04-02 | RPi verification baseline |
+
+### RPi Current State (2026-04-04)
+
+| Item | Value |
+|---|---|
+| **Version** | `easyoref@1.27.6` (npm global) |
+| **Services** | `easyoref-ru_tlv-south.service` active |
+| | `easyoref-he_tlv-south.service` active |
+| **Redis** | Docker container, `redis://localhost:6379` |
+| **Node** | v20.19.1 |
+| **RAM** | 3.8GB |
+| **Crontab** | `0 4 */3 * * sudo reboot` (every 3 days, services auto-restart) |

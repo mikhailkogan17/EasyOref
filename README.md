@@ -204,7 +204,7 @@ npm run release:major # Major: 1.21.0 → 2.0.0
 6. Publishes to npm
 7. Triggers RPi update (if reachable)
 
-See [GEMINI.md](GEMINI.md) for full deployment architecture.
+See [AGENTS.md](AGENTS.md) for full deployment architecture.
 
 ## License
 
