@@ -112,10 +112,21 @@ export function buildTracking(
   const channelsWithUpdates: NewsChannelWithUpdatesType[] = [];
   for (const [channel, { previous, latest }] of map) {
     if (latest.length > 0) {
+      // Channel has new (unprocessed) posts — normal case
       channelsWithUpdates.push({
         channel,
         processedMessages: previous.sort((a, b) => a.timestamp - b.timestamp),
         unprocessedMessages: latest.sort((a, b) => a.timestamp - b.timestamp),
+      });
+    } else if (previous.length > 0) {
+      // Channel has ONLY previously-seen posts — re-surface them so the
+      // extract-node can retry extraction (the URL-dedup in extract-node will
+      // skip posts already covered by previousInsights, so this is safe).
+      // Without this, a failed first extraction loses all channel data forever.
+      channelsWithUpdates.push({
+        channel,
+        processedMessages: [],
+        unprocessedMessages: previous.sort((a, b) => a.timestamp - b.timestamp),
       });
     }
   }

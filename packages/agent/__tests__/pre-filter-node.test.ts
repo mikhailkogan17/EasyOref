@@ -110,13 +110,17 @@ describe("buildTracking", () => {
     expect(ch.unprocessedMessages[0].text).toBe("new");
   });
 
-  it("channel with only old posts (no new) is excluded", () => {
+  it("channel with only old posts is re-surfaced for retry extraction", () => {
     const posts = [
       makePost({ channel: "@ch1", text: "old only", ts: LAST_UPDATE - 100 }),
     ];
     const { tracking } = buildTracking(posts, SESSION_START, LAST_UPDATE);
-    // No latest messages → channel excluded
-    expect(tracking.channelsWithUpdates).toHaveLength(0);
+    // Previously-seen posts are re-surfaced as unprocessed so extract-node
+    // can retry (URL dedup in extract-node prevents double-extraction)
+    expect(tracking.channelsWithUpdates).toHaveLength(1);
+    expect(tracking.channelsWithUpdates[0].processedMessages).toHaveLength(0);
+    expect(tracking.channelsWithUpdates[0].unprocessedMessages).toHaveLength(1);
+    expect(tracking.channelsWithUpdates[0].unprocessedMessages[0].text).toBe("old only");
   });
 
   it("deduplicates channels — multiple posts from same channel are grouped", () => {
