@@ -41,7 +41,7 @@ const SynthesisOutput = z.object({
         key: z
           .string()
           .describe(
-            "Enrichment field key: origin, eta_absolute, rocket_count, is_cluster_munition, intercepted, hits, casualties, earlyWarningTime",
+            "Enrichment field key: origin, eta_absolute, rocket_count, is_cluster_munition, intercepted, hits, casualties, no_casualties, earlyWarningTime",
           ),
         value: z
           .string()
@@ -148,6 +148,11 @@ Rules:
 - intercepted: use qualitative words in target language ("большинство", "most", "רוב", "معظم")
 - casualties: only populate if alertType is "resolved" and confidence >= 0.95.
     Apply the same insightLocation remark rule as hits.
+- no_casualties: only populate if alertType is "resolved" AND the casualities consensus explicitly has count=0 AND source texts explicitly mention casualties status.
+    Output exactly "none" if sources CONFIRM no casualties (e.g. "пострадавших нет", "no injuries", "אין פצועים").
+    Output exactly "unreported" if sources say not yet received / not confirmed yet (e.g. "MADA: no reports at this stage", "на данном этапе не поступало", "לא דווח על נפגעים").
+    Determine which to output by reading source texts in the casualities consensus.
+    Confidence threshold: 0.65. If alertType is not "resolved" or source texts don't explicitly mention casualties status, OMIT this field.
 - earlyWarningTime: only if alertType is "early_warning", use the alertTime value
 
 CRITICAL — anti-neuroslop rules (NEVER violate):
@@ -235,6 +240,7 @@ function fieldKeyToKind(key: string): string {
     intercepted: "impact",
     hits: "impact",
     casualties: "casualities",
+    no_casualties: "casualities",
     earlyWarningTime: "eta",
   };
   return map[key] ?? key;

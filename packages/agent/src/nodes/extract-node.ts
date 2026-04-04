@@ -34,7 +34,7 @@ KINDS YOU CAN EXTRACT:
 3. impact — interceptions/hits. kind: {kind:"impact", value:{interceptionsCount:{type:"most"}, seaFallsCount:{type:"few"}}}
 4. eta — estimated arrival. Use {kind:"minutes", minutes:N} OR {kind:"exact_time", exactTime:"HH:MM:SS"} when the post states a clock time (e.g. 14:55). Extract ETA in the SAME pass as other facts from that post — never skip ETA because you already extracted country_origins.
 5. cluser_munition_used — cluster / cassette munition (Hebrew מצרר, קסד"ת, רסס וכו'). kind: {kind:"cluser_munition_used", value:true}
-6. casualities — casualties. kind: {kind:"casualities", value:[{count:2, level:"death", cause:"rocket"}]}
+6. casualities — casualties OR explicit "no casualties" report. kind: {kind:"casualities", value:[{count:2, level:"death", cause:"rocket"}]}. When a source explicitly states "no casualties" / "no injuries" / "MADA: no reports of injured" → extract {kind:"casualities", value:[{count:0, cause:"rocket"}]}. Only extract count=0 when the source EXPLICITLY says so; do not assume.
 
 FOR EACH INSIGHT also set:
 - timeRelevance: 1.0 if about THIS attack, 0.2 if generic news, 0 if old

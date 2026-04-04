@@ -42,6 +42,7 @@ export const extractModel = new ChatOpenRouter({
   apiKey: config.agent.apiKey,
   model: config.agent.extractModel,
   temperature: 0,
+  maxTokens: 4096,
 });
 
 /** Fallback extraction model (free auto-router) */
@@ -49,6 +50,7 @@ export const extractFallback = new ChatOpenRouter({
   apiKey: config.agent.apiKey,
   model: config.agent.extractFallbackModel,
   temperature: 0,
+  maxTokens: 4096,
 });
 
 /** Model for yes/no geography checks (resolve_area LLM-fallback). Pinned to avoid random auto-routing. */

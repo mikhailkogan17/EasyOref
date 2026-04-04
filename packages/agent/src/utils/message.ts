@@ -231,6 +231,17 @@ export function buildEnrichedMessage(
     );
   }
 
+  // ── No casualties (resolved only) ──
+  const noCasualtiesInsight = get("no_casualties");
+  if (noCasualtiesInsight?.value && alertType === "resolved") {
+    const valueLabel =
+      noCasualtiesInsight.value === "none"
+        ? lp.metaNoVictimsNone
+        : lp.metaNoVictimsUnreported;
+    const cites = formatCitations(noCasualtiesInsight.sourceUrls);
+    enrichLines.push(`<b>${lp.metaCasualties}:</b> ${valueLabel}${cites}`);
+  }
+
   // ── Append enrichment ──
   if (enrichLines.length > 0) {
     if (alertType === "early_warning") {

@@ -39,6 +39,8 @@ export interface I18nLabels {
   metaIntercepted: string; // "Перехваты" / "Intercepted" / "יירוטים" / "اعتراضات"
   metaHits: string; // "Попадания" / "Hits" / "פגיעות" / "إصابات"
   metaCasualties: string; // "Погибшие" / "Casualties" / "נפגעים" / "إصابات بشرية"
+  metaNoVictimsNone: string; // "нет" / "none" / "אין" / "لا"
+  metaNoVictimsUnreported: string; // "не сообщается" / "not reported" / "לא דווח" / "لم يُفد"
 }
 
 export interface LanguagePack {
@@ -82,6 +84,8 @@ const ruPack: LanguagePack = {
     metaIntercepted: "Перехваты",
     metaHits: "Попадания",
     metaCasualties: "Погибшие",
+    metaNoVictimsNone: "нет",
+    metaNoVictimsUnreported: "не сообщается",
   },
 };
 
@@ -117,6 +121,8 @@ const enPack: LanguagePack = {
     metaIntercepted: "Intercepted",
     metaHits: "Hits",
     metaCasualties: "Casualties",
+    metaNoVictimsNone: "none",
+    metaNoVictimsUnreported: "not reported",
   },
 };
 
@@ -152,6 +158,8 @@ const hePack: LanguagePack = {
     metaIntercepted: "יירוטים",
     metaHits: "פגיעות",
     metaCasualties: "נפגעים",
+    metaNoVictimsNone: "אין",
+    metaNoVictimsUnreported: "לא דווח",
   },
 };
 
@@ -187,6 +195,8 @@ const arPack: LanguagePack = {
     metaIntercepted: "اعتراضات",
     metaHits: "إصابات",
     metaCasualties: "إصابات بشرية",
+    metaNoVictimsNone: "لا",
+    metaNoVictimsUnreported: "لم يُفد",
   },
 };
 
