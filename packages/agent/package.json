@@ -1,6 +1,6 @@
 {
   "name": "@easyoref/agent",
-  "version": "1.27.6",
+  "version": "1.27.7",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
