@@ -1,6 +1,6 @@
 {
   "name": "easyoref",
-  "version": "1.27.7",
+  "version": "1.27.8",
   "description": "Real-time Israeli civil defense alerts → Telegram, filtered by your location",
   "type": "module",
   "bin": {
