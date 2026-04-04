@@ -63,12 +63,12 @@ vi.mock("@easyoref/monitoring", () => ({
 
 // ── Imports (after mocks) ──────────────────────────────────
 
+import { voteNode } from "../src/nodes/vote-node.js";
+import { describeContradictions } from "../src/utils/contradictions.js";
 import {
   buildEnrichedMessage,
   insertBeforeBlockEnd,
 } from "../src/utils/message.js";
-import { describeContradictions } from "../src/utils/contradictions.js";
-import { voteNode } from "../src/nodes/vote-node.js";
 
 // ─────────────────────────────────────────────────────────
 // Helpers
@@ -182,7 +182,8 @@ describe("getClarifyNeed", () => {
 
 describe("insertBeforeBlockEnd", () => {
   it("inserts before </blockquote> tag", () => {
-    const text = "<blockquote>Line1\n<b>Время оповещения:</b> 18:00\n</blockquote>";
+    const text =
+      "<blockquote>Line1\n<b>Время оповещения:</b> 18:00\n</blockquote>";
     const result = insertBeforeBlockEnd(text, "NEW LINE");
     expect(result.indexOf("NEW LINE")).toBeLessThan(
       result.indexOf("</blockquote>"),
@@ -228,45 +229,90 @@ describe("buildEnrichedMessage", () => {
 
   it("inserts origin as enrichment line", () => {
     const insights = makeInsights([{ key: "origin", value: "Иран" }]);
-    const result = buildEnrichedMessage(baseText, "early_warning", alertTs, insights);
+    const result = buildEnrichedMessage(
+      baseText,
+      "early_warning",
+      alertTs,
+      insights,
+    );
     expect(result).toContain("<b>Откуда:</b> Иран");
   });
 
   it("inserts rocket count line", () => {
     const insights = makeInsights([{ key: "rocket_count", value: "~10–15" }]);
-    const result = buildEnrichedMessage(baseText, "red_alert", alertTs, insights);
+    const result = buildEnrichedMessage(
+      baseText,
+      "red_alert",
+      alertTs,
+      insights,
+    );
     expect(result).toContain("<b>Ракет:</b> ~10–15");
   });
 
-  it("inserts rocket count with cassette", () => {
+  it("inserts rocket count with cluster munition", () => {
     const insights = makeInsights([
       { key: "rocket_count", value: "~10" },
-      { key: "is_cassette", value: "true" },
+      { key: "is_cluster_munition", value: "true" },
     ]);
-    const result = buildEnrichedMessage(baseText, "red_alert", alertTs, insights);
+    const result = buildEnrichedMessage(
+      baseText,
+      "red_alert",
+      alertTs,
+      insights,
+    );
     expect(result).toContain("кассетные");
   });
 
   it("inserts intercepted for red_alert but NOT for early_warning", () => {
     const insights = makeInsights([{ key: "intercepted", value: "8" }]);
-    const siren = buildEnrichedMessage(baseText, "red_alert", alertTs, insights);
-    const early = buildEnrichedMessage(baseText, "early_warning", alertTs, insights);
+    const siren = buildEnrichedMessage(
+      baseText,
+      "red_alert",
+      alertTs,
+      insights,
+    );
+    const early = buildEnrichedMessage(
+      baseText,
+      "early_warning",
+      alertTs,
+      insights,
+    );
     expect(siren).toContain("<b>Перехваты:</b> 8");
     expect(early).not.toContain("Перехваты:");
   });
 
   it("inserts hits for red_alert but NOT for early_warning", () => {
     const insights = makeInsights([{ key: "hits", value: "Рамат-Ган" }]);
-    const siren = buildEnrichedMessage(baseText, "red_alert", alertTs, insights);
-    const early = buildEnrichedMessage(baseText, "early_warning", alertTs, insights);
+    const siren = buildEnrichedMessage(
+      baseText,
+      "red_alert",
+      alertTs,
+      insights,
+    );
+    const early = buildEnrichedMessage(
+      baseText,
+      "early_warning",
+      alertTs,
+      insights,
+    );
     expect(siren).toContain("<b>Попадания:</b> Рамат-Ган");
     expect(early).not.toContain("Попадания:");
   });
 
   it("inserts casualties for resolved only", () => {
     const insights = makeInsights([{ key: "casualties", value: "2 погибших" }]);
-    const resolved = buildEnrichedMessage(baseText, "resolved", alertTs, insights);
-    const siren = buildEnrichedMessage(baseText, "red_alert", alertTs, insights);
+    const resolved = buildEnrichedMessage(
+      baseText,
+      "resolved",
+      alertTs,
+      insights,
+    );
+    const siren = buildEnrichedMessage(
+      baseText,
+      "red_alert",
+      alertTs,
+      insights,
+    );
     expect(resolved).toContain("<b>Погибшие:</b> 2 погибших");
     expect(siren).not.toContain("Погибшие:");
   });
@@ -274,7 +320,12 @@ describe("buildEnrichedMessage", () => {
   it("adds ETA as enrichment line in early_warning", () => {
     const text = "Header\nРайон: Тель-Авив";
     const insights = makeInsights([{ key: "eta_absolute", value: "~18:07" }]);
-    const result = buildEnrichedMessage(text, "early_warning", alertTs, insights);
+    const result = buildEnrichedMessage(
+      text,
+      "early_warning",
+      alertTs,
+      insights,
+    );
     expect(result).toContain("<b>Прилёт:</b> ~18:07");
   });
 
@@ -311,7 +362,10 @@ describe("describeContradictions", () => {
   it("reports wide rocket count range", () => {
     const insights: ValidatedInsightType[] = [
       makeInsight({ kind: "rocket_count", value: { type: "exact", value: 5 } }),
-      makeInsight({ kind: "rocket_count", value: { type: "exact", value: 15 } }),
+      makeInsight({
+        kind: "rocket_count",
+        value: { type: "exact", value: 15 },
+      }),
     ];
     const result = describeContradictions(insights);
     expect(result).toMatch(/5.{1,5}15/);
@@ -330,7 +384,10 @@ describe("describeContradictions", () => {
 
   it("always includes total valid insights count", () => {
     const insights: ValidatedInsightType[] = [
-      makeInsight({ kind: "rocket_count", value: { type: "exact", value: 10 } }),
+      makeInsight({
+        kind: "rocket_count",
+        value: { type: "exact", value: 10 },
+      }),
     ];
     const result = describeContradictions(insights);
     expect(result).toContain("Total valid insights: 1");
@@ -369,11 +426,16 @@ describe("voteNode", () => {
 
   it("produces consensus for single valid insight", async () => {
     const state = makeState([
-      makeInsight({ kind: "rocket_count", value: { type: "exact", value: 10 } }),
+      makeInsight({
+        kind: "rocket_count",
+        value: { type: "exact", value: 10 },
+      }),
     ]);
     const result = await voteNode(state as any);
     expect(result.votedResult!.consensus["rocket_count"]).toBeDefined();
-    expect(result.votedResult!.consensus["rocket_count"]!.kind.kind).toBe("rocket_count");
+    expect(result.votedResult!.consensus["rocket_count"]!.kind.kind).toBe(
+      "rocket_count",
+    );
   });
 
   it("picks highest-confidence option when values differ", async () => {
@@ -395,7 +457,10 @@ describe("voteNode", () => {
   it("drops notAUserZone impact insight", async () => {
     const state = makeState([
       makeInsight(
-        { kind: "impact", value: { interceptionsCount: { type: "exact", value: 5 } } },
+        {
+          kind: "impact",
+          value: { interceptionsCount: { type: "exact", value: 5 } },
+        },
         { insightLocation: "not_a_user_zone" },
       ),
     ]);
@@ -406,23 +471,34 @@ describe("voteNode", () => {
   it("keeps exactUserZone impact insight", async () => {
     const state = makeState([
       makeInsight(
-        { kind: "impact", value: { interceptionsCount: { type: "exact", value: 5 } } },
+        {
+          kind: "impact",
+          value: { interceptionsCount: { type: "exact", value: 5 } },
+        },
         { insightLocation: "exact_user_zone" },
       ),
     ]);
     const result = await voteNode(state as any);
     expect(result.votedResult!.consensus["impact"]).toBeDefined();
-    expect(result.votedResult!.consensus["impact"]!.insightLocation).toBe("exact_user_zone");
+    expect(result.votedResult!.consensus["impact"]!.insightLocation).toBe(
+      "exact_user_zone",
+    );
   });
 
   it("exactUserZone wins over userMacroRegion in merging", async () => {
     const state = makeState([
       makeInsight(
-        { kind: "impact", value: { interceptionsCount: { type: "exact", value: 5 } } },
+        {
+          kind: "impact",
+          value: { interceptionsCount: { type: "exact", value: 5 } },
+        },
         { insightLocation: "user_macro_region", confidence: 0.9 },
       ),
       makeInsight(
-        { kind: "impact", value: { interceptionsCount: { type: "exact", value: 5 } } },
+        {
+          kind: "impact",
+          value: { interceptionsCount: { type: "exact", value: 5 } },
+        },
         { insightLocation: "exact_user_zone", confidence: 0.8 },
       ),
     ]);
@@ -468,7 +544,7 @@ describe("voteNode", () => {
       {
         confidence: 0.85,
         sourceTrust: 0.8,
-        source: makeSource("@kann_news"),  // Hebrew channel
+        source: makeSource("@kann_news"), // Hebrew channel
       },
     );
     const russianInsight = makeInsight(
@@ -476,7 +552,7 @@ describe("voteNode", () => {
       {
         confidence: 0.85,
         sourceTrust: 0.8,
-        source: makeSource("@rian_ru"),  // Russian channel
+        source: makeSource("@rian_ru"), // Russian channel
       },
     );
 

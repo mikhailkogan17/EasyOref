@@ -26,7 +26,11 @@ import {
 } from "langchain";
 import { z } from "zod";
 import type { AgentStateType } from "../graph.js";
-import { invokeWithFallback, preFilterFallback, preFilterModel } from "../models.js";
+import {
+  invokeWithFallback,
+  preFilterFallback,
+  preFilterModel,
+} from "../models.js";
 
 // ── Output schema ──────────────────────────────────────────
 
@@ -37,9 +41,13 @@ const SynthesisOutput = z.object({
         key: z
           .string()
           .describe(
-            "Enrichment field key: origin, eta_absolute, rocket_count, is_cassette, intercepted, hits, casualties, earlyWarningTime",
+            "Enrichment field key: origin, eta_absolute, rocket_count, is_cluster_munition, intercepted, hits, casualties, earlyWarningTime",
           ),
-        value: z.string().describe("Localized display-ready value"),
+        value: z
+          .string()
+          .describe(
+            "Localized display-ready value; for is_cluster_munition use exactly the string true or false (English), not translated words",
+          ),
       }),
     )
     .describe("Synthesized enrichment fields"),
@@ -128,7 +136,8 @@ Each insight may have an "insightLocation" field with one of:
 
 Rules:
 - origin: list countries separated by " + ", translated to target language
-- eta_absolute: absolute clock time (e.g. "~14:23") only if alertType is early_warning or red_alert
+- eta_absolute: absolute clock time (e.g. "~14:23") when alertType is early_warning or red_alert AND consensus includes an "eta" kind. Convert minutes-from-now using alertTime as reference if needed. You MUST output eta_absolute whenever "eta" is present in consensus for those phases — do not omit it in a later reasoning step.
+- is_cluster_munition: when consensus includes cluser_munition_used with value true, you MUST output this field with value exactly "true" (ASCII). When consensus has cluser_munition_used false or absent, omit the field. Never drop is_cluster_munition on a subsequent pass if consensus still has cluster munition — keep output stable.
 - rocket_count: concise string, add " (?)" suffix if confidence < 0.75
 - hits:
     insightLocation="exact_user_zone" → plain: "Юг — 3 попадания"
@@ -145,7 +154,7 @@ CRITICAL — anti-neuroslop rules (NEVER violate):
 - NEVER output a field where the value is "0", "Неизвестно", "Unknown", "לא ידוע", "غير معروف", "N/A", "нет данных", "?", or any placeholder
 - NEVER output rocket_count of "0" — if no rockets are confirmed, OMIT the field entirely
 - NEVER invent or hallucinate city names, numbers, or details not present in the consensus data
-- NEVER use alertTime as eta_absolute — they are DIFFERENT concepts. eta_absolute must come ONLY from an "eta" kind in consensus. If no "eta" kind exists, do NOT output eta_absolute
+- NEVER substitute raw alertTime for eta_absolute without converting the consensus "eta" value (minutes or exact_time) into a wall-clock ETA string. If no "eta" kind exists in consensus, do NOT invent eta_absolute
 - If a consensus value is empty, null, or has no meaningful data → OMIT the field, do NOT include it
 - Output ONLY fields that have a MATCHING consensus kind — if there is no consensus entry for a field, you MUST NOT output it
 - When in doubt, omit`,
@@ -167,17 +176,19 @@ CRITICAL — anti-neuroslop rules (NEVER violate):
     .filter((f: { key: string; value: string }) => {
       const expectedKind = fieldKeyToKind(f.key);
       if (!consensusKinds.has(expectedKind)) {
-        logger.warn("synthesize-node: rejecting hallucinated field — no consensus backing", {
-          key: f.key,
-          expectedKind,
-          availableKinds: [...consensusKinds],
-        });
+        logger.warn(
+          "synthesize-node: rejecting hallucinated field — no consensus backing",
+          {
+            key: f.key,
+            expectedKind,
+            availableKinds: [...consensusKinds],
+          },
+        );
         return false;
       }
       return true;
     })
-    .map(
-    (f: { key: string; value: string }) => {
+    .map((f: { key: string; value: string }) => {
       // Find the matching consensus insight for confidence + sourceUrls
       const matchingKind = Object.entries(votedResult.consensus).find(
         ([kind]) => kind === fieldKeyToKind(f.key),
@@ -220,7 +231,7 @@ function fieldKeyToKind(key: string): string {
     origin: "country_origins",
     eta_absolute: "eta",
     rocket_count: "rocket_count",
-    is_cassette: "cluser_munition_used",
+    is_cluster_munition: "cluser_munition_used",
     intercepted: "impact",
     hits: "impact",
     casualties: "casualities",

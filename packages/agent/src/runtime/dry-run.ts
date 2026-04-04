@@ -34,7 +34,7 @@ const MOCK_EXTRACTIONS = [
     tone: "calm" as const,
     countryOrigin: "Iran",
     rocketCount: 6,
-    isCassette: false,
+    isClusterMunition: false,
     hitsConfirmed: undefined,
     hit_detail: undefined,
     etaRefinedMinutes: 8,
@@ -49,7 +49,7 @@ const MOCK_EXTRACTIONS = [
     tone: "neutral" as const,
     countryOrigin: "Lebanon",
     rocketCount: 7,
-    isCassette: true,
+    isClusterMunition: true,
     hitsConfirmed: undefined,
     hit_detail: undefined,
     etaRefinedMinutes: 9,
@@ -64,7 +64,7 @@ const MOCK_EXTRACTIONS = [
     tone: "calm" as const,
     countryOrigin: "Iran",
     rocketCount: 5,
-    isCassette: undefined,
+    isClusterMunition: undefined,
     hitsConfirmed: 2,
     hit_detail: "на открытой местности",
     etaRefinedMinutes: undefined,
@@ -139,11 +139,11 @@ function vote(extractions: typeof MOCK_EXTRACTIONS) {
     rocketVals.length > 0 ? Math.max(...rocketVals) : undefined;
   const rocket_citations = rocketSrcs.map((e) => e.idx);
 
-  // Cassette: majority
+  // Cluster munition: majority
   const cassVals = indexed
-    .filter((e) => e.isCassette !== undefined)
-    .map((e) => e.isCassette as boolean);
-  const isCassette =
+    .filter((e) => e.isClusterMunition !== undefined)
+    .map((e) => e.isClusterMunition as boolean);
+  const isClusterMunition =
     cassVals.length > 0
       ? cassVals.filter(Boolean).length > cassVals.length / 2
       : undefined;
@@ -174,7 +174,7 @@ function vote(extractions: typeof MOCK_EXTRACTIONS) {
     countryOrigins,
     rocketCountMin,
     rocketCountMax,
-    isCassette,
+    isClusterMunition,
     rocket_citations,
     hitsConfirmed,
     hits_citations,
@@ -254,8 +254,11 @@ function buildEnrichedMessage(
       r.rocketCountMin === r.rocketCountMax
         ? `${r.rocketCountMin}`
         : `~${r.rocketCountMin}-${r.rocketCountMax}`;
-    const cassette = r.isCassette ? " (кассет.)" : "";
-    text = insertBeforeBlockEnd(text, `<b>Ракет:</b> ${countStr}${cassette}`);
+    const clusterMunition = r.isClusterMunition ? " (кассет.)" : "";
+    text = insertBeforeBlockEnd(
+      text,
+      `<b>Ракет:</b> ${countStr}${clusterMunition}`,
+    );
   }
 
   if (r.hitsConfirmed !== undefined && r.hitsConfirmed > 0) {

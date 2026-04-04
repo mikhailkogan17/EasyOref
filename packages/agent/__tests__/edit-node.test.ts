@@ -5,8 +5,8 @@
  * All Telegram API calls are mocked. No network, no LLM.
  */
 
-import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { SynthesizedInsightType } from "@easyoref/shared";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Mocks ──────────────────────────────────────────────────
 
@@ -59,8 +59,15 @@ vi.mock("@easyoref/monitoring", () => ({
 
 // ── Imports (after mocks) ──────────────────────────────────
 
-import { sendMetaReply, editTelegramMessage, editNode } from "../src/nodes/edit-node.js";
-import type { TelegramTargetMessage, EditMessageInput } from "../src/nodes/edit-node.js";
+import type {
+  EditMessageInput,
+  TelegramTargetMessage,
+} from "../src/nodes/edit-node.js";
+import {
+  editNode,
+  editTelegramMessage,
+  sendMetaReply,
+} from "../src/nodes/edit-node.js";
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -171,7 +178,9 @@ describe("sendMetaReply", () => {
   });
 
   it("does nothing when metaMessageSent is already true", async () => {
-    mockGetActiveSession.mockResolvedValue(makeSession({ metaMessageSent: true }));
+    mockGetActiveSession.mockResolvedValue(
+      makeSession({ metaMessageSent: true }),
+    );
     await sendMetaReply(
       "early_warning",
       makeInsights([
@@ -233,14 +242,14 @@ describe("sendMetaReply", () => {
     expect(text).toContain("Ракет: 5");
   });
 
-  it("appends cassette suffix when is_cassette=true", async () => {
+  it("appends cluster munition suffix when is_cluster_munition=true", async () => {
     mockGetActiveSession.mockResolvedValue(makeSession());
     await sendMetaReply(
       "early_warning",
       makeInsights([
         { key: "rocket_count", value: "20" },
         { key: "eta_absolute", value: "~14:45" },
-        { key: "is_cassette", value: "true" },
+        { key: "is_cluster_munition", value: "true" },
       ]),
       [defaultTarget],
     );
@@ -248,7 +257,7 @@ describe("sendMetaReply", () => {
     expect(text).toContain(", кассетные");
   });
 
-  it("does NOT append cassette suffix when is_cassette is absent", async () => {
+  it("does NOT append cluster munition suffix when is_cluster_munition is absent", async () => {
     mockGetActiveSession.mockResolvedValue(makeSession());
     await sendMetaReply(
       "early_warning",
@@ -316,7 +325,7 @@ describe("sendMetaReply", () => {
     (config as any).language = original;
 
     const text = mockSendMessage.mock.calls[0][1] as string;
-    expect(text).toContain("טילים");       // Hebrew "rockets"
+    expect(text).toContain("טילים"); // Hebrew "rockets"
     expect(text).toContain("פגיעה משוערת"); // Hebrew "expected impact"
   });
 });

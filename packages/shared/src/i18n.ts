@@ -32,13 +32,13 @@ export interface I18nLabels {
   earlyEta: string;
   redAlertEta: string;
   monitoring: string;
-  metaRockets: string;      // label before rocket count, e.g. "Ракет"
-  metaArrival: string;      // label before ETA, e.g. "Прилёт"
-  metaCassette: string;     // suffix for cassette munitions, e.g. ", кассетные"
-  metaOrigin: string;       // "Откуда" / "Origin" / "מקור" / "المصدر"
-  metaIntercepted: string;  // "Перехваты" / "Intercepted" / "יירוטים" / "اعتراضات"
-  metaHits: string;         // "Попадания" / "Hits" / "פגיעות" / "إصابات"
-  metaCasualties: string;   // "Погибшие" / "Casualties" / "נפגעים" / "إصابات بشرية"
+  metaRockets: string; // label before rocket count, e.g. "Ракет"
+  metaArrival: string; // label before ETA, e.g. "Прилёт"
+  metaClusterMunition: string; // suffix for cluster munitions, e.g. ", кассетные"
+  metaOrigin: string; // "Откуда" / "Origin" / "מקור" / "المصدر"
+  metaIntercepted: string; // "Перехваты" / "Intercepted" / "יירוטים" / "اعتراضات"
+  metaHits: string; // "Попадания" / "Hits" / "פגיעות" / "إصابات"
+  metaCasualties: string; // "Погибшие" / "Casualties" / "נפגעים" / "إصابات بشرية"
 }
 
 export interface LanguagePack {
@@ -77,7 +77,7 @@ const ruPack: LanguagePack = {
       '<tg-emoji emoji-id="5258052328455424397">⏳</tg-emoji> Сообщение обновляется...',
     metaRockets: "Ракет",
     metaArrival: "Прилёт",
-    metaCassette: ", кассетные",
+    metaClusterMunition: ", кассетные",
     metaOrigin: "Откуда",
     metaIntercepted: "Перехваты",
     metaHits: "Попадания",
@@ -112,7 +112,7 @@ const enPack: LanguagePack = {
       '<tg-emoji emoji-id="5258052328455424397">⏳</tg-emoji> Message updating...',
     metaRockets: "Rockets",
     metaArrival: "Arrival",
-    metaCassette: ", cluster",
+    metaClusterMunition: ", cluster",
     metaOrigin: "Origin",
     metaIntercepted: "Intercepted",
     metaHits: "Hits",
@@ -147,7 +147,7 @@ const hePack: LanguagePack = {
       '<tg-emoji emoji-id="5258052328455424397">⏳</tg-emoji> ההודעה מתעדכנת...',
     metaRockets: "טילים",
     metaArrival: "פגיעה משוערת",
-    metaCassette: "מצרר",
+    metaClusterMunition: "מצרר",
     metaOrigin: "מקור",
     metaIntercepted: "יירוטים",
     metaHits: "פגיעות",
@@ -182,7 +182,7 @@ const arPack: LanguagePack = {
       '<tg-emoji emoji-id="5258052328455424397">⏳</tg-emoji> الرسالة قيد التحديث...',
     metaRockets: "صواريخ",
     metaArrival: "الوصول المتوقع",
-    metaCassette: "عنقودي",
+    metaClusterMunition: "عنقودي",
     metaOrigin: "المصدر",
     metaIntercepted: "اعتراضات",
     metaHits: "إصابات",

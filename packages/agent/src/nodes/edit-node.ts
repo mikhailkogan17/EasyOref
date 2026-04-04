@@ -9,16 +9,20 @@
  */
 
 import * as logger from "@easyoref/monitoring";
-import type { AlertType, SynthesizedInsightType, VotedResultType } from "@easyoref/shared";
+import type {
+  AlertType,
+  SynthesizedInsightType,
+  VotedResultType,
+} from "@easyoref/shared";
 import {
   config,
   getActiveSession,
+  getLanguagePack,
   setActiveSession,
   textHash,
-  getLanguagePack,
 } from "@easyoref/shared";
-import { AIMessage } from "langchain";
 import { Bot } from "grammy";
+import { AIMessage } from "langchain";
 import type { AgentStateType } from "../graph.js";
 import {
   buildEnrichedMessage,
@@ -27,10 +31,7 @@ import {
 } from "../utils/message.js";
 
 // Re-exports for backwards-compat
-export {
-  insertBeforeBlockEnd,
-  buildEnrichedMessage,
-};
+export { buildEnrichedMessage, insertBeforeBlockEnd };
 
 /** @deprecated Use insertBeforeBlockEnd */
 export const insertBeforeTimeLine = insertBeforeBlockEnd;
@@ -128,6 +129,7 @@ export const editTelegramMessage = async (
       } else {
         await tgBot.api.editMessageText(t.chatId, t.messageId, newText, {
           parse_mode: "HTML",
+          link_preview_options: { is_disabled: true },
         });
       }
     } catch (err) {
@@ -166,8 +168,7 @@ export const sendMetaReply = async (
   if (alertType !== "early_warning") return;
   if (!config.botToken) return;
 
-  const get = (key: string) =>
-    synthesizedInsights.find((i) => i.key === key);
+  const get = (key: string) => synthesizedInsights.find((i) => i.key === key);
 
   const rocketCount = get("rocket_count")?.value;
   const etaAbsolute = get("eta_absolute")?.value;
@@ -183,17 +184,21 @@ export const sendMetaReply = async (
   const langPack = getLanguagePack(config.language);
   const labels = langPack.labels;
 
-  const isCassette = get("is_cassette")?.value === "true";
+  const isClusterMunition = get("is_cluster_munition")?.value === "true";
 
   // Build text lines dynamically — only include fields that exist
   const lines: string[] = [];
 
   if (rocketCount) {
     const originPart = origin ? ` (${origin})` : "";
-    const cassettePart = isCassette ? labels.metaCassette : "";
+    const clusterMunitionPart = isClusterMunition
+      ? labels.metaClusterMunition
+      : "";
     const rocketInsight = get("rocket_count")!;
     const cites = formatCitations(rocketInsight.sourceUrls);
-    lines.push(`${labels.metaRockets}${originPart}: ${rocketCount}${cassettePart}${cites}`);
+    lines.push(
+      `${labels.metaRockets}${originPart}: ${rocketCount}${clusterMunitionPart}${cites}`,
+    );
   } else if (origin) {
     const originInsight = get("origin")!;
     const cites = formatCitations(originInsight.sourceUrls);
@@ -219,6 +224,7 @@ export const sendMetaReply = async (
         allow_sending_without_reply: true,
         disable_notification: true,
         parse_mode: "HTML",
+        link_preview_options: { is_disabled: true },
       };
       await tgBot.api.sendMessage(t.chatId, text, sendOpts);
     } catch (err) {
@@ -260,7 +266,11 @@ export const editNode = async (
   }
 
   const targets = state.telegramMessages ?? [
-    { chatId: state.chatId, messageId: state.messageId, isCaption: state.isCaption },
+    {
+      chatId: state.chatId,
+      messageId: state.messageId,
+      isCaption: state.isCaption,
+    },
   ];
   await sendMetaReply(state.alertType, synthesized, targets);
 
@@ -270,7 +280,8 @@ export const editNode = async (
         JSON.stringify({
           node: "edit",
           synthesizedKeys: synthesized.map((i) => i.key),
-          targets: (state.telegramMessages ?? [{ chatId: state.chatId }]).length,
+          targets: (state.telegramMessages ?? [{ chatId: state.chatId }])
+            .length,
         }),
       ),
     ],

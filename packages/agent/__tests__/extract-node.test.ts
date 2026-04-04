@@ -140,9 +140,11 @@ describe("getPhaseRule", () => {
     expect(rule).toContain("Do NOT extract");
   });
 
-  it("returns red_alert rule focusing on origins/count/impact", () => {
+  it("returns red_alert rule including eta, cluster munition, and impact", () => {
     const rule = getPhaseRule("red_alert");
     expect(rule).toContain("country_origins");
+    expect(rule).toContain("eta");
+    expect(rule).toContain("cluser_munition_used");
     expect(rule).toContain("impact");
     expect(rule).toContain("Do NOT extract casualities");
   });

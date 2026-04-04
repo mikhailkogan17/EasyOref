@@ -6,7 +6,11 @@
  * formatCitations — builds inline source links [CHANNEL]... for enrichment fields.
  */
 
-import type { AlertType, Language, SynthesizedInsightType } from "@easyoref/shared";
+import type {
+  AlertType,
+  Language,
+  SynthesizedInsightType,
+} from "@easyoref/shared";
 import { config, getLanguagePack } from "@easyoref/shared";
 
 // ── Positional insertion ───────────────────────────────
@@ -43,7 +47,9 @@ export interface CitationMap {
   nextIndex: number;
 }
 
-export function buildCitationMap(insights: SynthesizedInsightType[]): CitationMap {
+export function buildCitationMap(
+  insights: SynthesizedInsightType[],
+): CitationMap {
   const urlToIndex = new Map<string, number>();
   let nextIndex = 1;
   for (const insight of insights) {
@@ -136,7 +142,7 @@ export function isNeuroslop(value: string | undefined): boolean {
  *     appended after the base text
  *
  * Keys used from SynthesizedInsight[]:
- *   eta_absolute, origin, rocket_count, is_cassette,
+ *   eta_absolute, origin, rocket_count, is_cluster_munition,
  *   intercepted, hits, casualties
  */
 export function buildEnrichedMessage(
@@ -160,7 +166,11 @@ export function buildEnrichedMessage(
 
   // ── ETA (not resolved) ──
   const etaInsight = get("eta_absolute");
-  if (etaInsight?.value && !isNeuroslop(etaInsight.value) && alertType !== "resolved") {
+  if (
+    etaInsight?.value &&
+    !isNeuroslop(etaInsight.value) &&
+    alertType !== "resolved"
+  ) {
     const cites = formatCitations(etaInsight.sourceUrls);
     enrichLines.push(`<b>${lp.metaArrival}:</b> ${etaInsight.value}${cites}`);
   }
@@ -175,30 +185,50 @@ export function buildEnrichedMessage(
   // ── Rocket count ──
   const rocketInsight = get("rocket_count");
   if (rocketInsight?.value && !isNeuroslop(rocketInsight.value)) {
-    const cassette = get("is_cassette")?.value ? lp.metaCassette : "";
+    const isClusterMunition = get("is_cluster_munition")?.value
+      ? lp.metaClusterMunition
+      : "";
     const cites = formatCitations(rocketInsight.sourceUrls);
-    enrichLines.push(`<b>${lp.metaRockets}:</b> ${rocketInsight.value}${cassette}${cites}`);
+    enrichLines.push(
+      `<b>${lp.metaRockets}:</b> ${rocketInsight.value}${isClusterMunition}${cites}`,
+    );
   }
 
   // ── Intercepted (not early_warning) ──
   const interceptedInsight = get("intercepted");
-  if (interceptedInsight?.value && !isNeuroslop(interceptedInsight.value) && alertType !== "early_warning") {
+  if (
+    interceptedInsight?.value &&
+    !isNeuroslop(interceptedInsight.value) &&
+    alertType !== "early_warning"
+  ) {
     const cites = formatCitations(interceptedInsight.sourceUrls);
-    enrichLines.push(`<b>${lp.metaIntercepted}:</b> ${interceptedInsight.value}${cites}`);
+    enrichLines.push(
+      `<b>${lp.metaIntercepted}:</b> ${interceptedInsight.value}${cites}`,
+    );
   }
 
   // ── Hits (not early_warning) ──
   const hitsInsight = get("hits");
-  if (hitsInsight?.value && !isNeuroslop(hitsInsight.value) && alertType !== "early_warning") {
+  if (
+    hitsInsight?.value &&
+    !isNeuroslop(hitsInsight.value) &&
+    alertType !== "early_warning"
+  ) {
     const cites = formatCitations(hitsInsight.sourceUrls);
     enrichLines.push(`<b>${lp.metaHits}:</b> ${hitsInsight.value}${cites}`);
   }
 
   // ── Casualties (resolved only) ──
   const casualtiesInsight = get("casualties");
-  if (casualtiesInsight?.value && !isNeuroslop(casualtiesInsight.value) && alertType === "resolved") {
+  if (
+    casualtiesInsight?.value &&
+    !isNeuroslop(casualtiesInsight.value) &&
+    alertType === "resolved"
+  ) {
     const cites = formatCitations(casualtiesInsight.sourceUrls);
-    enrichLines.push(`<b>${lp.metaCasualties}:</b> ${casualtiesInsight.value}${cites}`);
+    enrichLines.push(
+      `<b>${lp.metaCasualties}:</b> ${casualtiesInsight.value}${cites}`,
+    );
   }
 
   // ── Append enrichment ──

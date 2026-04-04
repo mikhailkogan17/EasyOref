@@ -11,15 +11,14 @@
 
 import * as logger from "@easyoref/monitoring";
 import { Insight, type NewsChannelWithUpdatesType } from "@easyoref/shared";
-import {
-  AIMessage,
-  BaseMessage,
-  HumanMessage,
-  SystemMessage,
-} from "langchain";
+import { AIMessage, BaseMessage, HumanMessage, SystemMessage } from "langchain";
 import z from "zod";
 import type { AgentStateType } from "../graph.js";
-import { extractFallback, extractModel, invokeWithFallback } from "../models.js";
+import {
+  extractFallback,
+  extractModel,
+  invokeWithFallback,
+} from "../models.js";
 
 // --- Agent options (reused for primary + fallback) ---
 
@@ -33,8 +32,8 @@ KINDS YOU CAN EXTRACT:
 1. country_origins — where rockets were launched FROM. kind: {kind:"country_origins", value:["Iran"]} or ["Lebanon","Syria"]
 2. rocket_count — how many rockets. kind: {kind:"rocket_count", value:{type:"exact",value:30}} or {type:"more_than",value:20}
 3. impact — interceptions/hits. kind: {kind:"impact", value:{interceptionsCount:{type:"most"}, seaFallsCount:{type:"few"}}}
-4. eta — estimated arrival. kind: {kind:"eta", value:{kind:"minutes", minutes:12}}
-5. cluser_munition_used — cluster munition. kind: {kind:"cluser_munition_used", value:true}
+4. eta — estimated arrival. Use {kind:"minutes", minutes:N} OR {kind:"exact_time", exactTime:"HH:MM:SS"} when the post states a clock time (e.g. 14:55). Extract ETA in the SAME pass as other facts from that post — never skip ETA because you already extracted country_origins.
+5. cluser_munition_used — cluster / cassette munition (Hebrew מצרר, קסד"ת, רסס וכו'). kind: {kind:"cluser_munition_used", value:true}
 6. casualities — casualties. kind: {kind:"casualities", value:[{count:2, level:"death", cause:"rocket"}]}
 
 FOR EACH INSIGHT also set:
@@ -46,6 +45,9 @@ FOR EACH INSIGHT also set:
 
 RULES:
 - Extract ONLY facts explicitly stated in the text. Never guess.
+- ALWAYS extract ETA if any time reference (minutes until impact, or clock time HH:MM) appears. ETA is critical; missing it when the text states a time is a failure.
+- CRITICAL — מצרר vs Egypt: Hebrew "מצרר" (cluster munition) is NOT "מצרים" (Egypt). Do NOT output country_origins "Egypt" / "מצרים" unless the text clearly names Egypt as the launch origin. If the text has מצרר, prefer cluser_munition_used: true instead.
+- If the text states both an origin country and a time, output separate insights for each (do not drop one).
 - If a post says "about 30 rockets" → rocket_count {type:"exact",value:30}
 - If a post says "most intercepted" → impact {interceptionsCount:{type:"most"}}
 - One insight per fact. Multiple facts from one post = multiple insights.
@@ -60,7 +62,7 @@ export function getPhaseRule(alertType: string): string {
     case "early_warning":
       return "Focus on country_origins, eta, rocket_count, cluser_munition_used. Do NOT extract impact, hits, or casualities in this early phase.";
     case "red_alert":
-      return "Focus on country_origins, rocket_count, impact (interceptions, sea falls, open area falls). Do NOT extract casualities or detailed hits yet.";
+      return "Focus on country_origins, eta, rocket_count, cluser_munition_used, impact (interceptions, sea falls, open area falls). Do NOT extract casualities or detailed hits yet.";
     case "resolved":
       return "Extract ALL insight kinds: country_origins, rocket_count, impact (interceptions, hits, sea/open area falls), cluser_munition_used, casualities. Prioritize reports with exact numbers or locations.";
     default:
@@ -99,7 +101,9 @@ export const extractChannelNode = async (
   if (!channel) {
     logger.warn("extract-channel: no channelToExtract in state — skipping");
     return {
-      messages: [new AIMessage("extract-channel: no channelToExtract in state")],
+      messages: [
+        new AIMessage("extract-channel: no channelToExtract in state"),
+      ],
     };
   }
 
@@ -114,9 +118,14 @@ export const extractChannelNode = async (
     const { insights } = await extractFromChannel(channel, phaseSpecificRule);
 
     if (insights.length > 0) {
-      logger.info(`extract-channel: ${channel.channel} → ${insights.length} insight(s)`, {
-        kinds: insights.map((i: { kind?: { kind?: string } }) => i.kind?.kind),
-      });
+      logger.info(
+        `extract-channel: ${channel.channel} → ${insights.length} insight(s)`,
+        {
+          kinds: insights.map(
+            (i: { kind?: { kind?: string } }) => i.kind?.kind,
+          ),
+        },
+      );
     } else {
       logger.info(`extract-channel: ${channel.channel} → 0 insights`);
     }
@@ -134,7 +143,9 @@ export const extractChannelNode = async (
     // Return empty — one channel failure doesn't kill the pipeline
     return {
       messages: [
-        new AIMessage(`extract-channel: ${channel.channel} failed: ${String(err)}`),
+        new AIMessage(
+          `extract-channel: ${channel.channel} failed: ${String(err)}`,
+        ),
       ],
     };
   }

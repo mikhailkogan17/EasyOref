@@ -397,6 +397,7 @@ async function sendTelegram(
     try {
       const msg = await bot.api.sendMessage(chatId, text, {
         parse_mode: "HTML",
+        link_preview_options: { is_disabled: true },
         ...replyOpts,
       });
       logger.info("Alert sent via Telegram (text)", {
@@ -438,6 +439,7 @@ async function sendTelegram(
     try {
       const msg = await bot.api.sendMessage(chatId, text, {
         parse_mode: "HTML",
+        link_preview_options: { is_disabled: true },
         ...replyOpts,
       });
       logger.info("Alert sent via Telegram (text fallback)", {
