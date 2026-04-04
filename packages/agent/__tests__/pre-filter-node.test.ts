@@ -115,8 +115,8 @@ describe("buildTracking", () => {
       makePost({ channel: "@ch1", text: "old only", ts: LAST_UPDATE - 100 }),
     ];
     const { tracking } = buildTracking(posts, SESSION_START, LAST_UPDATE);
-    // Previously-seen posts are re-surfaced as unprocessed so extract-node
-    // can retry (URL dedup in extract-node prevents double-extraction)
+    // Previously-seen posts are re-surfaced as unprocessed so extract-channel
+    // can retry (URL dedup in fanOutExtract prevents double-extraction)
     expect(tracking.channelsWithUpdates).toHaveLength(1);
     expect(tracking.channelsWithUpdates[0].processedMessages).toHaveLength(0);
     expect(tracking.channelsWithUpdates[0].unprocessedMessages).toHaveLength(1);
@@ -255,6 +255,7 @@ function makeFilterState(overrides: Record<string, unknown> = {}) {
     isCaption: false,
     currentText: "Red Alert",
     tracking: undefined,
+    channelToExtract: undefined,
     extractedInsights: [],
     filteredInsights: [],
     synthesizedInsights: [],

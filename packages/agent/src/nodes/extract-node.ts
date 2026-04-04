@@ -1,12 +1,16 @@
 /**
- * Extract Node — LLM extraction from relevant channels.
+ * Extract Node — single-channel LLM extraction.
  *
- * Skips channels whose sourceUrl already appears in state.previousInsights
- * to avoid re-extracting data from the same source across phases.
+ * v1.27.7: Refactored to use LangGraph Send() API for graph-level parallelism.
+ * Each channel is extracted by a separate `extractChannelNode` invocation,
+ * fanned out via `fanOutExtract` conditional edge in graph.ts.
+ *
+ * This node reads `state.channelToExtract` (a single NewsChannelWithUpdates)
+ * and returns extracted insights for that one channel.
  */
 
 import * as logger from "@easyoref/monitoring";
-import { Insight } from "@easyoref/shared";
+import { Insight, type NewsChannelWithUpdatesType } from "@easyoref/shared";
 import {
   AIMessage,
   BaseMessage,
@@ -19,7 +23,7 @@ import { extractFallback, extractModel, invokeWithFallback } from "../models.js"
 
 // --- Agent options (reused for primary + fallback) ---
 
-const extractionAgentOpts = {
+export const extractionAgentOpts = {
   model: extractModel,
   responseFormat: z.array(Insight),
   systemPrompt: `You extract structured military intel from Telegram messages about a missile/rocket attack on Israel.
@@ -49,99 +53,89 @@ RULES:
 `,
 };
 
-// --- Node ---
+// --- Phase-specific extraction rules ---
 
-export const extractNode = async (
-  state: AgentStateType,
-): Promise<Partial<AgentStateType>> => {
-  if (!state.tracking || state.tracking.channelsWithUpdates.length === 0) {
-    logger.info("extract-node: no updates to extract", {
-      hasTracking: !!state.tracking,
-    });
-    return {
-      messages: [new AIMessage("extract-node: no updates to extract")],
-    };
-  }
-
-  // Collect URLs already covered by previousInsights to avoid re-extraction
-  const seenUrls = new Set<string>(
-    (state.previousInsights ?? []).flatMap((vi) =>
-      (vi.sources ?? []).map((s) => s.sourceUrl ?? "").filter(Boolean),
-    ),
-  );
-
-  // Filter out channels where all messages are already extracted
-  const channelsToProcess = state.tracking.channelsWithUpdates.filter(
-    (ch) =>
-      ch.unprocessedMessages.some(
-        (m) => !m.sourceUrl || !seenUrls.has(m.sourceUrl),
-      ),
-  );
-
-  if (channelsToProcess.length === 0) {
-    logger.info("extract-node: all channels already covered by previousInsights", {
-      seenUrls: seenUrls.size,
-      totalChannels: state.tracking.channelsWithUpdates.length,
-    });
-    return {
-      messages: [
-        new AIMessage(
-          "extract-node: all channels already covered by previousInsights",
-        ),
-      ],
-    };
-  }
-
-  let phaseSpecificRule: string;
-  switch (state.alertType) {
+export function getPhaseRule(alertType: string): string {
+  switch (alertType) {
     case "early_warning":
-      phaseSpecificRule =
-        "Focus on country_origin, eta_refined_minutes, rocket_count, is_cassette. NOT: intercepted, hits, casualties.";
-      break;
+      return "Focus on country_origins, eta, rocket_count, cluser_munition_used. Do NOT extract impact, hits, or casualities in this early phase.";
     case "red_alert":
-      phaseSpecificRule =
-        "Focus on country_origin, rocket_count, intercepted, sea_impact, open_area_impact. NOT: hits, casualties.";
-      break;
+      return "Focus on country_origins, rocket_count, impact (interceptions, sea falls, open area falls). Do NOT extract casualities or detailed hits yet.";
     case "resolved":
-      phaseSpecificRule = "Prioritize reports with exact numbers or locations.";
-      break;
+      return "Extract ALL insight kinds: country_origins, rocket_count, impact (interceptions, hits, sea/open area falls), cluser_munition_used, casualities. Prioritize reports with exact numbers or locations.";
     default:
-      phaseSpecificRule = "Extract all relevant information about the attack.";
-      break;
+      return "Extract all relevant information about the attack.";
   }
+}
 
-  logger.info("extract-node: sending to LLM", {
-    channelsToProcess: channelsToProcess.length,
-    channelPreviews: channelsToProcess.map((ch) => ({
-      channel: ch.channel,
-      msgCount: ch.unprocessedMessages.length,
-      firstMsgPreview: ch.unprocessedMessages[0]?.text?.slice(0, 120) ?? "",
-    })),
-  });
+// --- Per-channel extraction helper ---
 
+export async function extractFromChannel(
+  channel: NewsChannelWithUpdatesType,
+  phaseSpecificRule: string,
+): Promise<{ channel: string; insights: z.infer<typeof Insight>[] }> {
   const messages: BaseMessage[] = [];
   messages.push(new SystemMessage(phaseSpecificRule));
-  messages.push(
-    new HumanMessage(JSON.stringify(channelsToProcess)),
-  );
+  messages.push(new HumanMessage(JSON.stringify(channel)));
 
   const result = await invokeWithFallback({
     agentOpts: extractionAgentOpts,
     fallbackModel: extractFallback,
     input: { messages },
-    label: "extract-node",
-  });
-  const extracted = result.structuredResponse ?? [];
-  messages.push(new AIMessage(JSON.stringify(extracted)));
-
-  logger.info("extract-node: extraction done", {
-    channelsProcessed: channelsToProcess.length,
-    insightsExtracted: extracted.length,
-    insightKinds: extracted.map((i: { kind?: { kind?: string } }) => i.kind?.kind),
+    label: `extract-node:${channel.channel}`,
   });
 
-  return {
-    messages,
-    extractedInsights: extracted,
-  };
+  const insights = result.structuredResponse ?? [];
+  return { channel: channel.channel, insights };
+}
+
+// --- Single-channel extraction node (invoked via Send() fan-out) ---
+
+export const extractChannelNode = async (
+  state: AgentStateType,
+): Promise<Partial<AgentStateType>> => {
+  const channel = state.channelToExtract;
+
+  if (!channel) {
+    logger.warn("extract-channel: no channelToExtract in state — skipping");
+    return {
+      messages: [new AIMessage("extract-channel: no channelToExtract in state")],
+    };
+  }
+
+  const phaseSpecificRule = getPhaseRule(state.alertType);
+
+  logger.info(`extract-channel: extracting from ${channel.channel}`, {
+    msgCount: channel.unprocessedMessages.length,
+    firstMsgPreview: channel.unprocessedMessages[0]?.text?.slice(0, 120) ?? "",
+  });
+
+  try {
+    const { insights } = await extractFromChannel(channel, phaseSpecificRule);
+
+    if (insights.length > 0) {
+      logger.info(`extract-channel: ${channel.channel} → ${insights.length} insight(s)`, {
+        kinds: insights.map((i: { kind?: { kind?: string } }) => i.kind?.kind),
+      });
+    } else {
+      logger.info(`extract-channel: ${channel.channel} → 0 insights`);
+    }
+
+    return {
+      messages: [new AIMessage(JSON.stringify(insights))],
+      extractedInsights: insights,
+    };
+  } catch (err) {
+    logger.error(`extract-channel: ${channel.channel} failed`, {
+      error: String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+
+    // Return empty — one channel failure doesn't kill the pipeline
+    return {
+      messages: [
+        new AIMessage(`extract-channel: ${channel.channel} failed: ${String(err)}`),
+      ],
+    };
+  }
 };

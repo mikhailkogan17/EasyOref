@@ -1,23 +1,23 @@
 /**
  * LangGraph.js enrichment pipeline — phase-aware, time-validated.
  *
- * ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌──────────---──┐
- * │ filter  │───▶│ extract │───▶│  vote   │───▶│ shouldClarify │
- * └─────────┘    └─────────┘    └─────────┘    └──────┬───---──┘
- *                                                     │
- *                                      ┌──────────────┴──────────────┐
- *                                      │                             │
- *                                 [low conf]                    [high conf]
- *                                      │                             │
- *                                      ▼                             ▼
- *                               ┌────────────┐                  ┌─────────┐
- *                               │  clarify   │                  │   edit  │
- *                               └──────┬─────┘                  └─────────┘
- *                                      │                             ▲
- *                                      ▼                             │
- *                               ┌────────────┐                       │
- *                               │   revote   │───────────────────────┘
- *                               └────────────┘
+ * ┌─────────┐    ┌───────────────────────────────┐    ┌─────────┐    ┌───────────────┐
+ * │ filter  │───▶│ fanOutExtract (conditional)    │───▶│  vote   │───▶│ shouldClarify │
+ * └─────────┘    │  ├─ extract-channel ×1         │    └─────────┘    └──────┬────────┘
+ *                │  ├─ extract-channel ×2         │                          │
+ *                │  └─ extract-channel ×N (Send)  │          ┌───────────────┴──────────┐
+ *                └──────────────┬──────────────────┘          │                          │
+ *                               │                        [low conf]                 [high conf]
+ *                               ▼                             │                          │
+ *                         ┌─────────────┐                     ▼                          ▼
+ *                         │ post-filter │              ┌────────────┐               ┌─────────┐
+ *                         └─────────────┘              │  clarify   │               │   edit  │
+ *                                                      └──────┬─────┘               └─────────┘
+ *                                                             │                          ▲
+ *                                                             ▼                          │
+ *                                                      ┌────────────┐                    │
+ *                                                      │   revote   │────────────────────┘
+ *                                                      └────────────┘
  *
  * ── Node responsibilities ──────────────────────────────────────────────────
  *
@@ -25,10 +25,12 @@
  *             filters (area lists, summaries, IDF press releases). Returns
  *             ChannelTrackingType structure.
  *
- * extract:    LLM-powered extraction pipeline:
- *             1. Cheap model → which channels have relevant intel?
- *             2. Expensive model → extract structured data per post
- *             3. Post-filter → deterministic validation
+ * extract-channel: Single-channel LLM extraction node (invoked N times via
+ *             Send() fan-out from fanOutExtract conditional edge). Each
+ *             invocation reads state.channelToExtract and returns insights
+ *             for that one channel. Failures are isolated per-channel.
+ *
+ * post-filter: Deterministic validation of extracted insights.
  *
  * vote:       Consensus voting (deterministic, 0 tokens). Aggregates multiple
  *             extractions into a single VotedResult using median/majority.
@@ -49,8 +51,9 @@
  *
  * ── Why this pipeline? ─────────────────────────────────────────────────────
  *
- * 1. Cheap → Expensive: Saves tokens. Pre-filter with cheap model ($0.001)
- *    before spending on per-post extraction ($0.01 each).
+ * 1. Send() fan-out: Each channel is extracted independently and in parallel
+ *    at the graph level. One channel failure doesn't lose data from others.
+ *    The ReducedValue reducer on extractedInsights auto-merges results.
  *
  * 2. ReAct clarification: Low-confidence results aren't "failed" —
  *    they're signals that more data is needed. The LLM decides what tools
@@ -67,6 +70,7 @@ import {
   AlertType,
   ChannelTracking,
   Insight,
+  NewsChannelWithUpdates,
   RunEnrichmentInput,
   SynthesizedInsight,
   TelegramMessage,
@@ -82,6 +86,7 @@ import {
   END,
   MessagesValue,
   ReducedValue,
+  Send,
   START,
   StateGraph,
   StateSchema,
@@ -89,7 +94,7 @@ import {
 import { z } from "zod";
 import { clarifyNode } from "./nodes/clarify-node.js";
 import { editNode } from "./nodes/edit-node.js";
-import { extractNode } from "./nodes/extract-node.js";
+import { extractChannelNode } from "./nodes/extract-node.js";
 import { postFilterNode } from "./nodes/post-filter-node.js";
 import { filterNode as preFilterNode } from "./nodes/pre-filter-node.js";
 import { synthesizeNode } from "./nodes/synthesize-node.js";
@@ -106,6 +111,7 @@ export const AgentState = new StateSchema({
   isCaption: z.boolean(),
   currentText: z.string(),
   tracking: ChannelTracking.optional(),
+  channelToExtract: NewsChannelWithUpdates.optional(),
   extractedInsights: new ReducedValue(z.array(Insight), {
     reducer: (previous, current) => [...previous, ...current],
   }),
@@ -140,6 +146,55 @@ const shouldClarify = (state: AgentStateType): "clarify" | "edit" => {
   return "edit";
 };
 
+/**
+ * Fan-out conditional edge: sends each channel to its own extractChannelNode
+ * invocation via LangGraph Send() API for graph-level parallelism.
+ *
+ * Computes seenUrls from previousInsights to skip already-extracted channels.
+ * Returns "post-filter" (string) if no channels need extraction (skip case),
+ * or Send[] for parallel fan-out to extract-channel nodes.
+ */
+const fanOutExtract = (state: AgentStateType): string | Send[] => {
+  if (!state.tracking || state.tracking.channelsWithUpdates.length === 0) {
+    logger.info("fanOutExtract: no updates to extract", {
+      hasTracking: !!state.tracking,
+    });
+    return "post-filter";
+  }
+
+  // Collect URLs already covered by previousInsights to avoid re-extraction
+  const seenUrls = new Set<string>(
+    (state.previousInsights ?? []).flatMap((vi) =>
+      (vi.sources ?? []).map((s) => s.sourceUrl ?? "").filter(Boolean),
+    ),
+  );
+
+  // Filter out channels where all messages are already extracted
+  const channelsToProcess = state.tracking.channelsWithUpdates.filter(
+    (ch) =>
+      ch.unprocessedMessages.some(
+        (m) => !m.sourceUrl || !seenUrls.has(m.sourceUrl),
+      ),
+  );
+
+  if (channelsToProcess.length === 0) {
+    logger.info("fanOutExtract: all channels already covered by previousInsights", {
+      seenUrls: seenUrls.size,
+      totalChannels: state.tracking.channelsWithUpdates.length,
+    });
+    return "post-filter";
+  }
+
+  logger.info("fanOutExtract: fanning out extraction", {
+    channelsToProcess: channelsToProcess.length,
+    channels: channelsToProcess.map((ch) => ch.channel),
+  });
+
+  return channelsToProcess.map(
+    (ch) => new Send("extract-channel", { channelToExtract: ch }),
+  );
+};
+
 // Checkpointer removed: MemorySaver caused messages to accumulate across
 // worker retries (same thread_id), crashing OpenRouter with deserialization
 // errors. Carry-forward uses Redis (saveVotedInsights/getVotedInsights).
@@ -147,7 +202,7 @@ const shouldClarify = (state: AgentStateType): "clarify" | "edit" => {
 export const buildGraph = () =>
   new StateGraph(AgentState)
     .addNode("pre-filter", preFilterNode)
-    .addNode("extract", extractNode)
+    .addNode("extract-channel", extractChannelNode)
     .addNode("post-filter", postFilterNode)
     .addNode("vote", voteNode)
     .addNode("synthesize", synthesizeNode)
@@ -155,8 +210,8 @@ export const buildGraph = () =>
     .addNode("revote", voteNode)
     .addNode("edit", editNode)
     .addEdge(START, "pre-filter")
-    .addEdge("pre-filter", "extract")
-    .addEdge("extract", "post-filter")
+    .addConditionalEdges("pre-filter", fanOutExtract)
+    .addEdge("extract-channel", "post-filter")
     .addEdge("post-filter", "vote")
     .addEdge("vote", "synthesize")
     .addConditionalEdges("synthesize", shouldClarify, {

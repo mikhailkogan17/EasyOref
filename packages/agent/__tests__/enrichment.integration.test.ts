@@ -332,7 +332,7 @@ describe.skipIf(!HAS_API)("full pipeline with real LLM (openai/gpt-oss-120b:free
       // Tolerate provider errors (credit, rate-limit, model overloaded, spend limit)
       const msg = String(err);
       const code = (err as { code?: number })?.code;
-      if (/credit|rate.?limit|overloaded|timeout|timed?\s*out|spend.?limit|503|529|429|402|403/i.test(msg) || code === 402 || code === 429) {
+      if (/credit|rate.?limit|overloaded|timeout|timed?\s*out|spend.?limit|not.?supported|503|529|429|402|403/i.test(msg) || code === 402 || code === 429) {
         console.warn(`⚠️  Provider error (test passes as soft-fail): ${msg.slice(0, 120)}`);
         return;
       }

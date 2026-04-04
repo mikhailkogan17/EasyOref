@@ -21,7 +21,6 @@ import { AIMessage } from "langchain";
 import { Bot } from "grammy";
 import type { AgentStateType } from "../graph.js";
 import {
-  buildCitationMap,
   buildEnrichedMessage,
   formatCitations,
   insertBeforeBlockEnd,
@@ -186,9 +185,6 @@ export const sendMetaReply = async (
 
   const isCassette = get("is_cassette")?.value === "true";
 
-  // Build citation map for consistent link numbering
-  const citationMap = buildCitationMap(synthesizedInsights);
-
   // Build text lines dynamically — only include fields that exist
   const lines: string[] = [];
 
@@ -196,17 +192,17 @@ export const sendMetaReply = async (
     const originPart = origin ? ` (${origin})` : "";
     const cassettePart = isCassette ? labels.metaCassette : "";
     const rocketInsight = get("rocket_count")!;
-    const cites = formatCitations(rocketInsight.sourceUrls, citationMap);
+    const cites = formatCitations(rocketInsight.sourceUrls);
     lines.push(`${labels.metaRockets}${originPart}: ${rocketCount}${cassettePart}${cites}`);
   } else if (origin) {
     const originInsight = get("origin")!;
-    const cites = formatCitations(originInsight.sourceUrls, citationMap);
+    const cites = formatCitations(originInsight.sourceUrls);
     lines.push(`${labels.metaOrigin}: ${origin}${cites}`);
   }
 
   if (etaAbsolute) {
     const etaInsight = get("eta_absolute")!;
-    const cites = formatCitations(etaInsight.sourceUrls, citationMap);
+    const cites = formatCitations(etaInsight.sourceUrls);
     lines.push(`${labels.metaArrival}: ${etaAbsolute}${cites}`);
   }
 

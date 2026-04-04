@@ -67,6 +67,7 @@ export const MONITORED_CHANNELS = [
   "@idf_telegram",
   "@israel_9", // 9tv — Israeli news channel
   "@stranacoil", // Strana.co.il — Israeli news (Russian)
+  "@ramreports", // Ram Ben-Barak — security/intel reports
 ];
 
 // Private channels (invite hash + channel ID for URL building)
