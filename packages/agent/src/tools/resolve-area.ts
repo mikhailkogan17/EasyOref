@@ -11,7 +11,6 @@
  * NOT: "are X and Y in the same zone?" (wrong direction — misses macro coverage).
  */
 
-import { config } from "@easyoref/shared";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { freeModel } from "../models.js";
@@ -48,7 +47,9 @@ function hierarchyMatch(mentioned: string, userAreas: string[]): string[] {
     if (!meta) continue;
 
     // Check if mentioned matches city, area, or macro of this user zone
-    const candidates = [meta.city, meta.area, meta.macro].filter(Boolean) as string[];
+    const candidates = [meta.city, meta.area, meta.macro].filter(
+      Boolean,
+    ) as string[];
     for (const candidate of candidates) {
       if (
         candidate.toLowerCase() === m.toLowerCase() ||
@@ -82,7 +83,7 @@ async function llmMatch(
       `\nRespond with only: [0, 2] or [] — no other text.`;
 
     const result = await (freeModel as any).invoke(prompt);
-    const text = typeof result === "string" ? result : result?.content ?? "";
+    const text = typeof result === "string" ? result : (result?.content ?? "");
     const match = text.match(/\[[\d,\s]*\]/);
     if (match) {
       const indices: number[] = JSON.parse(match[0]);
@@ -116,7 +117,12 @@ export async function resolveArea(
   userAreas: string[],
 ): Promise<ResolveAreaResult> {
   if (!mentioned || !userAreas.length) {
-    return { relevant: false, matchedAreas: [], tier: "none", reasoning: "No areas to check" };
+    return {
+      relevant: false,
+      matchedAreas: [],
+      tier: "none",
+      reasoning: "No areas to check",
+    };
   }
 
   // Tier 1
@@ -163,8 +169,14 @@ export async function resolveArea(
 // ── ReAct tool (for clarify-node) ─────────────────────────
 
 export const resolveAreaTool = tool(
-  async ({ location }: { location: string }): Promise<string> => {
-    const userAreas = config.areas;
+  async ({
+    location,
+    userAreas: toolAreas,
+  }: {
+    location: string;
+    userAreas?: string[];
+  }): Promise<string> => {
+    const userAreas = toolAreas ?? [];
 
     if (!userAreas.length) {
       return JSON.stringify({ error: "No monitored areas configured" });
@@ -192,7 +204,15 @@ export const resolveAreaTool = tool(
     schema: z.object({
       location: z
         .string()
-        .describe("City or region name as mentioned in news (Hebrew preferred, e.g. מרכז, פתח תקווה)"),
+        .describe(
+          "City or region name as mentioned in news (Hebrew preferred, e.g. מרכז, פתח תקווה)",
+        ),
+      userAreas: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Monitored areas for this alert session (Hebrew names). If omitted, returns empty result.",
+        ),
     }),
   },
 );

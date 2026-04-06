@@ -221,7 +221,7 @@ describe("buildEnrichedMessage", () => {
   ): SynthesizedInsightType[] {
     return entries.map((e) => ({
       key: e.key,
-      value: e.value,
+      value: { ru: e.value, en: e.value, he: e.value, ar: e.value },
       confidence: 0.9,
       sourceUrls: e.sourceUrls ?? [],
     }));

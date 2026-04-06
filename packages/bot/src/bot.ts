@@ -20,53 +20,52 @@ import {
   stopEnrichWorker,
 } from "@easyoref/agent";
 import { startMonitor, stopMonitor } from "@easyoref/gramjs";
-import * as logger from "@easyoref/shared/logger";
 import {
   AlertType,
   clearSession,
   closeRedis,
   config,
   getActiveSession,
+  getAllUsers,
   getEnrichment,
   getLanguagePack,
   initLangSmithTracing,
   initTranslations,
   PHASE_ENRICH_DELAY_MS,
   PHASE_INITIAL_DELAY_MS,
-  resolveCityIds,
   saveAlertMeta,
   setActiveSession,
   translateAreas,
   type ActiveSessionType as ActiveSession,
+  type Language,
   type TelegramMessageType as TelegramMessage,
+  type UserConfigType as UserConfig,
 } from "@easyoref/shared";
+import * as logger from "@easyoref/shared/logger";
 import { Bot } from "grammy";
 import { createServer } from "node:http";
 import { initGifState, pickGif } from "./gif-state.js";
 
-const langPack = getLanguagePack(config.language);
-
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Area Filter (from config.yaml city_ids)
+// Per-user Area Filter
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/** Check if alert data contains any of our monitored areas. */
-function isRelevantArea(alertAreas: string[]): boolean {
-  if (config.areas.length === 0) return true;
-  for (const monitored of config.areas) {
-    if (alertAreas.includes(monitored)) return true;
-    if (
-      alertAreas.some((a) => a.startsWith(monitored) || monitored.startsWith(a))
-    )
-      return true;
-  }
-  return false;
+/** Check if this user has any of their configured areas in the alert. */
+function userMatchesAlert(user: UserConfig, alertAreas: string[]): boolean {
+  if (user.areas.length === 0) return true; // no filter → all alerts
+  return user.areas.some((monitored) =>
+    alertAreas.some(
+      (a) =>
+        a === monitored || a.startsWith(monitored) || monitored.startsWith(a),
+    ),
+  );
 }
 
-/** Return human-readable area label for messages */
-function matchedAreaLabel(alertAreas: string[]): string {
+/** Return the user's matched area label, falling back to full alert areas. */
+function userMatchedLabel(user: UserConfig, alertAreas: string[]): string {
+  if (user.areas.length === 0) return alertAreas.slice(0, 3).join(", ");
   const matched = alertAreas.filter((a) =>
-    config.areas.some((m) => a.startsWith(m) || m.startsWith(a) || a === m),
+    user.areas.some((m) => a === m || a.startsWith(m) || m.startsWith(a)),
   );
   return matched.length > 0
     ? matched.join(", ")
@@ -328,16 +327,7 @@ function initBot(): Bot | null {
     logger.error("BOT_TOKEN not set — Telegram DISABLED");
     return null;
   }
-  if (config.chatIds.length === 0) {
-    logger.error("CHAT_ID not set — Telegram DISABLED");
-    return null;
-  }
-  logger.info("Bot initialized", {
-    chat_ids: config.chatIds.map((id) => id.slice(0, -4) + "****"),
-    language: config.language,
-    areas: config.areas,
-    gif_mode: config.gifMode,
-  });
+  logger.info("Bot initialized", { gif_mode: config.gifMode });
   return new Bot(config.botToken);
 }
 
@@ -349,13 +339,19 @@ function nowHHMM(): string {
   });
 }
 
-function formatMessage(alertType: AlertType, areas: string): string {
+function formatMessage(
+  alertType: AlertType,
+  areas: string,
+  language?: Language,
+): string {
   const time = nowHHMM();
-  const localAreas = translateAreas(areas, config.language);
+  const lang = language ?? "ru";
+  const localAreas = translateAreas(areas, lang);
   const cfgKey = ALERT_TYPE_TO_CONFIG[alertType];
 
-  const defaults = langPack.alerts[cfgKey];
-  const labels = langPack.labels;
+  const lp = getLanguagePack(lang);
+  const defaults = lp.alerts[cfgKey];
+  const labels = lp.labels;
 
   const emoji = config.emojiOverride[cfgKey] ?? defaults.emoji;
   const title = config.titleOverride[cfgKey] ?? defaults.title;
@@ -465,8 +461,12 @@ async function sendTelegram(
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async function processAlert(alert: OrefAlert): Promise<void> {
-  if (!isRelevantArea(alert.data)) {
-    logger.info("Alert — not in our area", {
+  // ── Load all registered users and find those matching this alert's areas ──
+  const allUsers = await getAllUsers();
+  const matchedUsers = allUsers.filter((u) => userMatchesAlert(u, alert.data));
+
+  if (matchedUsers.length === 0) {
+    logger.info("Alert — no users matched area", {
       alert_id: alert.id,
       areas_he: alert.data,
     });
@@ -486,12 +486,15 @@ async function processAlert(alert: OrefAlert): Promise<void> {
     return;
   }
 
-  const areas = matchedAreaLabel(alert.data);
+  const areas = matchedUsers[0]
+    ? userMatchedLabel(matchedUsers[0], alert.data)
+    : alert.data.slice(0, 3).join(", ");
 
   logger.info("Alert — RELEVANT", {
     alert_id: alert.id,
     type: alertType,
     areas_he: alert.data,
+    matched_users: matchedUsers.length,
   });
 
   if (!shouldSend(alertType)) {
@@ -504,19 +507,24 @@ async function processAlert(alert: OrefAlert): Promise<void> {
 
   markSent(alertType);
 
-  const baseMessage = formatMessage(alertType, areas);
-  let message = baseMessage;
+  // Build canonical (English) base message for session storage
+  const baseMessage = formatMessage(alertType, areas, "en");
   const alertTs = Date.now();
 
-  // ── Reply chain + carry-forward enrichment ──
+  // ── Reply chain + carry-forward enrichment (per-session) ──
   const replyToMap = new Map<string, number>();
+  let legacyInsights: Array<{
+    key: string;
+    value: { ru: string; en: string; he: string; ar: string };
+    confidence: number;
+    sourceUrls: string[];
+  }> = [];
   if (config.agent.enabled) {
     const existingForReply = await getActiveSession();
     const shouldReply =
       existingForReply &&
       (alertType === "resolved" || existingForReply.phase !== "resolved");
     if (shouldReply) {
-      // Build per-chat reply targets
       const cms: TelegramMessage[] = existingForReply.telegramMessages ?? [
         {
           chatId: existingForReply.chatId,
@@ -533,36 +541,45 @@ async function processAlert(alert: OrefAlert): Promise<void> {
         prevEnrichment.rocketCount ||
         prevEnrichment.intercepted;
       if (hasData) {
-        // Convert legacy Record<string,string> enrichment to SynthesizedInsight[] for buildEnrichedMessage
-        const legacyInsights = Object.entries(prevEnrichment)
+        legacyInsights = Object.entries(prevEnrichment)
           .filter(([, v]) => v !== undefined && v !== "")
-          .map(([key, value]) => ({
-            key,
-            value: String(value),
-            confidence: 0.5,
-            sourceUrls: [],
-          }));
-        message = buildEnrichedMessage(
-          message,
-          alertType,
-          alertTs,
-          legacyInsights,
-        );
+          .map(([key, value]) => {
+            const v = String(value);
+            return {
+              key,
+              value: { ru: v, en: v, he: v, ar: v },
+              confidence: 0.5,
+              sourceUrls: [] as string[],
+            };
+          });
       }
     }
   }
 
   try {
-    // ── Send to all configured chats ──
+    // ── Send to each matched user in their language ──
     const telegramMessages: TelegramMessage[] = [];
-    for (const cid of config.chatIds) {
-      const replyTo = replyToMap.get(cid);
-      const sent = await sendTelegram(cid, alertType, message, replyTo);
+    for (const user of matchedUsers) {
+      const lang = (user.language ?? "ru") as Language;
+      const userAreaLabel = userMatchedLabel(user, alert.data);
+      let message = formatMessage(alertType, userAreaLabel, lang);
+      if (legacyInsights.length > 0) {
+        message = buildEnrichedMessage(
+          message,
+          alertType,
+          alertTs,
+          legacyInsights,
+          lang,
+        );
+      }
+      const replyTo = replyToMap.get(user.chatId);
+      const sent = await sendTelegram(user.chatId, alertType, message, replyTo);
       if (sent) {
         telegramMessages.push({
-          chatId: cid,
+          chatId: user.chatId,
           messageId: sent.messageId,
           isCaption: sent.isCaption,
+          language: user.language,
         });
       }
     }
@@ -574,7 +591,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
     if (config.agent.enabled) {
       const existingSession = await getActiveSession();
 
-      // Save meta for this alert (primary chat)
+      // Save meta for this alert (primary chat; English canonical text)
       await saveAlertMeta({
         alertId: alert.id,
         messageId: primary.messageId,
@@ -583,7 +600,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
         alertTs,
         alertType,
         alertAreas: alert.data,
-        currentText: message,
+        currentText: baseMessage,
       });
 
       if (alertType === "resolved") {
@@ -598,7 +615,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
             latestAlertTs: alertTs,
             chatId: primary.chatId,
             isCaption: primary.isCaption,
-            currentText: message,
+            currentText: baseMessage,
             baseText: baseMessage,
             telegramMessages,
           };
@@ -627,7 +644,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
             latestAlertTs: alertTs,
             chatId: primary.chatId,
             isCaption: primary.isCaption,
-            currentText: message,
+            currentText: baseMessage,
             baseText: baseMessage,
             alertAreas: alert.data,
             telegramMessages,
@@ -654,7 +671,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
             latestAlertTs: alertTs,
             chatId: primary.chatId,
             isCaption: primary.isCaption,
-            currentText: message,
+            currentText: baseMessage,
             baseText: baseMessage,
             alertAreas: alert.data,
             telegramMessages,
@@ -693,9 +710,7 @@ function startHealthServer(): void {
           service: "easyoref",
           uptime: process.uptime(),
           seen_alerts: seenAlerts.size,
-          language: config.language,
           gif_mode: config.gifMode,
-          areas: config.areas,
         }),
       );
     } else {
@@ -717,35 +732,20 @@ async function main(): Promise<void> {
   logger.info("EasyOref starting", {
     poll_interval_ms: config.pollIntervalMs,
     telegram: config.botToken ? "enabled" : "disabled",
-    language: config.language,
     gif_mode: config.gifMode,
-    areas: config.areas,
   });
 
-  // initTranslations fetches cities.json from GitHub. Retry once (30s) if DNS
-  // is not ready yet (common on RPi where service starts before network is up).
-  await initTranslations();
-  if (
-    config.cityIds.length > 0 &&
-    resolveCityIds(config.cityIds).length === 0
-  ) {
+  // Load area translations (fetches cities.json from pikud-haoref-api).
+  // Retry once if network not ready yet (common on RPi cold boot).
+  await initTranslations().catch(async () => {
     logger.warn("initTranslations failed — retrying in 30s");
     await new Promise((r) => setTimeout(r, 30_000));
-    await initTranslations();
-  }
-
-  // Resolve YAML city_ids → Hebrew area names for Oref API matching
-  if (config.cityIds.length > 0) {
-    config.areas = resolveCityIds(config.cityIds);
-    logger.info("Resolved city IDs to area names", {
-      city_ids: config.cityIds,
-      areas: config.areas,
+    await initTranslations().catch(() => {
+      logger.warn(
+        "initTranslations failed on retry — area names may show in Hebrew",
+      );
     });
-  }
-
-  if (config.areas.length === 0) {
-    logger.warn("No areas configured — bot will not filter alerts by area");
-  }
+  });
 
   initGifState(config.dataDir);
   bot = initBot();

@@ -11,7 +11,7 @@ import type {
   Language,
   SynthesizedInsightType,
 } from "@easyoref/shared";
-import { config, getLanguagePack } from "@easyoref/shared";
+import { getLanguagePack } from "@easyoref/shared";
 
 // ── Positional insertion ───────────────────────────────
 
@@ -160,99 +160,102 @@ export function buildEnrichedMessage(
   alertType: AlertType,
   _alertTs: number,
   insights: SynthesizedInsightType[],
+  language?: Language,
 ): string {
   let text = currentText;
 
   // Strip any existing <blockquote>...</blockquote> so we rebuild cleanly
   text = text.replace(/\n?<blockquote>[\s\S]*?<\/blockquote>/g, "").trimEnd();
 
-  const lang = config.language as Language;
+  const lang = (language ?? "ru") as Language;
   const lp = getLanguagePack(lang).labels;
 
+  /** Pick the localised string for this language, falling back to English. */
+  const getVal = (key: string): string | undefined => {
+    const insight = insights.find((i) => i.key === key);
+    if (!insight) return undefined;
+    return insight.value[lang] ?? insight.value.en ?? undefined;
+  };
+
   const get = (key: string) => insights.find((i) => i.key === key);
-  const noCasualtiesInsight = get("no_casualties");
+  const noCasualtiesVal = getVal("no_casualties");
   const hasStrictNoCasualties =
-    noCasualtiesInsight?.value === "none" ||
-    noCasualtiesInsight?.value === "unreported";
+    noCasualtiesVal === "none" || noCasualtiesVal === "unreported";
 
   // Collect enrichment lines
   const enrichLines: string[] = [];
 
   // ── ETA (not resolved) ──
   const etaInsight = get("eta_absolute");
-  if (
-    etaInsight?.value &&
-    !isNeuroslop(etaInsight.value) &&
-    alertType !== "resolved"
-  ) {
-    const cites = formatCitations(etaInsight.sourceUrls);
-    enrichLines.push(`<b>${lp.metaArrival}:</b> ${etaInsight.value}${cites}`);
+  const etaVal = getVal("eta_absolute");
+  if (etaVal && !isNeuroslop(etaVal) && alertType !== "resolved") {
+    const cites = formatCitations(etaInsight!.sourceUrls);
+    enrichLines.push(`<b>${lp.metaArrival}:</b> ${etaVal}${cites}`);
   }
 
   // ── Origin ──
   const originInsight = get("origin");
-  if (originInsight?.value && !isNeuroslop(originInsight.value)) {
-    const cites = formatCitations(originInsight.sourceUrls);
-    enrichLines.push(`<b>${lp.metaOrigin}:</b> ${originInsight.value}${cites}`);
+  const originVal = getVal("origin");
+  if (originVal && !isNeuroslop(originVal)) {
+    const cites = formatCitations(originInsight!.sourceUrls);
+    enrichLines.push(`<b>${lp.metaOrigin}:</b> ${originVal}${cites}`);
   }
 
   // ── Rocket count ──
   const rocketInsight = get("rocket_count");
-  if (rocketInsight?.value && !isNeuroslop(rocketInsight.value)) {
-    const isClusterMunition = get("is_cluster_munition")?.value
-      ? lp.metaClusterMunition
-      : "";
-    const cites = formatCitations(rocketInsight.sourceUrls);
+  const rocketVal = getVal("rocket_count");
+  if (rocketVal && !isNeuroslop(rocketVal)) {
+    const clusterVal =
+      get("is_cluster_munition")?.value.en === "true"
+        ? lp.metaClusterMunition
+        : "";
+    const cites = formatCitations(rocketInsight!.sourceUrls);
     enrichLines.push(
-      `<b>${lp.metaRockets}:</b> ${rocketInsight.value}${isClusterMunition}${cites}`,
+      `<b>${lp.metaRockets}:</b> ${rocketVal}${clusterVal}${cites}`,
     );
   }
 
   // ── Intercepted (not early_warning) ──
   const interceptedInsight = get("intercepted");
+  const interceptedVal = getVal("intercepted");
   if (
-    interceptedInsight?.value &&
-    !isNeuroslop(interceptedInsight.value) &&
+    interceptedVal &&
+    !isNeuroslop(interceptedVal) &&
     alertType !== "early_warning"
   ) {
-    const cites = formatCitations(interceptedInsight.sourceUrls);
-    enrichLines.push(
-      `<b>${lp.metaIntercepted}:</b> ${interceptedInsight.value}${cites}`,
-    );
+    const cites = formatCitations(interceptedInsight!.sourceUrls);
+    enrichLines.push(`<b>${lp.metaIntercepted}:</b> ${interceptedVal}${cites}`);
   }
 
   // ── Hits (not early_warning) ──
   const hitsInsight = get("hits");
-  if (
-    hitsInsight?.value &&
-    !isNeuroslop(hitsInsight.value) &&
-    alertType !== "early_warning"
-  ) {
-    const cites = formatCitations(hitsInsight.sourceUrls);
-    enrichLines.push(`<b>${lp.metaHits}:</b> ${hitsInsight.value}${cites}`);
+  const hitsVal = getVal("hits");
+  if (hitsVal && !isNeuroslop(hitsVal) && alertType !== "early_warning") {
+    const cites = formatCitations(hitsInsight!.sourceUrls);
+    enrichLines.push(`<b>${lp.metaHits}:</b> ${hitsVal}${cites}`);
   }
 
   // ── Casualties (resolved only) ──
   const casualtiesInsight = get("casualties");
+  const casualtiesVal = getVal("casualties");
   if (
-    casualtiesInsight?.value &&
-    !isNeuroslop(casualtiesInsight.value) &&
+    casualtiesVal &&
+    !isNeuroslop(casualtiesVal) &&
     alertType === "resolved" &&
     !hasStrictNoCasualties
   ) {
-    const cites = formatCitations(casualtiesInsight.sourceUrls);
-    enrichLines.push(
-      `<b>${lp.metaCasualties}:</b> ${casualtiesInsight.value}${cites}`,
-    );
+    const cites = formatCitations(casualtiesInsight!.sourceUrls);
+    enrichLines.push(`<b>${lp.metaCasualties}:</b> ${casualtiesVal}${cites}`);
   }
 
   // ── No casualties (resolved only) ──
   if (hasStrictNoCasualties && alertType === "resolved") {
     const valueLabel =
-      noCasualtiesInsight.value === "none"
+      noCasualtiesVal === "none"
         ? lp.metaNoVictimsNone
         : lp.metaNoVictimsUnreported;
-    const cites = formatCitations(noCasualtiesInsight.sourceUrls);
+    const noCasInsight = get("no_casualties")!;
+    const cites = formatCitations(noCasInsight.sourceUrls);
     enrichLines.push(`<b>${lp.metaCasualties}:</b> ${valueLabel}${cites}`);
   }
 

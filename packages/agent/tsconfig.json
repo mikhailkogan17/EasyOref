@@ -4,10 +4,7 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "references": [
-    { "path": "../shared" },
-    { "path": "../gramjs" }
-  ],
+  "references": [{ "path": "../shared" }, { "path": "../gramjs" }],
   "include": ["src/**/*"],
   "exclude": ["src/**/__tests__/**", "src/**/*.test.ts", "dist"]
 }

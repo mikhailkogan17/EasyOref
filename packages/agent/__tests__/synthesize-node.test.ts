@@ -31,12 +31,8 @@ vi.mock("@easyoref/shared", async () => {
         areaLabels: {},
       },
       botToken: "",
-      areas: ["תל אביב"],
-      language: "ru",
     },
     saveVotedInsights: vi.fn(),
-    translateAreas: vi.fn((s: string) => s),
-    translateCountry: vi.fn((s: string) => s),
   };
 });
 
@@ -182,7 +178,12 @@ describe("synthesizeNode — cassette / cluster munition (postmortem Apr 4: Find
     // Simulate LLM correctly returning is_cluster_munition
     mockInvokeWithFallback.mockResolvedValue({
       structuredResponse: {
-        fields: [{ key: "is_cluster_munition", value: "true" }],
+        fields: [
+          {
+            key: "is_cluster_munition",
+            value: { ru: "true", en: "true", he: "true", ar: "true" },
+          },
+        ],
       },
     });
 
@@ -199,14 +200,19 @@ describe("synthesizeNode — cassette / cluster munition (postmortem Apr 4: Find
 
     expect(result.synthesizedInsights).toHaveLength(1);
     expect(result.synthesizedInsights![0]!.key).toBe("is_cluster_munition");
-    expect(result.synthesizedInsights![0]!.value).toBe("true");
+    expect(result.synthesizedInsights![0]!.value.en).toBe("true");
   });
 
   it("rejects is_cluster_munition as hallucinated when cluser_munition_used is NOT in consensus", async () => {
     // LLM hallucinates — no consensus backing
     mockInvokeWithFallback.mockResolvedValue({
       structuredResponse: {
-        fields: [{ key: "is_cluster_munition", value: "true" }],
+        fields: [
+          {
+            key: "is_cluster_munition",
+            value: { ru: "true", en: "true", he: "true", ar: "true" },
+          },
+        ],
       },
     });
 
@@ -235,7 +241,12 @@ describe("synthesizeNode — cassette / cluster munition (postmortem Apr 4: Find
     mockInvokeWithFallback.mockResolvedValue({
       structuredResponse: {
         // LLM returns origin but forgets is_cluster_munition
-        fields: [{ key: "origin", value: "Иран" }],
+        fields: [
+          {
+            key: "origin",
+            value: { ru: "Иран", en: "Iran", he: "איראן", ar: "إيران" },
+          },
+        ],
       },
     });
 

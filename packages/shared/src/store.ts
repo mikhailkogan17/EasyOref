@@ -14,15 +14,15 @@
  * Posts accumulate across the entire session (shared context).
  */
 
-import { getRedis } from "./redis.js";
 import { config } from "./config.js";
+import { getRedis } from "./redis.js";
 import type {
   ActiveSessionType,
   AlertMetaType,
   AlertType,
   ChannelPostType,
   EnrichmentType,
-  TelegramMessageType,
+  UserConfigType,
   VotedInsightType,
 } from "./schemas.js";
 import { createEmptyEnrichment } from "./schemas.js";
@@ -33,6 +33,7 @@ type ChannelPost = ChannelPostType;
 type ActiveSession = ActiveSessionType;
 type Enrichment = EnrichmentType;
 type VotedInsight = VotedInsightType;
+type UserConfig = UserConfigType;
 
 //  version for migration handling
 export const SCHEMA_VERSION = "2.0.0";
@@ -58,14 +59,14 @@ export async function ensureVersion(): Promise<void> {
 
     let cursor = "0";
     do {
-      const [nextCursor, keys] = await redis.call(
+      const [nextCursor, keys] = (await redis.call(
         "SCAN",
         cursor,
         "MATCH",
         rawPattern,
         "COUNT",
         "100",
-      ) as [string, string[]];
+      )) as [string, string[]];
       cursor = nextCursor;
       if (keys.length > 0) {
         // Keys from SCAN are raw (include prefix) — strip prefix before DEL
@@ -223,9 +224,15 @@ const VOTED_INSIGHTS_KEY = "session:voted_insights";
  * Persist consensus VotedInsight[] from synthesize-node so the next
  * enrichment job can carry them forward as previousInsights.
  */
-export async function saveVotedInsights(insights: VotedInsight[]): Promise<void> {
+export async function saveVotedInsights(
+  insights: VotedInsight[],
+): Promise<void> {
   const redis = getRedis();
-  await redis.setex(VOTED_INSIGHTS_KEY, SESSION_TTL_S, JSON.stringify(insights));
+  await redis.setex(
+    VOTED_INSIGHTS_KEY,
+    SESSION_TTL_S,
+    JSON.stringify(insights),
+  );
 }
 
 /**
@@ -285,4 +292,108 @@ export async function saveCachedExtractions(
   const redis = getRedis();
   await redis.hset(EXT_CACHE_KEY, entries);
   await redis.expire(EXT_CACHE_KEY, SESSION_TTL_S);
+}
+
+// ── User store (multi-user, persistent) ────────────────
+
+const USER_KEY_PREFIX = "user:";
+const AREA_INDEX_PREFIX = "area:";
+
+/**
+ * Save a UserConfig to Redis. Maintains area reverse index.
+ * Redis key: `user:{chatId}` (JSON, no TTL — persistent).
+ * Area index: `area:{areaName}` → SET of chatIds.
+ */
+export async function saveUser(user: UserConfig): Promise<void> {
+  const redis = getRedis();
+  const key = `${USER_KEY_PREFIX}${user.chatId}`;
+
+  // Remove old area index entries if user already exists
+  const existingRaw = await redis.get(key);
+  if (existingRaw) {
+    const existing = JSON.parse(existingRaw) as UserConfig;
+    for (const area of existing.areas) {
+      await redis.srem(`${AREA_INDEX_PREFIX}${area}`, user.chatId);
+    }
+  }
+
+  await redis.set(key, JSON.stringify(user));
+
+  // Add new area index entries
+  for (const area of user.areas) {
+    await redis.sadd(`${AREA_INDEX_PREFIX}${area}`, user.chatId);
+  }
+}
+
+/**
+ * Get a UserConfig by chatId. Returns undefined if not found.
+ */
+export async function getUser(chatId: string): Promise<UserConfig | undefined> {
+  const redis = getRedis();
+  const raw = await redis.get(`${USER_KEY_PREFIX}${chatId}`);
+  return raw ? (JSON.parse(raw) as UserConfig) : undefined;
+}
+
+/**
+ * Get all registered users.
+ */
+export async function getAllUsers(): Promise<UserConfig[]> {
+  const redis = getRedis();
+  const keys: string[] = [];
+  let cursor = "0";
+  do {
+    const [nextCursor, batch] = (await redis.call(
+      "SCAN",
+      cursor,
+      "MATCH",
+      `${USER_KEY_PREFIX}*`,
+      "COUNT",
+      "100",
+    )) as [string, string[]];
+    cursor = nextCursor;
+    // Strip ioredis keyPrefix from SCAN results before GET
+    const prefix = config.redisPrefix ? `${config.redisPrefix}:` : "";
+    for (const rawKey of batch) {
+      keys.push(prefix ? rawKey.slice(prefix.length) : rawKey);
+    }
+  } while (cursor !== "0");
+
+  if (keys.length === 0) return [];
+  const pipeline = redis.pipeline();
+  for (const k of keys) pipeline.get(k);
+  const results = await pipeline.exec();
+  const users: UserConfig[] = [];
+  if (results) {
+    for (const [err, val] of results) {
+      if (!err && typeof val === "string") {
+        users.push(JSON.parse(val) as UserConfig);
+      }
+    }
+  }
+  return users;
+}
+
+/**
+ * Delete a user and clean up area index.
+ */
+export async function deleteUser(chatId: string): Promise<void> {
+  const redis = getRedis();
+  const key = `${USER_KEY_PREFIX}${chatId}`;
+  const raw = await redis.get(key);
+  if (raw) {
+    const user = JSON.parse(raw) as UserConfig;
+    for (const area of user.areas) {
+      await redis.srem(`${AREA_INDEX_PREFIX}${area}`, chatId);
+    }
+  }
+  await redis.del(key);
+}
+
+/**
+ * Get all chatIds subscribed to a given area.
+ * Uses the `area:{name}` SET reverse index for O(1) lookup.
+ */
+export async function getUsersByArea(area: string): Promise<string[]> {
+  const redis = getRedis();
+  return redis.smembers(`${AREA_INDEX_PREFIX}${area}`);
 }

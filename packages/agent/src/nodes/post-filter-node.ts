@@ -5,13 +5,26 @@
  * No HTTP fetch required — source.text comes directly from the NewsMessage.
  */
 
-import * as logger from "@easyoref/shared/logger";
 import type {
   InsightLocationType,
   InsightType,
   ValidatedInsightType as ValidatedInsight,
 } from "@easyoref/shared";
-import { config } from "@easyoref/shared";
+import * as logger from "@easyoref/shared/logger";
+import {
+  AIMessage,
+  type BaseMessage,
+  HumanMessage,
+  providerStrategy,
+} from "langchain";
+import { z } from "zod";
+import type { AgentStateType } from "../graph.js";
+import {
+  extractFallback,
+  extractModel,
+  invokeWithFallback,
+} from "../models.js";
+import { resolveArea } from "../tools/resolve-area.js";
 
 /**
  * Local typed view of InsightType fields that post-filter-node reads.
@@ -40,16 +53,6 @@ interface InsightWithExtras extends Omit<InsightType, "kind" | "source"> {
     channelId?: string;
   };
 }
-import {
-  AIMessage,
-  type BaseMessage,
-  HumanMessage,
-  providerStrategy,
-} from "langchain";
-import { z } from "zod";
-import type { AgentStateType } from "../graph.js";
-import { extractFallback, extractModel, invokeWithFallback } from "../models.js";
-import { resolveArea } from "../tools/resolve-area.js";
 
 const LOCATION_INSIGHT_KINDS = new Set(["impact", "casualities"]);
 
@@ -145,13 +148,13 @@ Also assign sourceTrust: IDF Spokesperson/N12/Kan = 0.9+; known mil channels = 0
       if (LOCATION_INSIGHT_KINDS.has(insightKind)) {
         // Extract mentioned location from insight value
         const mentionedLocation: string =
-          insight.kind.location ??
-          insight.kind.area ??
-          insight.kind.zone ??
-          "";
+          insight.kind.location ?? insight.kind.area ?? insight.kind.zone ?? "";
 
-        if (mentionedLocation && config.areas.length > 0) {
-          const areaResult = await resolveArea(mentionedLocation, config.areas);
+        if (mentionedLocation && state.alertAreas.length > 0) {
+          const areaResult = await resolveArea(
+            mentionedLocation,
+            state.alertAreas,
+          );
           if (!areaResult.relevant) {
             // Region has zero overlap with user zones — mark invalid to drop in vote
             validatedInsights.push({
@@ -182,7 +185,8 @@ Also assign sourceTrust: IDF Spokesperson/N12/Kan = 0.9+; known mil channels = 0
       });
       validCount++;
     } else if (
-      state.alertType === "early_warning" || state.alertType === "red_alert"
+      state.alertType === "early_warning" ||
+      state.alertType === "red_alert"
     ) {
       // Soft pass during critical phases — LLM verification is unreliable on
       // free models, but dropping insights during active attack is worse.

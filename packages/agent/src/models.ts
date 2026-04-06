@@ -89,7 +89,10 @@ export async function invokeWithFallback(opts: {
     });
 
     try {
-      const fallbackAgent = createAgent({ ...agentOpts, model: fallbackModel } as any);
+      const fallbackAgent = createAgent({
+        ...agentOpts,
+        model: fallbackModel,
+      } as any);
       return await fallbackAgent.invoke(input as any);
     } catch (fallbackErr) {
       logger.error(`${label}: fallback model also failed`, {

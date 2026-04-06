@@ -8,9 +8,9 @@
  * Re-exports legacy helpers for backwards-compat.
  */
 
-import * as logger from "@easyoref/shared/logger";
 import type {
   AlertType,
+  Language,
   SynthesizedInsightType,
   VotedResultType,
 } from "@easyoref/shared";
@@ -19,8 +19,8 @@ import {
   getActiveSession,
   getLanguagePack,
   setActiveSession,
-  textHash,
 } from "@easyoref/shared";
+import * as logger from "@easyoref/shared/logger";
 import { Bot } from "grammy";
 import { AIMessage } from "langchain";
 import type { AgentStateType } from "../graph.js";
@@ -59,6 +59,8 @@ export interface TelegramTargetMessage {
   chatId: string;
   messageId: number;
   isCaption: boolean;
+  /** BCP-47 language tag for the target user. Used to pick the right localized value. */
+  language?: string;
 }
 
 export interface EditMessageInput {
@@ -107,19 +109,15 @@ export const editTelegramMessage = async (
     return;
   }
 
-  const newText = buildEnrichedMessage(
-    input.currentText,
-    input.alertType,
-    input.alertTs,
-    insights,
-  );
-
-  // Dedup: skip if text hasn't changed
-  const hash = textHash(newText);
-  // Use a simple in-memory guard — we no longer persist enrichment to Redis
-  // TODO: persist hash to session if needed for dedup across graph runs
-
   for (const t of targets) {
+    const newText = buildEnrichedMessage(
+      input.currentText,
+      input.alertType,
+      input.alertTs,
+      insights,
+      t.language as Language | undefined,
+    );
+
     try {
       if (t.isCaption) {
         await tgBot.api.editMessageCaption(t.chatId, t.messageId, {
@@ -140,12 +138,17 @@ export const editTelegramMessage = async (
     }
   }
 
-  void hash; // referenced above for future dedup use
-
-  // Keep session.currentText in sync for monitoring removal
+  // Keep session.currentText in sync using English as canonical text for monitoring
+  const canonicalText = buildEnrichedMessage(
+    input.currentText,
+    input.alertType,
+    input.alertTs,
+    insights,
+    "en",
+  );
   const sess = await getActiveSession();
   if (sess) {
-    sess.currentText = newText;
+    sess.currentText = canonicalText;
     await setActiveSession(sess);
   }
 };
@@ -170,53 +173,55 @@ export const sendMetaReply = async (
 
   const get = (key: string) => synthesizedInsights.find((i) => i.key === key);
 
-  const rocketCount = get("rocket_count")?.value;
-  const etaAbsolute = get("eta_absolute")?.value;
-  const origin = get("origin")?.value;
-
-  // Need at least rocket_count or eta_absolute to send a useful meta reply
-  if (!rocketCount && !etaAbsolute) return;
+  // Global guard: need rocket_count or eta_absolute in English (canonical)
+  const hasRocket = !!get("rocket_count")?.value.en;
+  const hasEta = !!get("eta_absolute")?.value.en;
+  if (!hasRocket && !hasEta) return;
 
   const sess = await getActiveSession();
   if (!sess) return;
   if (sess.metaMessageSent) return;
 
-  const langPack = getLanguagePack(config.language);
-  const labels = langPack.labels;
-
-  const isClusterMunition = get("is_cluster_munition")?.value === "true";
-
-  // Build text lines dynamically — only include fields that exist
-  const lines: string[] = [];
-
-  if (rocketCount) {
-    const originPart = origin ? ` (${origin})` : "";
-    const clusterMunitionPart = isClusterMunition
-      ? labels.metaClusterMunition
-      : "";
-    const rocketInsight = get("rocket_count")!;
-    const cites = formatCitations(rocketInsight.sourceUrls);
-    lines.push(
-      `${labels.metaRockets}${originPart}: ${rocketCount}${clusterMunitionPart}${cites}`,
-    );
-  } else if (origin) {
-    const originInsight = get("origin")!;
-    const cites = formatCitations(originInsight.sourceUrls);
-    lines.push(`${labels.metaOrigin}: ${origin}${cites}`);
-  }
-
-  if (etaAbsolute) {
-    const etaInsight = get("eta_absolute")!;
-    const cites = formatCitations(etaInsight.sourceUrls);
-    lines.push(`${labels.metaArrival}: ${etaAbsolute}${cites}`);
-  }
-
-  if (lines.length === 0) return;
-  const text = lines.join("\n");
+  const isClusterMunition = get("is_cluster_munition")?.value.en === "true";
 
   const tgBot = new Bot(config.botToken);
 
   for (const t of targets) {
+    const lang = (t.language ?? "ru") as Language;
+    const labels = getLanguagePack(lang).labels;
+
+    const rocketCount = get("rocket_count")?.value[lang];
+    const etaAbsolute = get("eta_absolute")?.value[lang];
+    const origin = get("origin")?.value[lang];
+
+    // Build text lines for this target's language
+    const lines: string[] = [];
+
+    if (rocketCount) {
+      const originPart = origin ? ` (${origin})` : "";
+      const clusterMunitionPart = isClusterMunition
+        ? labels.metaClusterMunition
+        : "";
+      const rocketInsight = get("rocket_count")!;
+      const cites = formatCitations(rocketInsight.sourceUrls);
+      lines.push(
+        `${labels.metaRockets}${originPart}: ${rocketCount}${clusterMunitionPart}${cites}`,
+      );
+    } else if (origin) {
+      const originInsight = get("origin")!;
+      const cites = formatCitations(originInsight.sourceUrls);
+      lines.push(`${labels.metaOrigin}: ${origin}${cites}`);
+    }
+
+    if (etaAbsolute) {
+      const etaInsight = get("eta_absolute")!;
+      const cites = formatCitations(etaInsight.sourceUrls);
+      lines.push(`${labels.metaArrival}: ${etaAbsolute}${cites}`);
+    }
+
+    if (lines.length === 0) continue;
+    const text = lines.join("\n");
+
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sendOpts: any = {

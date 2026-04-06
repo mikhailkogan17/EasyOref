@@ -72,11 +72,17 @@ import {
 // ── Helpers ────────────────────────────────────────────────
 
 function makeInsights(
-  entries: Array<{ key: string; value: string }>,
+  entries: Array<{
+    key: string;
+    value: string;
+    valueLang?: Partial<Record<"ru" | "en" | "he" | "ar", string>>;
+  }>,
 ): SynthesizedInsightType[] {
   return entries.map((e) => ({
     key: e.key,
-    value: e.value,
+    value: e.valueLang
+      ? { ru: e.value, en: e.value, he: e.value, ar: e.value, ...e.valueLang }
+      : { ru: e.value, en: e.value, he: e.value, ar: e.value },
     confidence: 0.9,
     sourceUrls: [],
   }));
@@ -307,22 +313,19 @@ describe("sendMetaReply", () => {
   });
 
   it("uses Hebrew labels when language is he", async () => {
-    // Temporarily override config.language to "he" by re-mocking
-    const { config } = await import("@easyoref/shared");
-    const original = (config as any).language;
-    (config as any).language = "he";
-
     mockGetActiveSession.mockResolvedValue(makeSession());
+    const heTarget: TelegramTargetMessage = {
+      ...defaultTarget,
+      language: "he" as const,
+    };
     await sendMetaReply(
       "early_warning",
       makeInsights([
         { key: "rocket_count", value: "7" },
         { key: "eta_absolute", value: "~17:00" },
       ]),
-      [defaultTarget],
+      [heTarget],
     );
-
-    (config as any).language = original;
 
     const text = mockSendMessage.mock.calls[0][1] as string;
     expect(text).toContain("טילים"); // Hebrew "rockets"

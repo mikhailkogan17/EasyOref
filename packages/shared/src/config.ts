@@ -11,7 +11,6 @@ import yaml from "js-yaml";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { isValidLanguage, type Language } from "./i18n.js";
 import {
   type AlertTypeConfig,
   type GifModeType as GifMode,
@@ -26,8 +25,6 @@ const ALL_ALERT_TYPES: AlertTypeConfig[] = ["early", "red_alert", "resolved"];
 /** Raw YAML schema */
 interface ConfigYaml {
   alert_types?: AlertTypeConfig[];
-  city_ids?: number[];
-  language?: string;
   gif_mode?: string;
   emoji_override?: Partial<Record<AlertTypeConfig, string>>;
   title_override?: Partial<Record<AlertTypeConfig, string>>;
@@ -37,7 +34,6 @@ interface ConfigYaml {
   };
   telegram?: {
     bot_token?: string;
-    chat_id?: string | string[];
   };
   health_port?: number;
   poll_interval_ms?: number;
@@ -147,42 +143,14 @@ function parseAlertTypes(raw?: AlertTypeConfig[]): AlertTypeConfig[] {
 
 const yml = loadYaml();
 
-const parsedChatIds: string[] = (() => {
-  const raw = yml.telegram?.chat_id ?? "";
-  if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
-  return String(raw)
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-})();
-
 export const config = {
   /** Telegram bot token */
-  botToken: yml.telegram?.bot_token ?? readSecret("BOT_TOKEN", ["/run/secrets/bot_token", "secrets/bot_token"]),
-
-  /** All Telegram chat IDs to broadcast to */
-  chatIds: parsedChatIds,
-
-  /** Primary Telegram chat ID (first in the list) */
-  chatId: parsedChatIds[0] ?? "",
-
-  /** City IDs to monitor (resolved to Hebrew names at startup via cities.json) */
-  cityIds: yml.city_ids ?? [],
-
-  /**
-   * Hebrew area names — legacy fallback for AREAS env var.
-   * Populated at startup from cityIds OR from AREAS env if no cityIds.
-   */
-  areas: [] as string[],
+  botToken:
+    yml.telegram?.bot_token ??
+    readSecret("BOT_TOKEN", ["/run/secrets/bot_token", "secrets/bot_token"]),
 
   /** Which alert types to send */
   alertTypes: parseAlertTypes(yml.alert_types),
-
-  /** Message language */
-  language: ((): Language => {
-    const raw = (yml.language ?? "ru").toLowerCase();
-    return isValidLanguage(raw) ? raw : "ru";
-  })(),
 
   /**
    * Redis key namespace prefix for multi-instance deployments.
@@ -233,8 +201,7 @@ export const config = {
       filterModel: ai?.openrouter_filter_model ?? "openai/gpt-oss-120b",
       filterFallbackModel:
         ai?.openrouter_filter_fallback_model ?? "openai/gpt-oss-120b:free",
-      extractModel:
-        ai?.openrouter_extract_model ?? "openai/gpt-oss-120b",
+      extractModel: ai?.openrouter_extract_model ?? "openai/gpt-oss-120b",
       extractFallbackModel:
         ai?.openrouter_extract_fallback_model ?? "openai/gpt-oss-120b:free",
       redisUrl: ai?.redis_url ?? "redis://localhost:6379",

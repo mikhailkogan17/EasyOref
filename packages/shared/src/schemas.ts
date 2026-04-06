@@ -362,11 +362,22 @@ export type VotedResultType = z.infer<typeof VotedResult>;
  * SynthesizedInsight — one display-ready enrichment field.
  * key corresponds to enrichment field names (origin, hits, intercepted, etc.)
  */
+/** Localized display values for all 4 supported languages. */
+export const LocalizedValue = z.object({
+  ru: z.string(),
+  en: z.string(),
+  he: z.string(),
+  ar: z.string(),
+});
+export type LocalizedValueType = z.infer<typeof LocalizedValue>;
+
 export const SynthesizedInsight = z.object({
   key: z
     .string()
     .describe("Enrichment field key, e.g. 'origin', 'hits', 'intercepted'"),
-  value: z.string().describe("Localized display-ready string"),
+  value: LocalizedValue.describe(
+    "Display-ready values in all 4 languages (ru/en/he/ar)",
+  ),
   confidence: z
     .number()
     .min(0)
@@ -392,6 +403,7 @@ export const TelegramMessage = z.object({
   chatId: z.string().min(1),
   messageId: z.number().int().min(1),
   isCaption: z.boolean(),
+  language: z.string().min(2).max(5).optional(),
 });
 export type TelegramMessageType = z.infer<typeof TelegramMessage>;
 
@@ -555,3 +567,20 @@ export const ZONE_HIERARCHY: Record<string, GeoMetadata> = {
   דרום: { level: "macro" },
   צפון: { level: "macro" },
 } as const;
+
+// ─────────────────────────────────────────────────────────
+// User configuration (multi-user, persisted in Redis)
+// ─────────────────────────────────────────────────────────
+
+export const UserTier = z.enum(["free", "premium"]);
+export type UserTier = z.infer<typeof UserTier>;
+
+export const UserConfig = z.object({
+  chatId: z.string().min(1),
+  language: z.string().min(2).max(5),
+  areas: z.array(z.string().min(1)).min(1),
+  tier: UserTier.default("free"),
+  registeredAt: z.number().int().min(0),
+  lastActiveAt: z.number().int().min(0),
+});
+export type UserConfigType = z.infer<typeof UserConfig>;
