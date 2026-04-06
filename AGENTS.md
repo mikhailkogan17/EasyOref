@@ -478,3 +478,230 @@ Modified `buildTracking()` in `pre-filter-node.ts` to re-surface channels that h
 | **Node** | v20.19.1 |
 | **RAM** | 3.8GB |
 | **Crontab** | `0 4 */3 * * sudo reboot` (every 3 days, services auto-restart) |
+
+---
+
+## EasyOref 2.0.0 Roadmap
+
+**Branch:** `v2` off `main`. Phases 0-1 committed (`a0d49ce`, `1e4999a`).
+
+### V2 Code Rules (ENFORCE ALWAYS)
+
+1. **Every node = separate file** in `packages/agent/src/nodes/`
+2. **All helpers outside nodes** — utils/ only. Node file contains ONLY agent const + exported node function
+3. **Node file strict format:**
+   ```ts
+   // imports
+   const agentOpts = { model, prompt, ... };
+   
+   export async function myNode(state: AgentState): Promise<Partial<AgentState>> { ... }
+   ```
+4. **No legacy / no deprecation** — single user of v1. No backward compat, no `@deprecated`, no "legacy" comments, no stale TODOs
+5. **Tests = new logic only** — no `confidenceThreshold`, `config.areas`, `config.language`, `config.chatIds`, `config.cityIds` in mocks. Redis cleanup after update (no old keys survive)
+6. **YAML-only SSOT** — `process.env` only for `EASYOREF_CONFIG` path. Zero env fallbacks for config fields
+
+---
+
+### Phase 0-1 Code Review Findings (MUST FIX in Phase 2)
+
+#### Helpers inside nodes (Rule 2 violations):
+- `pre-filter-node.ts`: `noiseReason()`, `isNoise()`, `toNewsMessage()`, `buildTracking()` → move to `utils/noise-filter.ts` + `utils/tracking.ts`
+- `extract-node.ts`: `getPhaseRule()`, `extractFromChannel()` → move to `utils/`
+- `synthesize-node.ts`: `fieldKeyToKind()` → move to `utils/`
+- `edit-node.ts`: `inlineCites()` → DELETE (unused). Remove deprecated re-exports (`insertBeforeTimeLine`)
+
+#### Dead code (Rule 4 violations):
+- `pre-filter-node.ts` L52: `isNoise()` — dead, never called. DELETE
+- `edit-node.ts` L33-37: `// Re-exports for backwards-compat` + `@deprecated insertBeforeTimeLine`. DELETE
+- `edit-node.ts` L8: `"Re-exports legacy helpers for backwards-compat."` — update docstring
+- `message.ts` L43-57: `CitationMap` + `buildCitationMap()` deprecated. DELETE
+- `schemas.ts` L396: stale TODO about vote-node. DELETE
+
+#### Agent opts not top-level (Rule 3 violations):
+- `post-filter-node.ts`: agent opts defined inside node body → hoist to top-level const
+- `synthesize-node.ts`: agent opts defined inside node body → hoist to top-level const
+
+#### Stale test mocks (Rule 5 violations):
+- 14 instances of `confidenceThreshold`, `areas`, `language` in test mocks across 8 files
+- `config.test.ts` L198-226: `resolveCityIds` test suite — dead. DELETE entire describe block
+
+---
+
+### Phase 2: Code Hygiene + Enrichment v2
+
+**Goal:** Fix all code review findings. Simplify enrichment pipeline (7 → 5 nodes). Enforce strict node format.
+
+#### 2a: Code Hygiene (fix review findings)
+
+1. **Extract helpers from nodes** — create:
+   - `utils/noise-filter.ts` ← `noiseReason()`, `toNewsMessage()` from pre-filter
+   - `utils/tracking.ts` ← `buildTracking()`, `FilterStats` from pre-filter
+   - `utils/phase-rules.ts` ← `getPhaseRule()` from extract
+   - `utils/channel-extract.ts` ← `extractFromChannel()` from extract
+   - Move `inlineCites()` → DELETE (unused)
+   - Move `fieldKeyToKind()` → `utils/`
+
+2. **Delete dead code:**
+   - `isNoise()` (pre-filter), `CitationMap` + `buildCitationMap()` (message.ts), `insertBeforeTimeLine` alias (edit-node), stale TODO (schemas.ts)
+
+3. **Enforce node format** — every LLM node becomes:
+   ```ts
+   const agentOpts = { model: "...", prompt: "..." };
+   export async function nodeFunction(state: AgentState): Promise<Partial<AgentState>> { ... }
+   ```
+   Fix: `post-filter-node.ts`, `synthesize-node.ts` (hoist opts), `edit-node.ts` (strip re-exports)
+
+4. **Clean all test mocks** — remove `confidenceThreshold`, `areas`, `language`, `cityIds` from every test mock config. Delete `resolveCityIds` test suite.
+
+5. **Update config.ts comment** — remove "Fallback: environment variables" lie
+
+#### 2b: Enrichment Simplification
+
+1. **2-3 enrichment runs** per alert (not infinite loop):
+   - Run 1: after `initialDelay` (15s/120s/90s)
+   - Run 2: +60s/+120s later
+   - Run 3: only if Run 2 found new data
+   - Remove infinite re-enqueue loop in `worker.ts`
+
+2. **Simplify watermark** — single `since` timestamp instead of `previous`/`latest` partition
+
+3. **Remove clarify-node** — delete `clarify-node.ts`, `packages/agent/src/tools/` directory, remove clarify routing from `graph.ts`. Move `alert_history` tool to Q&A graph (Phase 3)
+
+4. **Simplify vote-node** — merge "pick best per kind" into synthesize-node. Delete `vote-node.ts`, `utils/contradictions.ts`
+
+5. **Pipeline: 5 nodes:**
+   ```
+   pre-filter → [Send: extract per channel] → post-filter → synthesize → edit
+   ```
+
+**Relevant files to DELETE:**
+- `packages/agent/src/nodes/clarify-node.ts`
+- `packages/agent/src/nodes/vote-node.ts`
+- `packages/agent/src/tools/` — entire directory
+- `packages/agent/src/utils/contradictions.ts`
+- `packages/agent/__tests__/clarify.test.ts`
+
+---
+
+### Phase 3: Q&A Graph (Chat with Bot)
+
+**Goal:** Second LangGraph graph — RAG-style Q&A. Private messages to bot.
+
+1. **New graph: `qa-graph.ts`** — 3 nodes, strict format:
+   ```
+   intent-classify → context-gather → answer-generate
+   ```
+   - **intent-classify** (deterministic): regex + keyword. Categories: `current_alert`, `recent_history`, `general_security`, `bot_help`
+   - **context-gather**: Redis session + Oref history API (reuses `alert_history` tool from deleted clarify)
+   - **answer-generate**: LLM → structured answer (text + source links). Zod-validated output
+
+2. **Bot handler** — `packages/bot/src/handlers/qa.ts`:
+   - `bot.on("message:text")` for private chats only
+   - Rate limiter: 5 questions/min per user (Redis counter)
+   - Premium gate (Phase 6)
+   - Typing indicator while processing
+
+3. **New files:**
+   - `packages/agent/src/qa-graph.ts`
+   - `packages/agent/src/nodes/qa/intent-node.ts`
+   - `packages/agent/src/nodes/qa/context-node.ts`
+   - `packages/agent/src/nodes/qa/answer-node.ts`
+   - `packages/bot/src/handlers/qa.ts`
+
+---
+
+### Phase 4: Inline Mode (@easyorefbot)
+
+**Goal:** `@easyorefbot` inline queries — status widget + Q&A.
+
+1. **Empty query** → `InlineQueryResultArticle` with current alert status
+2. **Text query** → run Q&A graph → return answer as article
+3. **Cache** answers for 30s (`cache_time`)
+
+**New files:**
+- `packages/bot/src/handlers/inline.ts`
+
+**Depends on:** Phase 3
+
+---
+
+### Phase 5: Shelter Search
+
+**Goal:** Location → nearest shelters with distances.
+
+1. **Static dataset** — `packages/shared/src/data/shelters.json` (~15K entries)
+2. **Geosearch** — `findNearestShelters(lat, lng, limit=5, maxDistanceKm=2)` — Haversine, O(n) scan
+3. **Bot handler** — `bot.on("message:location")` → 5 nearest → list with Google Maps links
+4. **Free feature** — safety critical, available to ALL tiers
+
+**New files:**
+- `packages/shared/src/data/shelters.json`
+- `packages/shared/src/shelter.ts`
+- `packages/bot/src/handlers/shelter.ts`
+
+**No dependencies** — parallel with Phase 2-4.
+
+---
+
+### Phase 6: Monetization (Freemium)
+
+**Goal:** Free/pro tier separation. No payment integration — admin `/grant` only.
+
+| Feature | Free | Pro |
+|---|---|---|
+| Alerts (Oref → Telegram) | ✅ private msg, **ETA time only** | ✅ **chat integration** (groups) |
+| Shelter search | ✅ | ✅ |
+| AI enrichment metadata | ❌ | ✅ full (origin, rockets, interceptions, etc.) |
+| Q&A chat | ❌ | ✅ |
+| Inline Q&A | ❌ | ✅ (inline status widget: free) |
+
+**Free tier details:**
+- Private message only (no group/channel support)
+- Alert message shows: alert type, areas, **ETA time** (from enrichment `eta` field) — nothing else
+- No enrichment editing (message stays static after send)
+- No Q&A
+
+**Pro tier details:**
+- Chat/group/channel integration (bot can be added to group chats)
+- Full AI enrichment: origin, rocket count, interceptions, casualties, damage, inline citations
+- Message edited with enrichment data in real-time
+- Q&A chat + inline Q&A
+
+**Implementation:**
+1. `tier: "free" | "pro"` in `UserConfig` (already exists as `"free" | "premium"` → rename to `"pro"`)
+2. Gate middleware: `packages/bot/src/middleware/tier.ts`
+3. Alert fanout: free users get stripped message (ETA only), pro users get full enrichment
+4. Admin: `/grant <chatId>`, `/revoke <chatId>`
+
+**Depends on:** Phase 1
+
+---
+
+### Phase 7: Stability Hardening
+
+**Goal:** High SLA without manual QA.
+
+1. **Snapshot tests** — golden input/output pairs for extract-node + synthesize-node
+2. **Zod contract tests** — every cross-package boundary validates with Zod
+3. **LLM guardrails** — max field lengths, banned patterns, hallucination check (every fact → ≥1 source URL)
+4. **Canary mode** — `config.yaml: canary: true` → synthetic test alert on startup
+5. **Health check v2** — `GET /health` returns `status`, `lastAlertTs`, `lastEnrichmentTs`, `registeredUsers`, `redisConnected`, `gramjsConnected`
+6. **BullMQ DLQ** — dead letter queue for failed enrichment jobs → log to Better Stack
+
+---
+
+### Dependency Graph
+
+```
+Phase 0 ✅ → Phase 1 ✅
+  ↓
+Phase 2 (Hygiene + Enrichment v2)
+  ↓
+  ├── Phase 3 (Q&A) ──→ Phase 4 (Inline)
+  ├── Phase 5 (Shelter) [parallel]
+  └── Phase 6 (Monetization) [parallel after Phase 1]
+        ↓
+Phase 7 (Stability) — runs through end
+```
+
+**Critical path:** Phase 2 → Phase 3 → Phase 4 → Phase 7
