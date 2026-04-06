@@ -147,7 +147,8 @@ Rules:
       Example: "Центр: 3 попадания (Тель-Авив — нет данных)"
 - intercepted: use qualitative words in target language ("большинство", "most", "רוב", "معظم")
 - casualties: only populate if alertType is "resolved" and confidence >= 0.95.
-    Apply the same insightLocation remark rule as hits.
+  Apply the same insightLocation remark rule as hits.
+  Keep wording strictly faithful to source text (no semantic rewrites like converting injuries into deaths). Use exact source wording when available; otherwise use concise qualitative count wording.
 - no_casualties: only populate if alertType is "resolved" AND the casualities consensus explicitly has count=0 AND source texts explicitly mention casualties status.
     Output exactly "none" if sources CONFIRM no casualties (e.g. "пострадавших нет", "no injuries", "אין פצועים").
     Output exactly "unreported" if sources say not yet received / not confirmed yet (e.g. "MADA: no reports at this stage", "на данном этапе не поступало", "לא דווח על נפגעים").
@@ -159,6 +160,7 @@ CRITICAL — anti-neuroslop rules (NEVER violate):
 - NEVER output a field where the value is "0", "Неизвестно", "Unknown", "לא ידוע", "غير معروف", "N/A", "нет данных", "?", or any placeholder
 - NEVER output rocket_count of "0" — if no rockets are confirmed, OMIT the field entirely
 - NEVER invent or hallucinate city names, numbers, or details not present in the consensus data
+- NEVER rewrite casualty semantics (e.g. injuries -> deaths). Preserve source meaning exactly.
 - NEVER substitute raw alertTime for eta_absolute without converting the consensus "eta" value (minutes or exact_time) into a wall-clock ETA string. If no "eta" kind exists in consensus, do NOT invent eta_absolute
 - If a consensus value is empty, null, or has no meaningful data → OMIT the field, do NOT include it
 - Output ONLY fields that have a MATCHING consensus kind — if there is no consensus entry for a field, you MUST NOT output it
@@ -207,8 +209,7 @@ CRITICAL — anti-neuroslop rules (NEVER violate):
         sourceUrls:
           vi?.sources?.map((s) => s.sourceUrl ?? "").filter(Boolean) ?? [],
       };
-    },
-  );
+    });
 
   logger.info("synthesize-node: synthesis done", {
     consensusKinds: Object.keys(votedResult.consensus),

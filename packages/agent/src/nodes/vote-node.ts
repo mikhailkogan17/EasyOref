@@ -37,6 +37,12 @@ interface InsightOption {
   insights: ValidatedInsightType[];
 }
 
+interface DroppedKindInfo {
+  kind: string;
+  reason: string;
+  candidateCount: number;
+}
+
 function groupInsightsByKind(
   insights: ValidatedInsightType[],
 ): Map<string, ValidatedInsightType[]> {
@@ -135,6 +141,7 @@ export async function voteNode(
 
   const grouped = groupInsightsByKind(allInsights);
   const consensusMap: Record<string, VotedInsightType> = {};
+  const droppedKinds: DroppedKindInfo[] = [];
   let anyNeedsClarify = false;
 
   for (const [kind, insightsForKind] of grouped) {
@@ -144,6 +151,14 @@ export async function voteNode(
     const best = options[0]!;
     const rejected = options.slice(1).flatMap((o) => o.insights);
 
+    const withReason = (
+      insight: ValidatedInsightType,
+      reason: string,
+    ): ValidatedInsightType => ({
+      ...insight,
+      rejectionReason: insight.rejectionReason ?? reason,
+    });
+
     // Drop impact/casualities insights where region has zero overlap with user zones
     // (not_a_user_zone = Petah Tikva case — no connection to user's monitored areas)
     const LOCATION_KINDS = new Set(["impact", "casualities"]);
@@ -151,12 +166,38 @@ export async function voteNode(
       LOCATION_KINDS.has(kind) &&
       best.insightLocation === "not_a_user_zone"
     ) {
-      // Every source said "not user zone" → skip this insight entirely
+      // Every source said "not user zone" → skip this insight entirely, but always keep an explicit reason.
+      droppedKinds.push({
+        kind,
+        reason:
+          'refutation_found: all candidate insights marked as "not_a_user_zone"',
+        candidateCount: insightsForKind.length,
+      });
       continue;
     }
 
     const clarifyNeed = getClarifyNeed(kind, best.avgConfidence);
     if (clarifyNeed === "needs_clarify") anyNeedsClarify = true;
+
+    const carryForwardCount = best.insights.filter(
+      (i) => i.extractionReason === "carry-forward from previous phase",
+    ).length;
+    const freshCount = best.insights.length - carryForwardCount;
+    const updateMode =
+      freshCount > 0 && carryForwardCount > 0
+        ? "refreshed_with_new_evidence"
+        : carryForwardCount > 0
+        ? "carry_forward_refresh"
+        : "new_consensus";
+
+    const rejectedWithReason = rejected.map((ri) => {
+      const rejectedConfidence = (ri.confidence ?? 0).toFixed(2);
+      const bestConfidence = best.avgConfidence.toFixed(2);
+      return withReason(
+        ri,
+        `not_precise: rejected in favor of higher-confidence consensus (${bestConfidence} > ${rejectedConfidence})`,
+      );
+    });
 
     consensusMap[kind] = {
       kind: best.kind,
@@ -165,10 +206,10 @@ export async function voteNode(
       sourceTrust: best.avgSourceTrust,
       timeRelevance: best.avgTimeRelevance,
       regionRelevance: best.avgRegionRelevance,
-      reason: `Consensus from ${
+      reason: `${updateMode}; consensus from ${
         insightsForKind.length
       } source(s), avg confidence ${(best.avgConfidence * 100).toFixed(0)}%`,
-      rejectedInsights: rejected,
+      rejectedInsights: rejectedWithReason,
       insightLocation: best.insightLocation,
     };
   }
@@ -188,6 +229,7 @@ export async function voteNode(
           kinds: Object.keys(consensusMap),
           totalInsights: allInsights.length,
           carryForward: prevAsValidated.length,
+          droppedKinds,
           needsClarify: anyNeedsClarify,
         }),
       ),

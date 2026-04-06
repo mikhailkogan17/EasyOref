@@ -52,6 +52,7 @@ const langPack = getLanguagePack(config.language);
 
 /** Check if alert data contains any of our monitored areas. */
 function isRelevantArea(alertAreas: string[]): boolean {
+  if (config.areas.length === 0) return true;
   for (const monitored of config.areas) {
     if (alertAreas.includes(monitored)) return true;
     if (
@@ -535,7 +536,12 @@ async function processAlert(alert: OrefAlert): Promise<void> {
         // Convert legacy Record<string,string> enrichment to SynthesizedInsight[] for buildEnrichedMessage
         const legacyInsights = Object.entries(prevEnrichment)
           .filter(([, v]) => v !== undefined && v !== "")
-          .map(([key, value]) => ({ key, value: String(value), confidence: 0.5, sourceUrls: [] }));
+          .map(([key, value]) => ({
+            key,
+            value: String(value),
+            confidence: 0.5,
+            sourceUrls: [],
+          }));
         message = buildEnrichedMessage(
           message,
           alertType,
@@ -716,7 +722,17 @@ async function main(): Promise<void> {
     areas: config.areas,
   });
 
+  // initTranslations fetches cities.json from GitHub. Retry once (30s) if DNS
+  // is not ready yet (common on RPi where service starts before network is up).
   await initTranslations();
+  if (
+    config.cityIds.length > 0 &&
+    resolveCityIds(config.cityIds).length === 0
+  ) {
+    logger.warn("initTranslations failed — retrying in 30s");
+    await new Promise((r) => setTimeout(r, 30_000));
+    await initTranslations();
+  }
 
   // Resolve YAML city_ids → Hebrew area names for Oref API matching
   if (config.cityIds.length > 0) {

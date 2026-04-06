@@ -6,9 +6,8 @@
  *         fanOutExtract (skip cases, URL dedup, parallel fan-out).
  */
 
-import type { ChannelTrackingType, NewsChannelWithUpdatesType, VotedInsightType } from "@easyoref/shared";
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { Send } from "@langchain/langgraph";
+import type { NewsChannelWithUpdatesType } from "@easyoref/shared";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Mocks ──────────────────────────────────────────────────
 
@@ -71,7 +70,9 @@ import { extractChannelNode, getPhaseRule } from "../src/nodes/extract-node.js";
 
 // ── Helpers ────────────────────────────────────────────────
 
-function makeChannel(overrides: Partial<NewsChannelWithUpdatesType> = {}): NewsChannelWithUpdatesType {
+function makeChannel(
+  overrides: Partial<NewsChannelWithUpdatesType> = {},
+): NewsChannelWithUpdatesType {
   return {
     channel: "@N12LIVE",
     processedMessages: [],
@@ -114,7 +115,10 @@ function makeState(overrides: Record<string, unknown> = {}) {
 
 function makeInsight(sourceUrl: string) {
   return {
-    kind: { kind: "rocket_count" as const, value: { type: "exact" as const, value: 30 } },
+    kind: {
+      kind: "rocket_count" as const,
+      value: { type: "exact" as const, value: 30 },
+    },
     timeRelevance: 1.0,
     regionRelevance: 1.0,
     confidence: 0.9,
@@ -219,7 +223,9 @@ describe("extractChannelNode", () => {
   });
 
   it("isolates failure — returns empty on LLM error (doesn't throw)", async () => {
-    mockInvokeWithFallback.mockRejectedValue(new Error("LLM rate limit exceeded"));
+    mockInvokeWithFallback.mockRejectedValue(
+      new Error("LLM rate limit exceeded"),
+    );
 
     const channel = makeChannel();
     const state = makeState({ channelToExtract: channel });
@@ -287,5 +293,69 @@ describe("extractFromChannel (exported helper)", () => {
 
     expect(result.channel).toBe("@israel_9");
     expect(result.insights).toHaveLength(1);
+  });
+});
+
+// ── extractionAgentOpts — prompt safety rules (postmortem Apr 4 2026) ──────
+
+import { extractionAgentOpts } from "../src/nodes/extract-node.js";
+
+describe("extractionAgentOpts — prompt safety rules", () => {
+  /**
+   * Postmortem Finding #1 — מצרר → Egypt misparse (Apr 4 2026, 11:56:35)
+   *
+   * Root cause: LLM confused Hebrew "מצרר" (cluster munition) with "מצרים" (Egypt).
+   * Source text: "שיגור טיל מצרר למרכז — בליסטי בודד לירושלים — זוהו 2 טילים"
+   * LLM output: country_origins: ["Egypt"] — confidence 0.85
+   *
+   * Fix: Added explicit disambiguation rule in extraction system prompt.
+   * This test ensures the rule is never accidentally removed.
+   */
+  it("contains מצרר vs Egypt disambiguation rule (postmortem Apr 4: Finding #1)", () => {
+    expect(extractionAgentOpts.systemPrompt).toContain("מצרר");
+    expect(extractionAgentOpts.systemPrompt).toContain("Egypt");
+    // The rule must explicitly link the two concepts — not just mention them
+    expect(extractionAgentOpts.systemPrompt).toMatch(/מצרר.*Egypt|Egypt.*מצרר/);
+  });
+
+  it("instructs NOT to output Egypt/מצרים unless the text explicitly names Egypt as origin", () => {
+    expect(extractionAgentOpts.systemPrompt).toContain("מצרים");
+    expect(extractionAgentOpts.systemPrompt).toContain("cluser_munition_used");
+    // When source has מצרר → prefer cluster munition, not country
+    expect(extractionAgentOpts.systemPrompt).toMatch(
+      /מצרר.*prefer cluser_munition_used|prefer cluser_munition_used.*מצרר/,
+    );
+  });
+
+  /**
+   * Postmortem Finding #3 — ETA extraction failure (Apr 4 2026)
+   *
+   * Root cause: cheaper model skipped ETA when it had already extracted country_origins
+   * from the same text block ("איו\"ש ⏱ זמן א..."). Multi-fact extraction failure.
+   *
+   * Fix: Added "ALWAYS extract ETA" and "never skip ETA" explicit rules to prompt.
+   */
+  it("instructs to ALWAYS extract ETA when a time reference is present (postmortem Apr 4: Finding #3)", () => {
+    expect(extractionAgentOpts.systemPrompt).toContain("ALWAYS extract ETA");
+  });
+
+  it("warns never to skip ETA because another fact was already extracted (postmortem Apr 4: Finding #3)", () => {
+    expect(extractionAgentOpts.systemPrompt).toContain("never skip ETA");
+  });
+
+  it("instructs to output separate insights for origin AND ETA from the same post", () => {
+    // Ensures both country_origins and eta are extracted when both are present
+    expect(extractionAgentOpts.systemPrompt).toMatch(
+      /both an origin.*and a time|origin country and a time/i,
+    );
+    expect(extractionAgentOpts.systemPrompt).toContain(
+      "separate insights for each",
+    );
+  });
+
+  it("cluser_munition_used kind is documented in prompt with Hebrew aliases", () => {
+    // Early_warning phase rule must include cluster munition
+    const earlyRule = getPhaseRule("early_warning");
+    expect(earlyRule).toContain("cluser_munition_used");
   });
 });

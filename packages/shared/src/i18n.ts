@@ -38,7 +38,7 @@ export interface I18nLabels {
   metaOrigin: string; // "Откуда" / "Origin" / "מקור" / "المصدر"
   metaIntercepted: string; // "Перехваты" / "Intercepted" / "יירוטים" / "اعتراضات"
   metaHits: string; // "Попадания" / "Hits" / "פגיעות" / "إصابات"
-  metaCasualties: string; // "Погибшие" / "Casualties" / "נפגעים" / "إصابات بشرية"
+  metaCasualties: string; // "Пострадавшие" / "Casualties" / "נפגעים" / "إصابات بشرية"
   metaNoVictimsNone: string; // "нет" / "none" / "אין" / "لا"
   metaNoVictimsUnreported: string; // "не сообщается" / "not reported" / "לא דווח" / "لم يُفد"
 }
@@ -83,7 +83,7 @@ const ruPack: LanguagePack = {
     metaOrigin: "Откуда",
     metaIntercepted: "Перехваты",
     metaHits: "Попадания",
-    metaCasualties: "Погибшие",
+    metaCasualties: "Пострадавшие",
     metaNoVictimsNone: "нет",
     metaNoVictimsUnreported: "не сообщается",
   },

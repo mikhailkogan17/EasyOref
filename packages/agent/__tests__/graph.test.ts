@@ -313,8 +313,8 @@ describe("buildEnrichedMessage", () => {
       alertTs,
       insights,
     );
-    expect(resolved).toContain("<b>Погибшие:</b> 2 погибших");
-    expect(siren).not.toContain("Погибшие:");
+    expect(resolved).toContain("<b>Пострадавшие:</b> 2 погибших");
+    expect(siren).not.toContain("Пострадавшие:");
   });
 
   it("adds ETA as enrichment line in early_warning", () => {
@@ -452,6 +452,10 @@ describe("voteNode", () => {
     const result = await voteNode(state as any);
     const consensus = result.votedResult!.consensus["rocket_count"]!;
     expect((consensus.kind as any).value.value).toBe(10);
+    expect(consensus.rejectedInsights).toHaveLength(1);
+    expect(consensus.rejectedInsights[0]?.rejectionReason).toContain(
+      "not_precise",
+    );
   });
 
   it("drops notAUserZone impact insight", async () => {
@@ -466,6 +470,15 @@ describe("voteNode", () => {
     ]);
     const result = await voteNode(state as any);
     expect(result.votedResult!.consensus["impact"]).toBeUndefined();
+    const payload = JSON.parse((result.messages?.[0] as any)?.content ?? "{}");
+    expect(payload.droppedKinds).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "impact",
+          reason: expect.stringContaining("refutation_found"),
+        }),
+      ]),
+    );
   });
 
   it("keeps exactUserZone impact insight", async () => {
@@ -534,6 +547,9 @@ describe("voteNode", () => {
     const state = makeState([], [prev]);
     const result = await voteNode(state as any);
     expect(result.votedResult!.consensus["country_origins"]).toBeDefined();
+    expect(result.votedResult!.consensus["country_origins"]!.reason).toContain(
+      "carry_forward_refresh",
+    );
   });
 
   it("does not weight Hebrew channels differently from Russian channels", async () => {

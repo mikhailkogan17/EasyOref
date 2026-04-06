@@ -63,8 +63,7 @@ export function buildCitationMap(
 }
 
 /**
- * Extract channel tag from a Telegram message URL.
- *
+ * Extract channel tag from Telegram URL.
  * - Public:  https://t.me/N12LIVE/12345  → "N12LIVE"
  * - Private: https://t.me/c/1023468930/123 → "src" (generic label for private channels)
  * - Unknown format → "src"
@@ -73,6 +72,7 @@ export function channelTagFromUrl(url: string): string {
   const match = url.match(/t\.me\/([^/]+)\/(\d+)/);
   if (!match) return "src";
   const segment = match[1];
+  if (!segment) return "src";
   // Private channel URLs use "c" as the first segment
   if (segment === "c") return "src";
   return segment;
@@ -113,11 +113,21 @@ export function isNeuroslop(value: string | undefined): boolean {
 
   // Exact neuroslop values (case-insensitive)
   const NEUROSLOP_EXACT = new Set([
-    "0", "?", "n/a", "none", "-",
-    "неизвестно", "нет данных", "нет информации",
-    "unknown", "no data", "no information",
-    "לא ידוע", "אין מידע",
-    "غير معروف", "لا توجد بيانات",
+    "0",
+    "?",
+    "n/a",
+    "none",
+    "-",
+    "неизвестно",
+    "нет данных",
+    "нет информации",
+    "unknown",
+    "no data",
+    "no information",
+    "לא ידוע",
+    "אין מידע",
+    "غير معروف",
+    "لا توجد بيانات",
   ]);
   if (NEUROSLOP_EXACT.has(trimmed.toLowerCase())) return true;
 
@@ -160,6 +170,10 @@ export function buildEnrichedMessage(
   const lp = getLanguagePack(lang).labels;
 
   const get = (key: string) => insights.find((i) => i.key === key);
+  const noCasualtiesInsight = get("no_casualties");
+  const hasStrictNoCasualties =
+    noCasualtiesInsight?.value === "none" ||
+    noCasualtiesInsight?.value === "unreported";
 
   // Collect enrichment lines
   const enrichLines: string[] = [];
@@ -223,7 +237,8 @@ export function buildEnrichedMessage(
   if (
     casualtiesInsight?.value &&
     !isNeuroslop(casualtiesInsight.value) &&
-    alertType === "resolved"
+    alertType === "resolved" &&
+    !hasStrictNoCasualties
   ) {
     const cites = formatCitations(casualtiesInsight.sourceUrls);
     enrichLines.push(
@@ -232,8 +247,7 @@ export function buildEnrichedMessage(
   }
 
   // ── No casualties (resolved only) ──
-  const noCasualtiesInsight = get("no_casualties");
-  if (noCasualtiesInsight?.value && alertType === "resolved") {
+  if (hasStrictNoCasualties && alertType === "resolved") {
     const valueLabel =
       noCasualtiesInsight.value === "none"
         ? lp.metaNoVictimsNone
