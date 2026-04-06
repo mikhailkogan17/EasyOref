@@ -10,7 +10,7 @@
  * sharing the same Redis server don't process each other's jobs.
  */
 
-import * as logger from "@easyoref/monitoring";
+import * as logger from "@easyoref/shared/logger";
 import { config } from "@easyoref/shared";
 import { Queue } from "bullmq";
 

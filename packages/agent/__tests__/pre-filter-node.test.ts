@@ -43,7 +43,7 @@ vi.mock("@easyoref/shared", async () => {
   };
 });
 
-vi.mock("@easyoref/monitoring", () => ({
+vi.mock("@easyoref/shared/logger", () => ({
   info: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),

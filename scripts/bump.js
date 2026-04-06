@@ -22,7 +22,7 @@ if (!valid.includes(bumpType)) {
   process.exit(1);
 }
 
-const packages = ["bot", "shared", "agent", "monitoring", "gramjs", "cli"];
+const packages = ["bot", "shared", "agent", "gramjs", "cli"];
 const newVersions = {};
 
 for (const pkgName of packages) {

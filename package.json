@@ -20,7 +20,7 @@
     "bump:patch": "node scripts/bump.js --bump-type=patch",
     "bump:minor": "node scripts/bump.js --bump-type=minor",
     "bump:major": "node scripts/bump.js --bump-type=major",
-    "publish": "npm run build && npm publish -w packages/shared --access public --no-provenance && npm publish -w packages/agent --access public --no-provenance && npm publish -w packages/monitoring --access public --no-provenance && npm publish -w packages/gramjs --access public --no-provenance && npm publish -w packages/cli --access public --no-provenance && npm publish -w packages/bot --access public --no-provenance",
+    "publish": "npm run build && npm publish -w packages/shared --access public --no-provenance && npm publish -w packages/agent --access public --no-provenance && npm publish -w packages/gramjs --access public --no-provenance && npm publish -w packages/cli --access public --no-provenance && npm publish -w packages/bot --access public --no-provenance",
     "release": "npm run test:ci && npm run bump:patch && git push --tags && npm run publish && npm run rpi",
     "release:minor": "npm run test:ci && npm run bump:minor && git push --tags && npm run publish && npm run rpi",
     "release:major": "npm run test:ci && npm run bump:major && git push --tags && npm run publish && npm run rpi",
@@ -30,10 +30,7 @@
   "author": "Mikhail Kogan <kogan.mikhail@gmail.com>",
   "license": "MIT",
   "devDependencies": {
-    "@changesets/changelog-github": "^0.6.0",
-    "@changesets/cli": "^2.30.0",
     "@types/node": "^22.0.0",
-    "danger": "^13.0.5",
     "eslint": "^9.0.0",
     "husky": "^9.0.0",
     "tsx": "^4.19.0",
@@ -43,11 +40,5 @@
   },
   "engines": {
     "node": ">=22"
-  },
-  "dependencies": {
-    "@langchain/community": "^1.1.24",
-    "@langchain/openrouter": "^0.1.7",
-    "ai": "^6.0.137",
-    "langchain": "^1.2.36"
   }
 }

@@ -7,7 +7,7 @@
  */
 
 import { Logtail } from "@logtail/node";
-import { config } from "@easyoref/shared";
+import { config } from "./config.js";
 
 const token = config.logtailToken;
 const logtail = token ? new Logtail(token) : null;

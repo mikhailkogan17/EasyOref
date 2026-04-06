@@ -12,7 +12,7 @@
  * - Build VotedInsight with sources: BaseSourceMessage[]
  */
 
-import * as logger from "@easyoref/monitoring";
+import * as logger from "@easyoref/shared/logger";
 import type {
   BaseSourceMessageType,
   InsightLocationType,

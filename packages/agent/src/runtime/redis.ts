@@ -3,7 +3,7 @@
  * Lazily initialized so the main bot still works when agent.enabled=false.
  */
 
-import * as logger from "@easyoref/monitoring";
+import * as logger from "@easyoref/shared/logger";
 import { config } from "@easyoref/shared";
 import { Redis as IORedis } from "ioredis";
 

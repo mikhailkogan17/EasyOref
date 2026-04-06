@@ -17,7 +17,6 @@
     "bullmq": "^5.0.0",
     "ioredis": "^5.3.0",
     "@easyoref/shared": "*",
-    "@easyoref/monitoring": "*",
     "@easyoref/gramjs": "*",
     "zod": "4.3.6"
   },

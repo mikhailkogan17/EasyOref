@@ -2,7 +2,6 @@
   "files": [],
   "references": [
     { "path": "packages/shared" },
-    { "path": "packages/monitoring" },
     { "path": "packages/agent" },
     { "path": "packages/gramjs" },
     { "path": "packages/bot" },

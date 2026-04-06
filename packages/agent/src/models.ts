@@ -14,7 +14,7 @@
  */
 
 import { config } from "@easyoref/shared";
-import * as logger from "@easyoref/monitoring";
+import * as logger from "@easyoref/shared/logger";
 import { ChatOpenRouter } from "@langchain/openrouter";
 import { createAgent } from "langchain";
 
@@ -31,11 +31,6 @@ export const preFilterFallback = new ChatOpenRouter({
   model: config.agent.filterFallbackModel,
   temperature: 0,
 });
-
-/**
- * @deprecated Use preFilterModel directly. Kept for backward compat with clarify-node.
- */
-export const preFilterModelRaw = preFilterModel;
 
 /** Primary extraction model (per-post structured extraction) */
 export const extractModel = new ChatOpenRouter({

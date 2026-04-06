@@ -10,7 +10,7 @@
  * with the appropriate delay. Stops when phase expires.
  */
 
-import * as logger from "@easyoref/monitoring";
+import * as logger from "@easyoref/shared/logger";
 import {
   clearSession,
   config,

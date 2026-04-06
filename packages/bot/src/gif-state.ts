@@ -5,7 +5,7 @@
  * State survives restarts + redeploys via JSON file.
  */
 
-import * as logger from "@easyoref/monitoring";
+import * as logger from "@easyoref/shared/logger";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 

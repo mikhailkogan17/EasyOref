@@ -20,7 +20,7 @@ import {
   stopEnrichWorker,
 } from "@easyoref/agent";
 import { startMonitor, stopMonitor } from "@easyoref/gramjs";
-import * as logger from "@easyoref/monitoring";
+import * as logger from "@easyoref/shared/logger";
 import {
   AlertType,
   clearSession,

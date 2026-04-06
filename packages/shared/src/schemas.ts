@@ -509,3 +509,49 @@ export function validateSafe<T extends z.ZodSchema>(
   }
   return { ok: false, error: result.error.message };
 }
+
+// ─────────────────────────────────────────────────────────
+// Geo hierarchy (moved from zone-priority.ts)
+// ─────────────────────────────────────────────────────────
+
+export const GeoLevel = z.enum(["zone", "city", "area", "macro", "country"]);
+export type GeoLevel = z.infer<typeof GeoLevel>;
+
+export const GeoMetadata = z.object({
+  level: GeoLevel,
+  city: z.string().optional(),
+  area: z.string().optional(),
+  macro: z.string().optional(),
+});
+export type GeoMetadata = z.infer<typeof GeoMetadata>;
+
+export const ZONE_HIERARCHY: Record<string, GeoMetadata> = {
+  "תל אביב - מרכז העיר": {
+    level: "zone",
+    city: "תל אביב",
+    area: "גוש דן",
+    macro: "מרכז",
+  },
+  "תל אביב - דרום העיר ויפו": {
+    level: "zone",
+    city: "תל אביב",
+    area: "גוש דן",
+    macro: "מרכז",
+  },
+  "תל אביב - מזרח": {
+    level: "zone",
+    city: "תל אביב",
+    area: "גוש דן",
+    macro: "מרכז",
+  },
+  "תל אביב - עבר הירקון": {
+    level: "zone",
+    city: "תל אביב",
+    area: "גוש דן",
+    macro: "מרכز",
+  },
+  גוש_דן: { level: "area", macro: "מרכז" },
+  מרכז: { level: "macro" },
+  דרום: { level: "macro" },
+  צפון: { level: "macro" },
+} as const;

@@ -2,7 +2,7 @@
  * Better Stack log query tool.
  */
 
-import * as logger from "@easyoref/monitoring";
+import * as logger from "@easyoref/shared/logger";
 import { config } from "@easyoref/shared";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";

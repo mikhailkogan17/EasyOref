@@ -6,7 +6,6 @@
   },
   "references": [
     { "path": "../shared" },
-    { "path": "../monitoring" },
     { "path": "../gramjs" }
   ],
   "include": ["src/**/*"],

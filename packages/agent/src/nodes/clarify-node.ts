@@ -21,7 +21,7 @@ import type { AgentStateType } from "../graph.js";
 import { preFilterFallback, preFilterModel } from "../models.js";
 import { clarifyTools } from "../tools/index.js";
 import { describeContradictions } from "../utils/contradictions.js";
-import * as logger from "@easyoref/monitoring";
+import * as logger from "@easyoref/shared/logger";
 
 const clarifyAgentOpts = {
   model: preFilterModel,

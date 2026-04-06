@@ -5,7 +5,7 @@
  * No HTTP fetch required — source.text comes directly from the NewsMessage.
  */
 
-import * as logger from "@easyoref/monitoring";
+import * as logger from "@easyoref/shared/logger";
 import type {
   InsightLocationType,
   InsightType,

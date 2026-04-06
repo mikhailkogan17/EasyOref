@@ -6,7 +6,7 @@
  * Step 3: Returns filtered ChannelTracking with only relevant channels.
  */
 
-import * as logger from "@easyoref/monitoring";
+import * as logger from "@easyoref/shared/logger";
 import {
   getActiveSession,
   getChannelPosts,

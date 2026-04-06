@@ -17,7 +17,6 @@
   },
   "references": [
     { "path": "../shared" },
-    { "path": "../monitoring" },
     { "path": "../agent" },
     { "path": "../gramjs" }
   ],

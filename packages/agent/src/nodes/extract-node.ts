@@ -9,7 +9,7 @@
  * and returns extracted insights for that one channel.
  */
 
-import * as logger from "@easyoref/monitoring";
+import * as logger from "@easyoref/shared/logger";
 import { Insight, type NewsChannelWithUpdatesType } from "@easyoref/shared";
 import { AIMessage, BaseMessage, HumanMessage, SystemMessage } from "langchain";
 import z from "zod";

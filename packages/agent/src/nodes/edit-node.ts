@@ -8,7 +8,7 @@
  * Re-exports legacy helpers for backwards-compat.
  */
 
-import * as logger from "@easyoref/monitoring";
+import * as logger from "@easyoref/shared/logger";
 import type {
   AlertType,
   SynthesizedInsightType,

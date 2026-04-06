@@ -81,7 +81,7 @@ import {
   getVotedInsights,
   validateSafe,
 } from "@easyoref/shared";
-import * as logger from "@easyoref/monitoring";
+import * as logger from "@easyoref/shared/logger";
 import {
   END,
   MessagesValue,

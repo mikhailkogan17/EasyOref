@@ -8,7 +8,7 @@
  * so the next phase can carry them forward into vote.
  */
 
-import * as logger from "@easyoref/monitoring";
+import * as logger from "@easyoref/shared/logger";
 import {
   type Language,
   type SynthesizedInsightType,

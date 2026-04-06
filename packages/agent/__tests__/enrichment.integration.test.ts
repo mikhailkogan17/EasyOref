@@ -66,7 +66,7 @@ const { API_KEY, HAS_API, FREE_PRIMARY, FREE_FALLBACK } = vi.hoisted(() => {
 
 // ── Mocks ──────────────────────────────────────────────
 
-vi.mock("@easyoref/monitoring", () => ({
+vi.mock("@easyoref/shared/logger", () => ({
   info: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
@@ -131,7 +131,7 @@ vi.mock("@easyoref/shared", async () => {
 
 // ── Imports (after mocks) ──────────────────────────────
 
-import * as logger from "@easyoref/monitoring";
+import * as logger from "@easyoref/shared/logger";
 import { resolveArea } from "../src/tools/resolve-area.js";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
