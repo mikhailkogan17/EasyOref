@@ -87,6 +87,10 @@ interface ConfigYamlAi {
   /** LangSmith tracing */
   langsmith_api_key?: string;
   langsmith_project?: string;
+  /** Q&A rate limit per user per minute (default 5) */
+  qa_rate_limit_per_min?: number;
+  /** Model to use for Q&A answers (defaults to filter model) */
+  qa_model?: string;
 }
 
 // ── YAML Loader ──────────────────────────────────────────
@@ -249,6 +253,11 @@ export const config = {
       /** LangSmith tracing */
       langsmithApiKey: ai?.langsmith_api_key ?? "",
       langsmithProject: ai?.langsmith_project ?? "",
+      /** Q&A rate limit per user per minute */
+      qaRateLimitPerMin: ai?.qa_rate_limit_per_min ?? 5,
+      /** Model for Q&A answers */
+      qaModel:
+        ai?.qa_model ?? ai?.openrouter_filter_model ?? "openai/gpt-oss-120b",
     };
   })(),
 };
@@ -270,5 +279,6 @@ export function initLangSmithTracing(): void {
 export {
   loadYaml as _loadYaml,
   parseAlertTypes as _parseAlertTypes,
-  type ConfigYaml,
+  type ConfigYaml
 };
+

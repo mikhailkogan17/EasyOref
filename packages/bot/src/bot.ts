@@ -45,6 +45,8 @@ import * as logger from "@easyoref/shared/logger";
 import { Bot } from "grammy";
 import { createServer } from "node:http";
 import { initGifState, pickGif } from "./gif-state.js";
+import { registerInlineHandler } from "./handlers/inline.js";
+import { registerQaHandler } from "./handlers/qa.js";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Per-user Area Filter
@@ -749,6 +751,15 @@ async function main(): Promise<void> {
 
   initGifState(config.dataDir);
   bot = initBot();
+
+  if (bot) {
+    registerQaHandler(bot);
+    registerInlineHandler(bot);
+    bot.start({ drop_pending_updates: true }).catch((err: unknown) => {
+      logger.error("Bot polling failed", { error: String(err) });
+    });
+  }
+
   startHealthServer();
 
   // Start agent subsystems if enabled
