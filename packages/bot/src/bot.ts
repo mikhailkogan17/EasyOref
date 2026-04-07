@@ -46,6 +46,8 @@ import { Bot } from "grammy";
 import { createServer } from "node:http";
 import { initGifState, pickGif } from "./gif-state.js";
 import { registerAdminHandler } from "./handlers/admin.js";
+import { registerInlineHandler } from "./handlers/inline.js";
+import { registerQaHandler } from "./handlers/qa.js";
 import { registerShelterHandler } from "./handlers/shelter.js";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -765,6 +767,11 @@ async function main(): Promise<void> {
   if (bot) {
     registerAdminHandler(bot);
     registerShelterHandler(bot);
+    registerQaHandler(bot);
+    registerInlineHandler(bot);
+    bot.start({ drop_pending_updates: true }).catch((err: unknown) => {
+      logger.error("Bot polling failed", { error: String(err) });
+    });
   }
   startHealthServer();
 

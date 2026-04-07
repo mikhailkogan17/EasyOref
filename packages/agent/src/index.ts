@@ -5,6 +5,7 @@
  */
 
 export * from "./graph.js";
+export * from "./qa-graph.js";
 
 export * from "./nodes/edit-node.js";
 export * from "./nodes/extract-node.js";
@@ -23,3 +24,4 @@ export * from "./runtime/dry-run.js";
 export * from "./runtime/queue.js";
 export * from "./runtime/redis.js";
 export * from "./runtime/worker.js";
+

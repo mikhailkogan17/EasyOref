@@ -137,6 +137,10 @@ gif_mode: none
 #     "חיפה": "Север (Хайфа)"
 #     "קריות": "Галилея (Крайот)"
 #     "ירושלים": "Иерусалим"
+#
+#   # Q&A settings
+#   qa_rate_limit_per_min: 5             # max questions per user per minute
+#   qa_model: "openai/gpt-oss-120b"      # model for Q&A answers (defaults to filter model)
 
 # ── Shelter Search (optional) ─────────────────────
 # Responds to location messages with nearest civil defense shelters.
