@@ -128,7 +128,7 @@ export async function contextNode(
   // Status callback: searching alerts
   if (statusCallback) {
     const searchMsg: Record<string, string> = {
-      ru: "🔎 Проверяю оповещения...",
+      ru: "🔎 Проверяю текущие оповещения...",
       en: "🔎 Checking alerts...",
       he: "🔎 בודק התרעות...",
       ar: "🔎 فحص التنبيهات...",
@@ -211,7 +211,9 @@ export async function contextNode(
         });
       }
     }
-    const events = [...groups.values()];
+    // Filter out "Incident resolved" (category 13) — resolved timestamps confuse LLM
+    // (e.g. siren at 18:18 has a resolved event at 18:52, LLM counts 18:52 as a siren)
+    const events = [...groups.values()].filter((g) => g.category !== 13);
     // Take last 80 unique events (most recent first — history already sorted desc)
     // Translate area names to English so LLM can match city names reliably
     const formatted = events
