@@ -327,11 +327,31 @@ export async function saveUser(user: UserConfig): Promise<void> {
 
 /**
  * Get a UserConfig by chatId. Returns undefined if not found.
+ * Handles legacy "premium" → "pro" tier migration transparently.
  */
 export async function getUser(chatId: string): Promise<UserConfig | undefined> {
   const redis = getRedis();
   const raw = await redis.get(`${USER_KEY_PREFIX}${chatId}`);
-  return raw ? (JSON.parse(raw) as UserConfig) : undefined;
+  if (!raw) return undefined;
+  const parsed = JSON.parse(raw) as UserConfig;
+  // Migration: legacy "premium" tier → "pro"
+  if ((parsed.tier as string) === "premium") {
+    return { ...parsed, tier: "pro" };
+  }
+  return parsed;
+}
+
+/**
+ * Set the tier for a user. Returns false if user not found.
+ */
+export async function setUserTier(
+  chatId: string,
+  tier: "free" | "pro",
+): Promise<boolean> {
+  const user = await getUser(chatId);
+  if (!user) return false;
+  await saveUser({ ...user, tier });
+  return true;
 }
 
 /**

@@ -566,8 +566,11 @@ export const ZONE_HIERARCHY: Record<string, GeoMetadata> = {
 // User configuration (multi-user, persisted in Redis)
 // ─────────────────────────────────────────────────────────
 
-export const UserTier = z.enum(["free", "premium"]);
-export type UserTier = z.infer<typeof UserTier>;
+export const UserTier = z.preprocess(
+  (val) => (val === "premium" ? "pro" : val),
+  z.enum(["free", "pro"]),
+);
+export type UserTier = "free" | "pro";
 
 export const UserConfig = z.object({
   chatId: z.string().min(1),

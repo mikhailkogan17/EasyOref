@@ -12,6 +12,7 @@ import {
   ActiveSession,
   RunEnrichmentInput,
   TelegramMessage,
+  UserTier,
   validateSafe,
 } from "@easyoref/shared";
 import { describe, expect, it } from "vitest";
@@ -225,5 +226,27 @@ describe("validateSafe", () => {
 
   it("does not throw on invalid data", () => {
     expect(() => validateSafe(RunEnrichmentInput, null)).not.toThrow();
+  });
+});
+
+// ─────────────────────────────────────────────────────────
+// UserTier migration
+// ─────────────────────────────────────────────────────────
+
+describe("UserTier", () => {
+  it('coerces legacy "premium" to "pro"', () => {
+    expect(UserTier.parse("premium")).toBe("pro");
+  });
+
+  it('accepts "pro"', () => {
+    expect(UserTier.parse("pro")).toBe("pro");
+  });
+
+  it('accepts "free"', () => {
+    expect(UserTier.parse("free")).toBe("free");
+  });
+
+  it("rejects unknown tier", () => {
+    expect(() => UserTier.parse("gold")).toThrow();
   });
 });

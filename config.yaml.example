@@ -73,6 +73,10 @@ gif_mode: none
 # Omit (or leave empty) for single-instance deployments — backward-compatible.
 # redis_prefix: ""
 
+# ── Admin ─────────────────────────────────────────
+# Telegram user IDs that can use /grant, /revoke, /users commands.
+# admin_chat_ids: [123456789]
+
 # ── AI Enrichment (optional) ─────────────────────
 # Enriches bot messages with data scraped from Telegram news channels via
 # GramJS MTProto + LangGraph. Edits the sent message in-place.

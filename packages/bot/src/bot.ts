@@ -45,6 +45,7 @@ import * as logger from "@easyoref/shared/logger";
 import { Bot } from "grammy";
 import { createServer } from "node:http";
 import { initGifState, pickGif } from "./gif-state.js";
+import { registerAdminHandler } from "./handlers/admin.js";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Per-user Area Filter
@@ -558,12 +559,21 @@ async function processAlert(alert: OrefAlert): Promise<void> {
 
   try {
     // ── Send to each matched user in their language ──
+    // Only pro users are tracked in telegramMessages (for enrichment editing).
+    // Free users receive a plain message in private chats only.
     const telegramMessages: TelegramMessage[] = [];
     for (const user of matchedUsers) {
+      const isPro = user.tier === "pro";
+
+      // Free users cannot receive alerts in group/channel chats (negative chatId)
+      if (!isPro && user.chatId.startsWith("-")) continue;
+
       const lang = (user.language ?? "ru") as Language;
       const userAreaLabel = userMatchedLabel(user, alert.data);
       let message = formatMessage(alertType, userAreaLabel, lang);
-      if (legacyInsights.length > 0) {
+
+      // Only pro users get carry-forward enrichment pre-populated
+      if (isPro && legacyInsights.length > 0) {
         message = buildEnrichedMessage(
           message,
           alertType,
@@ -572,9 +582,11 @@ async function processAlert(alert: OrefAlert): Promise<void> {
           lang,
         );
       }
+
       const replyTo = replyToMap.get(user.chatId);
       const sent = await sendTelegram(user.chatId, alertType, message, replyTo);
-      if (sent) {
+      if (sent && isPro) {
+        // Only pro users tracked — enrichment agent only edits their messages
         telegramMessages.push({
           chatId: user.chatId,
           messageId: sent.messageId,
@@ -749,6 +761,9 @@ async function main(): Promise<void> {
 
   initGifState(config.dataDir);
   bot = initBot();
+  if (bot) {
+    registerAdminHandler(bot);
+  }
   startHealthServer();
 
   // Start agent subsystems if enabled

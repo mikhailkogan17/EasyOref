@@ -47,6 +47,8 @@ interface ConfigYaml {
    * Defaults to "" (no prefix — backward-compatible single-instance behaviour).
    */
   redis_prefix?: string;
+  /** Telegram user IDs with admin access (for /grant, /revoke, /users commands) */
+  admin_chat_ids?: number[];
   ai?: ConfigYamlAi;
 }
 
@@ -170,6 +172,9 @@ export const config = {
    */
   redisPrefix: yml.redis_prefix ?? "",
 
+  /** Telegram user IDs with admin access for /grant, /revoke, /users commands */
+  adminChatIds: yml.admin_chat_ids ?? [],
+
   /** Emoji overrides per alert type */
   emojiOverride: yml.emoji_override ?? {},
 
@@ -270,5 +275,6 @@ export function initLangSmithTracing(): void {
 export {
   loadYaml as _loadYaml,
   parseAlertTypes as _parseAlertTypes,
-  type ConfigYaml,
+  type ConfigYaml
 };
+
