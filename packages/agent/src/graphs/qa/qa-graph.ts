@@ -32,9 +32,7 @@ export const QaState = new StateSchema({
   context: z.string().default(""),
   answer: z.string().default(""),
   sources: z.array(z.string()).default([]),
-  /** Pre-fetched Oref history entries (from context node → answer node). */
-  history: z.array(z.any()).default([]),
-  /** Pre-fetched GramJS session posts (from context node → answer node). */
+  /** Pre-fetched GramJS session posts (for answer node's search tool). */
   posts: z.array(z.any()).default([]),
 });
 

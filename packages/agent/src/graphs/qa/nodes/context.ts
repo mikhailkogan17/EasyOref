@@ -1,10 +1,15 @@
+import type { TzevaAdomWave } from "@easyoref/shared";
 import {
+  config as appConfig,
   fetchActiveAlerts,
-  fetchOrefHistory,
+  fetchTzevaAdomHistory,
   getActiveSession,
   getSessionPosts,
   getSynthesizedInsights,
   getVotedInsights,
+  resolveCityIds,
+  toIsraelTime,
+  translateAreas,
 } from "@easyoref/shared";
 import * as logger from "@easyoref/shared/logger";
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
@@ -58,6 +63,64 @@ async function getEnrichmentCache(): Promise<string> {
   }
 }
 
+/** Format TzevaAdom waves for the LLM context — translate cities, format timestamps. */
+function formatWavesForLLM(
+  waves: TzevaAdomWave[],
+  userCities: Set<string>,
+): string {
+  const lines: string[] = [];
+  for (const wave of waves) {
+    // Check if ANY alert in this wave touches user's cities
+    const userAlerts = wave.alerts.filter((a) =>
+      a.cities.some((c) => userCities.has(c)),
+    );
+    const otherAlerts = wave.alerts.filter(
+      (a) => !a.cities.some((c) => userCities.has(c)),
+    );
+
+    const waveTime = toIsraelTime(wave.alerts[0]!.time * 1000);
+    const threatType =
+      wave.alerts[0]!.threat === 5 ? "hostile aircraft" : "rocket/missile";
+
+    if (userAlerts.length > 0) {
+      // This wave hit user's area
+      const allTimes = userAlerts.map((a) => toIsraelTime(a.time * 1000));
+      const uniqueTimes = [...new Set(allTimes)];
+      const allCities = userAlerts.flatMap((a) =>
+        a.cities.map((c) => translateAreas(c, "en")),
+      );
+      const uniqueCities = [...new Set(allCities)];
+      lines.push(
+        `🚨 ATTACK #${wave.id} at ${uniqueTimes.join(", ")} — YOUR AREA — ${threatType}`,
+      );
+      lines.push(`   Cities: ${uniqueCities.join(", ")}`);
+      if (otherAlerts.length > 0) {
+        const otherCount = otherAlerts.reduce(
+          (sum, a) => sum + a.cities.length,
+          0,
+        );
+        lines.push(`   Also hit ${otherCount} other cities in this wave`);
+      }
+    } else {
+      // Wave didn't hit user's area — summarize briefly
+      const totalCities = wave.alerts.reduce(
+        (sum, a) => sum + a.cities.length,
+        0,
+      );
+      // Pick a few representative cities
+      const someCities = wave.alerts
+        .slice(0, 2)
+        .flatMap((a) =>
+          a.cities.slice(0, 3).map((c) => translateAreas(c, "en")),
+        );
+      lines.push(
+        `   Attack #${wave.id} at ${waveTime} — ${threatType} — ${totalCities} cities (${someCities.join(", ")}...)`,
+      );
+    }
+  }
+  return lines.join("\n");
+}
+
 export async function contextNode(
   state: QaState,
   config: LangGraphRunnableConfig,
@@ -93,21 +156,19 @@ export async function contextNode(
   }
 
   const parts: string[] = [];
+  let historyError = false;
 
-  // 1. Check active session first
+  // User's configured cities (Hebrew)
+  const userCityNames = resolveCityIds(appConfig.cityIds);
+  const userCitySet = new Set(userCityNames);
+
+  // 1. Check active session
   const session = await getActiveSession();
   if (session) {
     const phase = session.phase;
     const areas = session.alertAreas.join(", ");
-    const time = new Date(session.latestAlertTs).toLocaleTimeString("he-IL", {
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZone: "Asia/Jerusalem",
-    });
-    const sessionStart = new Date(session.sessionStartTs).toLocaleTimeString(
-      "he-IL",
-      { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" },
-    );
+    const time = toIsraelTime(session.latestAlertTs);
+    const sessionStart = toIsraelTime(session.sessionStartTs);
     parts.push(
       `ACTIVE SESSION:\n  Phase: ${phase}\n  Started: ${sessionStart}\n  Latest alert: ${time}\n  Areas: ${areas}`,
     );
@@ -126,54 +187,67 @@ export async function contextNode(
   if (currentAlerts.length > 0) {
     const formatted = currentAlerts
       .map(
-        (a) => `[ACTIVE] ${a.instructions ?? a.type}: ${a.cities.join(", ")}`,
+        (a) =>
+          `[ACTIVE NOW] ${a.instructions ?? a.type}: ${a.cities.map((c) => translateAreas(c, "en")).join(", ")}`,
       )
       .join("\n");
-    parts.push(`CURRENT OREF ALERTS:\n${formatted}`);
+    parts.push(`CURRENT ACTIVE ALERTS:\n${formatted}`);
   }
 
-  // 4. Pre-fetch Oref history (with retry — API is flaky)
+  // 4. Fetch TzevaAdom history (reliable API)
   if (statusCallback) {
     const histMsg: Record<string, string> = {
-      ru: "🔎 Загружаю историю оповещений...",
-      en: "🔎 Loading alert history...",
-      he: "🔎 טוען היסטוריית התרעות...",
-      ar: "🔎 تحميل سجل التنبيهات...",
+      ru: "🔎 Загружаю историю атак...",
+      en: "🔎 Loading attack history...",
+      he: "🔎 טוען היסטוריית תקיפות...",
+      ar: "🔎 تحميل سجل الهجمات...",
     };
     await statusCallback(histMsg[lang] ?? histMsg.ru);
   }
-  const history = await fetchOrefHistory().catch((err) => {
-    logger.warn("contextNode: fetchOrefHistory failed", { error: String(err) });
-    return [];
-  });
 
-  // 5. Fetch channel news from Redis
-  let posts: import("@easyoref/shared").ChannelPostType[] = [];
+  let waves: TzevaAdomWave[] = [];
   try {
-    posts = await getSessionPosts();
+    waves = await fetchTzevaAdomHistory();
+  } catch (err) {
+    logger.error("contextNode: fetchTzevaAdomHistory failed", {
+      error: String(err),
+    });
+    historyError = true;
+  }
+
+  if (waves.length > 0) {
+    const formatted = formatWavesForLLM(waves, userCitySet);
+    const userWaves = waves.filter((w) =>
+      w.alerts.some((a) => a.cities.some((c) => userCitySet.has(c))),
+    );
+    parts.push(
+      `ATTACK HISTORY (last 24h, ${waves.length} attack waves total, ${userWaves.length} hit your area):\n${formatted}`,
+    );
+  } else if (!historyError) {
+    parts.push("ATTACK HISTORY: No attacks recorded in the last 24 hours.");
+  }
+
+  if (historyError) {
+    parts.push(
+      "⚠️ ATTACK HISTORY UNAVAILABLE: Could not load attack history. Tell the user the history service is temporarily unavailable.",
+    );
+  }
+
+  // 5. Pre-fetch channel news from Redis (for answer node's search tool)
+  let posts: unknown[] = [];
+  try {
+    const rawPosts = await getSessionPosts();
+    posts = rawPosts;
   } catch (err) {
     logger.warn("contextNode: getSessionPosts failed", { error: String(err) });
   }
 
-  if (posts.length > 0 && statusCallback) {
-    const newsMsg: Record<string, string> = {
-      ru: "🔎 Поиск по новостным каналам...",
-      en: "🔎 Searching news channels...",
-      he: "🔎 חיפוש בערוצי חדשות...",
-      ar: "🔎 البحث في القنوات الإخبارية...",
-    };
-    await statusCallback(newsMsg[lang] ?? newsMsg.ru);
-  }
-
   if (parts.length === 0) {
-    if (!session) {
-      parts.push("No active alerts at the moment. No recent data available.");
-    }
+    parts.push("No active alerts and no recent attack data available.");
   }
 
   return {
-    context: parts.join("\n\n---\n\n") || "No relevant context found.",
-    history,
+    context: parts.join("\n\n---\n\n"),
     posts,
   };
 }

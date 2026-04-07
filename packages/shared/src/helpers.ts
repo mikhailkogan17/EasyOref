@@ -67,69 +67,40 @@ export async function fetchActiveAlerts(
   });
 }
 
-/**
- * Fetch full alert history from alerts-history.oref.org.il (full-day, not just last 120s).
- * AlertsHistory.json only contains currently-active alerts; GetAlarmsHistory.aspx has the full day.
- *
- * NOTE: API is flaky (~50% empty responses) and has a hard 3000-entry cap with no pagination.
- * Retries up to 2 times on empty response to mitigate flakiness.
- */
-export async function fetchOrefHistory(
-  timeoutMs = 5000,
-): Promise<OrefHistoryEntry[]> {
-  const d = new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Asia/Jerusalem" }),
-  );
-  const today = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`; // DD.MM.YYYY
-  const url = `https://alerts-history.oref.org.il/Shared/Ajax/GetAlarmsHistory.aspx?lang=he&fromDate=${today}&toDate=${today}&mode=0`;
+// ── TzevaAdom alert history API ──────────────────────
 
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const res = await fetch(url, {
-        headers: {
-          Referer: "https://www.oref.org.il/",
-          "X-Requested-With": "XMLHttpRequest",
-          "User-Agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.106 Safari/537.36",
-        },
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      if (!res.ok) {
-        if (attempt < 2) {
-          await new Promise((r) => setTimeout(r, 1000));
-          continue;
-        }
-        return [];
-      }
-      const raw: unknown = await res.json();
-      if (!Array.isArray(raw) || raw.length === 0) {
-        if (attempt < 2) {
-          await new Promise((r) => setTimeout(r, 1000));
-          continue;
-        }
-        return [];
-      }
-      // Map category_desc → title for compatibility with existing consumers
-      return raw.map(
-        (e: {
-          alertDate: string;
-          category_desc: string;
-          data: string;
-          category: number;
-        }) => ({
-          alertDate: e.alertDate,
-          title: e.category_desc,
-          data: e.data,
-          category: e.category,
-        }),
-      );
-    } catch {
-      if (attempt < 2) {
-        await new Promise((r) => setTimeout(r, 1000));
-        continue;
-      }
-      return [];
-    }
+/** Single alert within an attack wave from TzevaAdom API. */
+export interface TzevaAdomAlert {
+  time: number; // unix timestamp (seconds)
+  cities: string[]; // Hebrew city names
+  threat: number; // 0 = rockets, 5 = hostile aircraft infiltration
+  isDrill: boolean;
+}
+
+/** Attack wave from TzevaAdom API. */
+export interface TzevaAdomWave {
+  id: number;
+  description: string | null;
+  alerts: TzevaAdomAlert[];
+}
+
+/**
+ * Fetch alert history from api.tzevaadom.co.il.
+ * Always available, returns grouped attack waves (newest first).
+ * Throws on network/parse error (caller must handle).
+ */
+export async function fetchTzevaAdomHistory(
+  timeoutMs = 10000,
+): Promise<TzevaAdomWave[]> {
+  const res = await fetch("https://api.tzevaadom.co.il/alerts-history/", {
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) {
+    throw new Error(`TzevaAdom API returned ${res.status}`);
   }
-  return [];
+  const raw: unknown = await res.json();
+  if (!Array.isArray(raw)) {
+    throw new Error("TzevaAdom API returned non-array");
+  }
+  return raw as TzevaAdomWave[];
 }

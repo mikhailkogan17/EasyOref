@@ -1,101 +1,7 @@
 /**
- * Q&A graph tests — intent classifier, answer node (mocked), get_last_attack tool, full graph integration.
+ * Q&A graph tests — intent classifier, answer node (mocked), full graph integration.
  */
 import { describe, expect, it, vi } from "vitest";
-
-// ── findLastAttack tests (deterministic, no mocks) ───────────────────────
-
-import type { OrefHistoryEntry } from "@easyoref/shared";
-import { findLastAttack } from "../src/utils/query-history.js";
-
-describe("findLastAttack", () => {
-  const makeEntry = (
-    alertDate: string,
-    category: number,
-    data = "תל אביב - דרום העיר ויפו",
-  ): OrefHistoryEntry => ({
-    alertDate,
-    title: "test",
-    data,
-    category,
-  });
-
-  it("returns null when no entries match zones", () => {
-    const history = [makeEntry("2026-04-07T09:05:00", 1, "חיפה")];
-    const result = findLastAttack(history, ["תל אביב - דרום העיר ויפו"]);
-    expect(result).toBeNull();
-  });
-
-  it("returns null for empty history", () => {
-    const result = findLastAttack([], ["תל אביב - דרום העיר ויפו"]);
-    expect(result).toBeNull();
-  });
-
-  it("finds last siren with early_warning and resolved", () => {
-    const history = [
-      makeEntry("2026-04-07T09:05:00", 14), // early warning
-      makeEntry("2026-04-07T09:10:00", 1), // siren
-      makeEntry("2026-04-07T09:12:00", 1), // another siren
-      makeEntry("2026-04-07T09:17:00", 13), // resolved
-    ];
-    const result = findLastAttack(history, ["תל אביב - דרום העיר ויפו"]);
-    expect(result).not.toBeNull();
-    expect(result!.early_time).toBe("09:05");
-    expect(result!.siren_times).toEqual(["09:10", "09:12"]);
-    expect(result!.resolved_time).toBe("09:17");
-  });
-
-  it("returns only early_time when no sirens exist", () => {
-    const history = [makeEntry("2026-04-07T09:05:00", 14)];
-    const result = findLastAttack(history, ["תל אביב - דרום העיר ויפו"]);
-    expect(result).not.toBeNull();
-    expect(result!.early_time).toBe("09:05");
-    expect(result!.siren_times).toEqual([]);
-    expect(result!.resolved_time).toBeNull();
-  });
-
-  it("finds last attack when multiple attacks in history", () => {
-    const history = [
-      // First attack
-      makeEntry("2026-04-07T09:05:00", 14),
-      makeEntry("2026-04-07T09:10:00", 1),
-      makeEntry("2026-04-07T09:17:00", 13),
-      // Second attack (last one)
-      makeEntry("2026-04-07T18:16:00", 14),
-      makeEntry("2026-04-07T18:18:00", 1),
-      makeEntry("2026-04-07T18:28:00", 13),
-    ];
-    const result = findLastAttack(history, ["תל אביב - דרום העיר ויפו"]);
-    expect(result).not.toBeNull();
-    expect(result!.early_time).toBe("18:16");
-    expect(result!.siren_times).toEqual(["18:18"]);
-    expect(result!.resolved_time).toBe("18:28");
-  });
-
-  it("handles siren without early_warning", () => {
-    const history = [
-      makeEntry("2026-04-07T13:06:00", 1),
-      makeEntry("2026-04-07T13:17:00", 13),
-    ];
-    const result = findLastAttack(history, ["תל אביב - דרום העיר ויפו"]);
-    expect(result).not.toBeNull();
-    expect(result!.early_time).toBeNull();
-    expect(result!.siren_times).toEqual(["13:06"]);
-    expect(result!.resolved_time).toBe("13:17");
-  });
-
-  it("handles siren without resolved", () => {
-    const history = [
-      makeEntry("2026-04-07T18:16:00", 14),
-      makeEntry("2026-04-07T18:18:00", 1),
-    ];
-    const result = findLastAttack(history, ["תל אביב - דרום העיר ויפו"]);
-    expect(result).not.toBeNull();
-    expect(result!.early_time).toBe("18:16");
-    expect(result!.siren_times).toEqual(["18:18"]);
-    expect(result!.resolved_time).toBeNull();
-  });
-});
 
 // ── Intent node tests (no mocks needed — purely deterministic) ─────────────
 
@@ -111,7 +17,6 @@ function makeState(userMessage: string): QaState {
     context: "",
     answer: "",
     sources: [],
-    history: [],
     posts: [],
   };
 }

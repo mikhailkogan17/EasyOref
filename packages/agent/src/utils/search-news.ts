@@ -18,12 +18,12 @@ const SearchNewsSchema = z.object({
   from_time: z
     .string()
     .describe(
-      'Start of search window, HH:MM format (e.g. "09:00"). Use early_time from get_last_attack, or 10 min before siren.',
+      'Start of search window, HH:MM format (e.g. "09:00"). Use attack time from history minus 10 minutes.',
     ),
   to_time: z
     .string()
     .describe(
-      'End of search window, HH:MM format (e.g. "09:30"). Use resolved_time + 10 min from get_last_attack.',
+      'End of search window, HH:MM format (e.g. "09:30"). Use attack time from history plus 15 minutes.',
     ),
 });
 
@@ -96,10 +96,9 @@ export function createSearchNewsTool(posts: ChannelPostType[]) {
     {
       name: "search_channel_news",
       description:
-        "Search monitored Telegram news channels for posts in a time window. " +
-        "Use the time range from get_last_attack (early_time or siren_time-10min ... resolved_time+10min). " +
-        "Returns news posts with channel name, time, text, and URL. " +
-        "Call AFTER get_last_attack to enrich the attack with details (rockets, interceptions, origin, casualties).",
+        "Search monitored Telegram news channels for posts in a time window (HH:MM format). " +
+        "Use attack timestamps from the context: from_time = attack time - 10 min, to_time = attack time + 15 min. " +
+        "Returns news posts with channel name, time, text, and URL.",
       schema: SearchNewsSchema,
     },
   );
