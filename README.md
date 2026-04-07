@@ -7,7 +7,6 @@ Israeli Home Front Command alerts — delivered to your loved ones' Telegram cha
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![npm](https://img.shields.io/badge/npm-easyoref-CB3837?logo=npm)](https://www.npmjs.com/package/easyoref)
 [![LangGraph](https://img.shields.io/badge/LangGraph-agentic-blue?logo=langgraph)](https://langchain-ai.github.io/langgraphjs/)
-[![LangChain](https://img.shields.io/badge/LangChain-tools-green?logo=langchain)](https://js.langchain.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 
 [עברית](docs/readme_he.md) · [Русский](docs/readme_ru.md)
@@ -35,6 +34,11 @@ Cell Broadcast alerts — for you in Israel.
 
 - **4 languages** — Russian, English, Hebrew, Arabic
 - **3 alert types** — early warning, red_alert, all-clear
+- **AI enrichment** — LangGraph pipeline scrapes Telegram news channels and enriches alerts with attack type, ETA, source citations
+- **Shelter search** — send your location, get nearest shelters with walking time
+- **Q&A chat** — ask the bot about the current situation in natural language
+- **Inline mode** — type `@easyorefbot` in any chat for live alert status
+- **Freemium tiers** — free alerts for everyone, pro features for power users
 - **Custom messages** — your own text and media per alert type
 
 ## Quick Start
@@ -125,36 +129,26 @@ EasyOref runs two layers:
 
 ```mermaid
 graph LR
-    A["Pre-Filter<br/>Deterministic<br/>Fetch posts, remove noise"] --> B["Extract<br/>LLM 2-Stage<br/>Cheap relevance + expensive structured"]
-    B --> C["Post-Filter<br/>Deterministic<br/>Validate extraction"]
-    C --> D["Vote<br/>Deterministic<br/>Consensus voting"]
-    D --> E{"Synthesize<br/>Router<br/>Check confidence"}
-    E -->|Low conf / suspicious| F["Clarify<br/>LLM + Tools<br/>ReAct tool calling"]
-    F --> G["Revote<br/>Deterministic<br/>Re-consensus"]
-    G --> E
-    E -->|High conf / disabled| H["Edit<br/>Deterministic<br/>Format & send"]
+    A["Pre-Filter<br/>Deterministic<br/>Fetch posts, remove noise"] --> B["Extract ×N<br/>LLM<br/>Parallel per channel"]
+    B --> C["Post-Filter<br/>LLM<br/>Validate extractions"]
+    C --> D["Synthesize<br/>Consensus + LLM<br/>Vote & localize"]
+    D --> E["Edit<br/>Deterministic<br/>Format & send"]
     style A fill:#e1f5ff
     style B fill:#fff3e0
     style C fill:#f3e5f5
-    style D fill:#e8f5e9
-    style E fill:#fce4ec
-    style F fill:#fff9c4
-    style G fill:#e8f5e9
-    style H fill:#c8e6c9
+    style D fill:#fce4ec
+    style E fill:#c8e6c9
 ```
 
-| Node | Description |
-|------|-------------|
-| ![#e1f5ff](https://placehold.co/10x10/e1f5ff/e1f5ff.png) **Pre-Filter** | Fetches Telegram channel posts from Redis, removes noise (IDF press releases, area summaries) |
-| ![#fff3e0](https://placehold.co/10x10/fff3e0/fff3e0.png) **Extract** | Two-stage LLM: cheap model filters for relevance, expensive model extracts structured data (rocket count, intercepts, impact zone, origin) |
-| ![#f3e5f5](https://placehold.co/10x10/f3e5f5/f3e5f5.png) **Post-Filter** | Deterministic validation: time relevance check (alert time vs. post time), region overlap |
-| ![#e8f5e9](https://placehold.co/10x10/e8f5e9/e8f5e9.png) **Vote** | Aggregates extractions into consensus with confidence scoring |
-| ![#fce4ec](https://placehold.co/10x10/fce4ec/fce4ec.png) **Synthesize** | Routes: low confidence or suspicious single-source claims → Clarify; otherwise → Edit |
-| ![#fff9c4](https://placehold.co/10x10/fff9c4/fff9c4.png) **Clarify** | ReAct agent that calls tools (`read_telegram_sources`, `alert_history`, `resolve_area`, `betterstack_log`) to resolve contradictions |
-| ![#e8f5e9](https://placehold.co/10x10/e8f5e9/e8f5e9.png) **Revote** | Re-runs consensus with additional data from Clarify |
-| ![#c8e6c9](https://placehold.co/10x10/c8e6c9/c8e6c9.png) **Edit** | Formats the enriched message and updates the Telegram post in-place |
+| Node                                                                     | Description                                                                                                       |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| ![#e1f5ff](https://placehold.co/10x10/e1f5ff/e1f5ff.png) **Pre-Filter**  | Collects Telegram channel posts from Redis, applies noise filters and watermark tracking                          |
+| ![#fff3e0](https://placehold.co/10x10/fff3e0/fff3e0.png) **Extract**     | Parallel fan-out: one LLM call per channel extracts structured data (origin, ETA, rocket type, intercepts)        |
+| ![#f3e5f5](https://placehold.co/10x10/f3e5f5/f3e5f5.png) **Post-Filter** | Validates each insight against source text — filters hallucinations, soft-passes critical phases                  |
+| ![#fce4ec](https://placehold.co/10x10/fce4ec/fce4ec.png) **Synthesize**  | Deterministic consensus voting (0 tokens) + LLM synthesis for localized display (ru/en/he/ar). Applies guardrails |
+| ![#c8e6c9](https://placehold.co/10x10/c8e6c9/c8e6c9.png) **Edit**        | Builds enriched message with superscript citations and edits the Telegram post in-place                           |
 
-`MemorySaver` checkpoints state per `alertId`. `ai.enabled: false` disables enrichment entirely — core delivery continues with zero LLM dependency.
+BullMQ worker manages enrichment runs per alert session (config-driven max runs). `ai.enabled: false` disables enrichment entirely — core delivery continues with zero LLM dependency.
 
 ## Configuration
 
@@ -170,6 +164,10 @@ Full reference: [`config.yaml.example`](config.yaml.example).
 | `language`               | `ru`    | `ru` `en` `he` `ar`                                                                                 |
 | `alert_types`            | all     | `early` `red_alert` `resolved`                                                                      |
 | `gif_mode`               | `none`  | `funny_cats` `none`                                                                                 |
+| `admin_chat_ids`         | —       | Telegram user IDs for `/grant`, `/revoke`, `/users` admin commands                                  |
+| `ai.enabled`             | `false` | Enable LangGraph enrichment pipeline                                                                |
+| `ai.openrouter_api_key`  | —       | [OpenRouter](https://openrouter.ai) API key for LLM calls                                           |
+| `ai.redis_url`           | —       | Redis URL for BullMQ + GramJS post storage                                                          |
 | `title_override.*`       | —       | Custom title per alert type                                                                         |
 | `description_override.*` | —       | Custom description per alert type                                                                   |
 
