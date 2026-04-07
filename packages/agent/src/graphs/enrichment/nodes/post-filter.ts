@@ -18,13 +18,13 @@ import {
   providerStrategy,
 } from "langchain";
 import { z } from "zod";
-import type { AgentStateType } from "../enrichment-graph.js";
 import {
   extractFallback,
   extractModel,
   invokeWithFallback,
 } from "../../../models.js";
 import { resolveArea } from "../../../utils/resolve-area.js";
+import type { AgentStateType } from "../enrichment-graph.js";
 
 /**
  * Local typed view of InsightType fields that post-filter-node reads.

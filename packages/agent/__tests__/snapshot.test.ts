@@ -241,7 +241,10 @@ describe("synthesize-node snapshots", () => {
       filteredInsights: [
         makeInsight({ kind: "country_origins", value: ["Lebanon"] }),
         makeInsight({ kind: "eta", value: "~2 min" }),
-        makeInsight({ kind: "rocket_count", value: { type: "exact", value: 30 } }),
+        makeInsight({
+          kind: "rocket_count",
+          value: { type: "exact", value: 30 },
+        }),
       ],
     });
 
@@ -300,7 +303,12 @@ describe("synthesize-node snapshots", () => {
           },
           {
             key: "eta",
-            value: { ru: longValue, en: longValue, he: longValue, ar: longValue },
+            value: {
+              ru: longValue,
+              en: longValue,
+              he: longValue,
+              ar: longValue,
+            },
           },
         ],
       },

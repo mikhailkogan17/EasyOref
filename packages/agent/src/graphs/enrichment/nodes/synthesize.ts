@@ -20,7 +20,6 @@ import {
   providerStrategy,
 } from "langchain";
 import { z } from "zod";
-import type { AgentStateType } from "../enrichment-graph.js";
 import {
   invokeWithFallback,
   preFilterFallback,
@@ -29,6 +28,7 @@ import {
 import { buildConsensus } from "../../../utils/consensus.js";
 import { fieldKeyToKind } from "../../../utils/field-key-map.js";
 import { applyGuardrails } from "../../../utils/guardrails.js";
+import type { AgentStateType } from "../enrichment-graph.js";
 
 // ── Output schema ──────────────────────────────────────────
 

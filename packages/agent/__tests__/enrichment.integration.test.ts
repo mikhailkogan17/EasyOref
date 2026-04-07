@@ -221,7 +221,8 @@ describe.skipIf(!HAS_API)(
       // Override getChannelPosts for this test only
       vi.mocked(getChannelPosts).mockResolvedValueOnce(fakePosts);
 
-      const { runEnrichment } = await import("../src/graphs/enrichment/enrichment-graph.js");
+      const { runEnrichment } =
+        await import("../src/graphs/enrichment/enrichment-graph.js");
       vi.mocked(logger.info).mockClear();
 
       try {
@@ -311,7 +312,8 @@ describe.skipIf(!HAS_API)(
 
 describe("pipeline dry-run (no posts)", () => {
   it("completes graph with zero posts and emits terminal warning", async () => {
-    const { runEnrichment } = await import("../src/graphs/enrichment/enrichment-graph.js");
+    const { runEnrichment } =
+      await import("../src/graphs/enrichment/enrichment-graph.js");
 
     await runEnrichment({
       alertId: "test-dry-run-001",
@@ -367,7 +369,8 @@ describe("pipeline backfill fallback (delayed data)", () => {
 
     mockBackfill.mockResolvedValueOnce(1); // simulate 1 post backfilled
 
-    const { filterNode } = await import("../src/graphs/enrichment/nodes/pre-filter.js");
+    const { filterNode } =
+      await import("../src/graphs/enrichment/nodes/pre-filter.js");
     const result = await filterNode({
       alertId: "test-backfill-001",
       alertTs: NOW,

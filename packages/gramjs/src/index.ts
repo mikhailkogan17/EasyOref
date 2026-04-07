@@ -9,8 +9,8 @@
  * Uses exponential backoff on flood errors.
  */
 
-import * as logger from "@easyoref/shared/logger";
 import { config, getActiveAlert, pushChannelPost } from "@easyoref/shared";
+import * as logger from "@easyoref/shared/logger";
 import { Api, TelegramClient } from "telegram";
 import { NewMessage } from "telegram/events/index.js";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";

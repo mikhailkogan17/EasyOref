@@ -5,19 +5,18 @@
  * correctly validate and reject edge cases.
  */
 
-import { describe, expect, it } from "vitest";
 import {
+  AlertType,
   Insight,
   InsightKind,
-  VotedInsight,
-  SynthesizedInsight,
   LocalizedValue,
-  ValidatedInsight,
-  NewsMessage,
   NewsChannelWithUpdates,
-  AlertType,
+  NewsMessage,
   QualitativeCount,
+  SynthesizedInsight,
+  VotedInsight,
 } from "@easyoref/shared";
+import { describe, expect, it } from "vitest";
 
 // ── AlertType ──────────────────────────────────────────
 
@@ -149,9 +148,7 @@ describe("Insight schema", () => {
   });
 
   it("rejects confidence > 1", () => {
-    expect(() =>
-      Insight.parse({ ...validInsight, confidence: 1.5 }),
-    ).toThrow();
+    expect(() => Insight.parse({ ...validInsight, confidence: 1.5 })).toThrow();
   });
 
   it("rejects confidence < 0", () => {

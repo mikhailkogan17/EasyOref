@@ -3,8 +3,8 @@ import type { NewsChannelWithUpdatesType } from "@easyoref/shared";
 import { Insight } from "@easyoref/shared";
 import { type BaseMessage, HumanMessage, SystemMessage } from "langchain";
 import type z from "zod";
-import { extractFallback, invokeWithFallback } from "../models.js";
 import { extractionAgentOpts } from "../graphs/enrichment/nodes/extract.js";
+import { extractFallback, invokeWithFallback } from "../models.js";
 
 export async function extractFromChannel(
   channel: NewsChannelWithUpdatesType,

@@ -767,9 +767,7 @@ function startHealthServer(): void {
           last_enrichment_ts: lastEnrichTs || null,
           registered_users: registeredUserCount,
           redis_connected: redisConnected,
-          gramjs_connected: config.agent.enabled
-            ? isGramJsConnected()
-            : null,
+          gramjs_connected: config.agent.enabled ? isGramJsConnected() : null,
           active_session_phase: activeSessionPhase,
           agent_enabled: config.agent.enabled,
         }),

@@ -8,9 +8,9 @@
  *   - All-empty language values rejection
  */
 
+import type { SynthesizedInsightType } from "@easyoref/shared";
 import { describe, expect, it } from "vitest";
 import { applyGuardrails } from "../src/utils/guardrails.js";
-import type { SynthesizedInsightType } from "@easyoref/shared";
 
 function makeSynthesized(
   overrides: Partial<SynthesizedInsightType> = {},

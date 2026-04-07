@@ -13,8 +13,8 @@ import {
 } from "@easyoref/shared";
 import * as logger from "@easyoref/shared/logger";
 import { AIMessage } from "langchain";
-import type { AgentStateType } from "../enrichment-graph.js";
 import { buildTracking } from "../../../utils/tracking.js";
+import type { AgentStateType } from "../enrichment-graph.js";
 
 // ── Node ───────────────────────────────────────────────────
 
