@@ -5,6 +5,7 @@ import {
   getSessionPosts,
   getSynthesizedInsights,
   getVotedInsights,
+  translateAreas,
 } from "@easyoref/shared";
 import * as logger from "@easyoref/shared/logger";
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
@@ -22,6 +23,22 @@ const OFF_TOPIC_TEXT: Record<string, string> = {
   en: 'Hi! I\'m @easyoref — an AI assistant for Israeli rocket alerts 🇮🇱\n\nI only answer questions about sirens, rocket attacks, interceptions, and shelters.\n\nFor example:\n• "When was the last siren in Tel Aviv?"\n• "How many rockets were there?"\n• "Were there any casualties?"',
   he: 'שלום! אני @easyoref — עוזר בינה מלאכותית להתרעות טילים 🇮🇱\n\nאני עונה רק על שאלות לגבי אזעקות, תקיפות טילים, יירוטים ומקלטים.\n\nלמשל:\n• "מתי הייתה האזעקה האחרונה בתל אביב?"\n• "כמה טילים היו?"',
   ar: "مرحبًا! أنا @easyoref — مساعد تنبيهات صاروخية 🇮🇱\n\nأجيب فقط على أسئلة حول صفارات الإنذار والهجمات الصاروخية والاعتراضات والملاجئ.",
+};
+
+/** Translate Oref Hebrew category_desc to English. Fallback: original Hebrew. */
+const CATEGORY_EN: Record<number, string> = {
+  1: "Rocket/missile fire (siren)",
+  2: "Hostile aircraft (siren)",
+  3: "Unconventional weapon",
+  4: "Earthquake",
+  5: "Radiological event",
+  6: "Terrorist infiltration",
+  7: "Tsunami",
+  9: "Hazardous materials",
+  10: "Unknown threat",
+  11: "Early warning",
+  12: "Practice drill",
+  13: "Incident resolved",
 };
 
 /** Get recent channel posts from Redis (from GramJS monitoring). */
@@ -175,7 +192,7 @@ export async function contextNode(
     // Group by alertDate+category to deduplicate (each alert fires for many sub-areas)
     const groups = new Map<
       string,
-      { time: string; type: string; areas: string[] }
+      { time: string; type: string; category: number; areas: string[] }
     >();
     for (const e of history) {
       const key = `${e.alertDate}|${e.category}`;
@@ -186,14 +203,24 @@ export async function contextNode(
         const time = e.alertDate.includes("T")
           ? (e.alertDate.split("T")[1]?.slice(0, 5) ?? e.alertDate)
           : e.alertDate;
-        groups.set(key, { time, type: e.title, areas: [e.data] });
+        groups.set(key, {
+          time,
+          type: e.title,
+          category: e.category,
+          areas: [e.data],
+        });
       }
     }
     const events = [...groups.values()];
     // Take last 80 unique events (most recent first — history already sorted desc)
+    // Translate area names to English so LLM can match city names reliably
     const formatted = events
       .slice(0, 80)
-      .map((g) => `[${g.time}] ${g.type}: ${g.areas.join(", ")}`)
+      .map((g) => {
+        const typeEn = CATEGORY_EN[g.category] ?? g.type;
+        const areasEn = translateAreas(g.areas.join(", "), "en");
+        return `[${g.time}] ${typeEn}: ${areasEn}`;
+      })
       .join("\n");
     parts.push(
       `OREF ALERT HISTORY (today, ${history.length} raw alerts, ${events.length} unique events):\n${formatted}`,
