@@ -32,6 +32,10 @@ export const QaState = new StateSchema({
   context: z.string().default(""),
   answer: z.string().default(""),
   sources: z.array(z.string()).default([]),
+  /** Pre-fetched Oref history entries (from context node → answer node). */
+  history: z.array(z.any()).default([]),
+  /** Pre-fetched GramJS session posts (from context node → answer node). */
+  posts: z.array(z.any()).default([]),
 });
 
 export type QaState = typeof QaState.State;

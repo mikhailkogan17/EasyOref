@@ -1,12 +1,10 @@
 import {
-  config as appConfig,
   fetchActiveAlerts,
+  fetchOrefHistory,
   getActiveSession,
   getSessionPosts,
   getSynthesizedInsights,
   getVotedInsights,
-  resolveCityIds,
-  translateAreas,
 } from "@easyoref/shared";
 import * as logger from "@easyoref/shared/logger";
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
@@ -25,33 +23,6 @@ const OFF_TOPIC_TEXT: Record<string, string> = {
   he: 'שלום! אני @easyoref — עוזר בינה מלאכותית להתרעות טילים 🇮🇱\n\nאני עונה רק על שאלות לגבי אזעקות, תקיפות טילים, יירוטים ומקלטים.\n\nלמשל:\n• "מתי הייתה האזעקה האחרונה בתל אביב?"\n• "כמה טילים היו?"',
   ar: "مرحبًا! أنا @easyoref — مساعد تنبيهات صاروخية 🇮🇱\n\nأجيب فقط على أسئلة حول صفارات الإنذار والهجمات الصاروخية والاعتراضات والملاجئ.",
 };
-
-/** Get recent channel posts from Redis (from GramJS monitoring). */
-async function getRecentChannelNews(): Promise<string> {
-  try {
-    const posts = await getSessionPosts();
-    if (posts.length === 0) return "";
-
-    // Sort by timestamp desc, take latest 30
-    const sorted = [...posts].sort((a, b) => b.ts - a.ts).slice(0, 30);
-    return sorted
-      .map((p) => {
-        const time = new Date(p.ts).toLocaleTimeString("he-IL", {
-          hour: "2-digit",
-          minute: "2-digit",
-          timeZone: "Asia/Jerusalem",
-        });
-        const url = p.messageUrl ?? "";
-        return `[${time}] ${p.channel}: ${p.text.slice(0, 300)}${url ? ` ${url}` : ""}`;
-      })
-      .join("\n\n");
-  } catch (err) {
-    logger.warn("contextNode: getSessionPosts failed", {
-      error: String(err),
-    });
-    return "";
-  }
-}
 
 /** Get cached enrichment insights (from the enrichment pipeline). */
 async function getEnrichmentCache(): Promise<string> {
@@ -161,34 +132,37 @@ export async function contextNode(
     parts.push(`CURRENT OREF ALERTS:\n${formatted}`);
   }
 
-  // 4. Configured zones (for use with query_alert_history tool in answer node)
-  if (appConfig.cityIds.length > 0) {
-    const zoneLines = ["  0: all configured zones (aggregated)"];
-    for (const id of appConfig.cityIds) {
-      const hebrewNames = resolveCityIds([id]);
-      const nameEn = hebrewNames[0]
-        ? translateAreas(hebrewNames[0], "en")
-        : `zone_${id}`;
-      zoneLines.push(`  ${id}: ${nameEn}`);
-    }
-    parts.push(
-      `CONFIGURED_ZONES (zone_id integers for query_alert_history tool):\n${zoneLines.join("\n")}`,
-    );
+  // 4. Pre-fetch Oref history (with retry — API is flaky)
+  if (statusCallback) {
+    const histMsg: Record<string, string> = {
+      ru: "🔎 Загружаю историю оповещений...",
+      en: "🔎 Loading alert history...",
+      he: "🔎 טוען היסטוריית התרעות...",
+      ar: "🔎 تحميل سجل التنبيهات...",
+    };
+    await statusCallback(histMsg[lang] ?? histMsg.ru);
   }
+  const history = await fetchOrefHistory().catch((err) => {
+    logger.warn("contextNode: fetchOrefHistory failed", { error: String(err) });
+    return [];
+  });
 
   // 5. Fetch channel news from Redis
-  const news = await getRecentChannelNews();
-  if (news) {
-    if (statusCallback) {
-      const newsMsg: Record<string, string> = {
-        ru: "🔎 Поиск по новостным каналам...",
-        en: "🔎 Searching news channels...",
-        he: "🔎 חיפוש בערוצי חדשות...",
-        ar: "🔎 البحث في القنوات الإخبارية...",
-      };
-      await statusCallback(newsMsg[lang] ?? newsMsg.ru);
-    }
-    parts.push(`NEWS CHANNEL POSTS (from Telegram monitoring):\n${news}`);
+  let posts: import("@easyoref/shared").ChannelPostType[] = [];
+  try {
+    posts = await getSessionPosts();
+  } catch (err) {
+    logger.warn("contextNode: getSessionPosts failed", { error: String(err) });
+  }
+
+  if (posts.length > 0 && statusCallback) {
+    const newsMsg: Record<string, string> = {
+      ru: "🔎 Поиск по новостным каналам...",
+      en: "🔎 Searching news channels...",
+      he: "🔎 חיפוש בערוצי חדשות...",
+      ar: "🔎 البحث في القنوات الإخبارية...",
+    };
+    await statusCallback(newsMsg[lang] ?? newsMsg.ru);
   }
 
   if (parts.length === 0) {
@@ -197,7 +171,11 @@ export async function contextNode(
     }
   }
 
-  return { context: parts.join("\n\n---\n\n") || "No relevant context found." };
+  return {
+    context: parts.join("\n\n---\n\n") || "No relevant context found.",
+    history,
+    posts,
+  };
 }
 
 export { BOT_HELP_TEXT, OFF_TOPIC_TEXT };

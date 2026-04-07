@@ -1,131 +1,238 @@
 /**
- * query_alert_history tool — deterministic Oref history query.
+ * get_last_attack tool — finds the LAST attack in Oref history for the user's configured zones.
  *
- * LLM calls this with explicit zone_id + category integers.
- * Tool does the filtering/counting; LLM never parses raw JSON arrays.
+ * Returns a structured object:
+ *   zone       — specific Oref zone name (English)
+ *   zone_he    — specific Oref zone name (Hebrew)
+ *   area       — region (e.g. "גוש דן (Gush Dan)")
+ *   macro      — macro region ("מרכז (Center)" / "צפון (North)" / "דרום (South)")
+ *   early_time — HH:MM of early warning (category 14), or null
+ *   siren_times — HH:MM[] of rocket sirens (category 1)
+ *   resolved_time — HH:MM of incident resolved (category 13), or null
+ *   earliest_available — HH:MM of the earliest entry (API has 3000-entry hard cap)
  *
- * zone_id=0  → aggregate all configured zones (user's area)
- * zone_id=N  → single area from CONFIGURED_ZONES list
- * category=0 → all alert types
- * category=N → specific category (1=siren, 13=resolved, etc.)
+ * Also checks fetchActiveAlerts() for "is there an attack right now?"
  */
 
+import type { GeoMetadata, OrefHistoryEntry } from "@easyoref/shared";
+import {
+  config,
+  fetchActiveAlerts,
+  resolveCityIds,
+  translateAreas,
+  ZONE_HIERARCHY,
+} from "@easyoref/shared";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { config, resolveCityIds, translateAreas } from "@easyoref/shared";
-import type { OrefHistoryEntry } from "@easyoref/shared";
 
-export const CATEGORY_EN: Record<number, string> = {
-  1: "Rocket/missile fire (siren)",
-  2: "Hostile aircraft (siren)",
-  3: "Unconventional weapon",
-  4: "Earthquake",
-  5: "Radiological event",
-  6: "Terrorist infiltration",
-  7: "Tsunami",
-  9: "Hazardous materials",
-  10: "Unknown threat",
-  11: "Early warning",
-  12: "Practice drill",
-  13: "Incident resolved",
-};
-
-/** Deduplicate by alertDate; return HH:MM times (first occurrence per wave). */
-function dedupTimes(entries: OrefHistoryEntry[]): string[] {
-  const seen = new Set<string>();
-  const times: string[] = [];
-  for (const e of entries) {
-    if (!seen.has(e.alertDate)) {
-      seen.add(e.alertDate);
-      const time = e.alertDate.includes("T")
-        ? (e.alertDate.split("T")[1]?.slice(0, 5) ?? e.alertDate)
-        : e.alertDate;
-      times.push(time);
-    }
+/** Extract HH:MM from alertDate string like "2026-04-07T18:16:00" or fallback. */
+function toHHMM(alertDate: string): string {
+  if (alertDate.includes("T")) {
+    return alertDate.split("T")[1]?.slice(0, 5) ?? alertDate;
   }
-  return times;
+  return alertDate;
 }
 
-const QueryHistorySchema = z.object({
-  zone_id: z
-    .number()
-    .int()
-    .describe(
-      "Oref area/city ID (integer). " +
-        "Use 0 to aggregate ALL configured zones (user's area). " +
-        "Use a specific ID from CONFIGURED_ZONES for a single area.",
-    ),
-  category: z
-    .number()
-    .int()
-    .describe(
-      "Alert category integer: " +
-        "1=Rocket/missile siren, 2=Hostile aircraft, 3=Unconventional weapon, " +
-        "4=Earthquake, 5=Radiological, 6=Infiltration, 7=Tsunami, " +
-        "9=Hazmat, 10=Unknown, 11=Early warning, 12=Practice drill, " +
-        "13=Incident resolved. Use 0 for all categories.",
-    ),
-});
+/** Geo metadata for a Hebrew zone name. */
+function getGeo(zoneName: string): {
+  zone_he: string;
+  zone_en: string;
+  area: string;
+  macro: string;
+} {
+  const meta: GeoMetadata | undefined =
+    ZONE_HIERARCHY[zoneName as keyof typeof ZONE_HIERARCHY];
+  return {
+    zone_he: zoneName,
+    zone_en: translateAreas(zoneName, "en"),
+    area: meta?.area
+      ? `${meta.area} (${translateAreas(meta.area, "en")})`
+      : "unknown",
+    macro: meta?.macro
+      ? `${meta.macro} (${translateAreas(meta.macro, "en")})`
+      : "unknown",
+  };
+}
 
 /**
- * Create a deterministic history query tool backed by pre-fetched history data.
- * Returns JSON with count + HH:MM times — no LLM parsing of raw API responses.
+ * Find the LAST attack for a set of zone names.
+ *
+ * Attack = sequence of: early_warning (cat 14) → siren (cat 1) → resolved (cat 13).
+ * We find the last siren, then look backwards for early_warning and forward for resolved.
  */
-export function createQueryHistoryTool(history: OrefHistoryEntry[]) {
+export function findLastAttack(
+  history: OrefHistoryEntry[],
+  zoneNames: string[],
+): {
+  zone: ReturnType<typeof getGeo>;
+  early_time: string | null;
+  siren_times: string[];
+  resolved_time: string | null;
+} | null {
+  const zoneSet = new Set(zoneNames);
+
+  // Filter to our zones only
+  const ours = history.filter((e) => zoneSet.has(e.data));
+  if (ours.length === 0) return null;
+
+  // Sort by alertDate ascending (oldest first)
+  const sorted = [...ours].sort(
+    (a, b) => new Date(a.alertDate).getTime() - new Date(b.alertDate).getTime(),
+  );
+
+  // Find the LAST siren (category 1) — that's our attack anchor
+  let lastSirenIdx = -1;
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    if (sorted[i]!.category === 1) {
+      lastSirenIdx = i;
+      break;
+    }
+  }
+
+  if (lastSirenIdx === -1) {
+    // No sirens — check for early_warning only (attack in progress, no siren yet)
+    const lastEarly = [...sorted].reverse().find((e) => e.category === 14);
+    if (lastEarly) {
+      return {
+        zone: getGeo(lastEarly.data),
+        early_time: toHHMM(lastEarly.alertDate),
+        siren_times: [],
+        resolved_time: null,
+      };
+    }
+    return null;
+  }
+
+  const lastSiren = sorted[lastSirenIdx]!;
+  const sirenTs = new Date(lastSiren.alertDate).getTime();
+
+  // Collect ALL siren times within 30 min window around the last siren (same attack wave)
+  const WAVE_WINDOW_MS = 30 * 60 * 1000;
+  const sirenTimes: string[] = [];
+  const seenTimes = new Set<string>();
+  for (const e of sorted) {
+    if (e.category !== 1) continue;
+    const ts = new Date(e.alertDate).getTime();
+    if (Math.abs(ts - sirenTs) <= WAVE_WINDOW_MS) {
+      const hhmm = toHHMM(e.alertDate);
+      if (!seenTimes.has(hhmm)) {
+        seenTimes.add(hhmm);
+        sirenTimes.push(hhmm);
+      }
+    }
+  }
+
+  // Look for early_warning (cat 14) before the first siren in this wave (within 15 min)
+  const firstSirenMinutes = Math.min(
+    ...sirenTimes.map((t) => {
+      const [h, m] = t.split(":").map(Number);
+      return h! * 60 + m!;
+    }),
+  );
+  let earlyTime: string | null = null;
+  for (const e of sorted) {
+    if (e.category !== 14) continue;
+    const hhmm = toHHMM(e.alertDate);
+    const [h, m] = hhmm.split(":").map(Number);
+    const mins = h! * 60 + m!;
+    if (mins <= firstSirenMinutes && firstSirenMinutes - mins <= 15) {
+      earlyTime = hhmm;
+      break;
+    }
+  }
+
+  // Look for resolved (cat 13) after the last siren (within 30 min)
+  let resolvedTime: string | null = null;
+  for (let i = lastSirenIdx + 1; i < sorted.length; i++) {
+    const e = sorted[i]!;
+    if (e.category !== 13) continue;
+    const ts = new Date(e.alertDate).getTime();
+    if (ts - sirenTs <= WAVE_WINDOW_MS) {
+      resolvedTime = toHHMM(e.alertDate);
+      break;
+    }
+  }
+
+  return {
+    zone: getGeo(lastSiren.data),
+    early_time: earlyTime,
+    siren_times: sirenTimes,
+    resolved_time: resolvedTime,
+  };
+}
+
+/**
+ * Create the get_last_attack tool.
+ * Takes pre-fetched history (from context node) to avoid flaky re-fetch.
+ */
+export function createGetLastAttackTool(history: OrefHistoryEntry[]) {
   return tool(
-    async (input: z.infer<typeof QueryHistorySchema>) => {
-      const { zone_id, category } = input;
+    async () => {
+      const configNames = resolveCityIds(config.cityIds);
 
-      let filtered: OrefHistoryEntry[];
-      let zoneLabel: string;
+      // 1. Check if there's an active attack RIGHT NOW
+      const active = await fetchActiveAlerts().catch(() => []);
+      const activeInZone = active.filter((a) =>
+        a.cities.some((c) => configNames.includes(c)),
+      );
 
-      if (zone_id === 0) {
-        const configNames = resolveCityIds(config.cityIds);
-        filtered = history.filter(
-          (e) =>
-            configNames.includes(e.data) &&
-            (category === 0 || e.category === category),
+      // 2. Find last attack in history
+      const lastAttack = findLastAttack(history, configNames);
+
+      // 3. Earliest available timestamp (API 3000-entry cap info)
+      let earliestAvailable: string | null = null;
+      if (history.length > 0) {
+        const allSorted = [...history].sort(
+          (a, b) =>
+            new Date(a.alertDate).getTime() - new Date(b.alertDate).getTime(),
         );
-        zoneLabel = "all configured zones";
-      } else {
-        const hebrewNames = resolveCityIds([zone_id]);
-        if (hebrewNames.length === 0) {
-          return JSON.stringify({
-            error: `Unknown zone_id: ${zone_id}. Use 0 or an ID from CONFIGURED_ZONES.`,
-          });
-        }
-        filtered = history.filter(
-          (e) =>
-            e.data === hebrewNames[0] &&
-            (category === 0 || e.category === category),
-        );
-        zoneLabel = translateAreas(hebrewNames[0]!, "en");
+        earliestAvailable = toHHMM(allSorted[0]!.alertDate);
       }
 
-      const times = dedupTimes(filtered);
-      const catName =
-        category === 0
-          ? "all types"
-          : (CATEGORY_EN[category] ?? `category ${category}`);
+      const result: Record<string, unknown> = {};
 
-      return JSON.stringify({
-        zone_id,
-        zone_label: zoneLabel,
-        category,
-        category_name: catName,
-        count: times.length,
-        times,
-      });
+      if (activeInZone.length > 0) {
+        result.active_attack = true;
+        result.active_areas = activeInZone.flatMap((a) =>
+          a.cities.map((c) => translateAreas(c, "en")),
+        );
+      } else {
+        result.active_attack = false;
+      }
+
+      if (lastAttack) {
+        result.last_attack = {
+          zone: lastAttack.zone.zone_en,
+          zone_he: lastAttack.zone.zone_he,
+          area: lastAttack.zone.area,
+          macro: lastAttack.zone.macro,
+          early_time: lastAttack.early_time,
+          siren_times: lastAttack.siren_times,
+          resolved_time: lastAttack.resolved_time,
+        };
+      } else {
+        result.last_attack = null;
+      }
+
+      result.earliest_available = earliestAvailable;
+      result.history_entries = history.length;
+      if (history.length >= 3000) {
+        result.truncated = true;
+        result.note =
+          "API returned 3000 entries (hard cap). Earlier attacks may be missing. " +
+          `Earliest available entry: ${earliestAvailable}`;
+      }
+
+      return JSON.stringify(result);
     },
     {
-      name: "query_alert_history",
+      name: "get_last_attack",
       description:
-        "Query today's Oref alert history filtered by zone and category. " +
-        "Returns exact count and HH:MM timestamps. " +
-        "Use zone_id=0 for user's area (all configured zones aggregated). " +
-        "Use category=1 for rocket sirens, category=13 for resolved events. " +
-        "ALWAYS call this tool when asked about siren/alert counts or times.",
-      schema: QueryHistorySchema,
+        "Get the last attack in the user's configured area. " +
+        "Returns: active_attack (bool), last_attack (zone, area, macro, early_time, siren_times, resolved_time), " +
+        "and earliest_available timestamp. " +
+        "ALWAYS call this tool first when asked about sirens, attacks, or current situation.",
+      schema: z.object({}),
     },
   );
 }
