@@ -21,9 +21,9 @@
     "bump:minor": "node scripts/bump.js --bump-type=minor",
     "bump:major": "node scripts/bump.js --bump-type=major",
     "publish": "npm run build && npm publish -w packages/shared --access public --no-provenance && npm publish -w packages/agent --access public --no-provenance && npm publish -w packages/gramjs --access public --no-provenance && npm publish -w packages/cli --access public --no-provenance && npm publish -w packages/bot --access public --no-provenance",
-    "release": "npm run test:ci && npm run bump:patch && git push --tags && npm run publish && npm run rpi",
-    "release:minor": "npm run test:ci && npm run bump:minor && git push --tags && npm run publish && npm run rpi",
-    "release:major": "npm run test:ci && npm run bump:major && git push --tags && npm run publish && npm run rpi",
+    "release": "npm run test:ci && npm run bump:patch && git push --tags && npm run publish && echo '⏳ Waiting 150s for npm CDN propagation...' && sleep 150 && npm run rpi",
+    "release:minor": "npm run test:ci && npm run bump:minor && git push --tags && npm run publish && echo '⏳ Waiting 150s for npm CDN propagation...' && sleep 150 && npm run rpi",
+    "release:major": "npm run test:ci && npm run bump:major && git push --tags && npm run publish && echo '⏳ Waiting 150s for npm CDN propagation...' && sleep 150 && npm run rpi",
     "rpi": "ssh pi@raspberrypi.local \"nohup bash -c 'easyoref update > /tmp/easyoref-update.log 2>&1' &\" && echo '✅ RPi update started — tail /tmp/easyoref-update.log on RPi for progress'",
     "prepare": "husky"
   },

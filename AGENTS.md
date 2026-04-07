@@ -700,6 +700,56 @@ Phase 2 ✅ (Hygiene + Enrichment v2)
   └── Phase 6 ✅ (Monetization)
         ↓
 Phase 7 ✅ (Stability)
+        ↓
+Phase 8 ✅ (Config + Release)
 ```
 
-**All phases 0-7 complete.** Ready for v2.0.0 release.
+**All phases 0-8 complete.** v2.0.0 released.
+
+---
+
+### Phase 8: Config Consolidation + Release ✅
+
+**Status:** COMPLETED. Single-instance config, /start registration, release pipeline hardened, v2.0.0 released.
+
+**What was done:**
+
+1. **`/start` registration handler** — `packages/bot/src/handlers/start.ts`
+   - `/start [lang]` — registers user (private or group) in Redis
+   - Areas default to `config.cityIds` (resolved from YAML `city_ids` via `resolveCityIds`)
+   - Language defaults to `ru`, optional arg: `/start en`, `/start he`
+   - Updates existing user (re-/start changes language)
+   - Registered in bot before admin/shelter/qa/inline handlers
+
+2. **`config.cityIds`** added to `packages/shared/src/config.ts`
+   - YAML `city_ids` now parsed and exposed as `config.cityIds: number[]`
+   - Used by `/start` handler to resolve default areas
+
+3. **Release cooldown** — 150s sleep between `npm publish` and `npm run rpi`
+   - All 3 release scripts (`release`, `release:minor`, `release:major`) updated
+   - Prevents `easyoref update` on RPi from fetching stale npm CDN cache
+
+4. **Single RPi config** — `~/.easyoref/config.yaml`
+   - Bot token: `8656192726:…` (unified, was split across ru/he instances)
+   - No `redis_prefix` (single instance), no `language`/`chat_id` (user-based routing)
+   - `admin_chat_ids: [1929063904]`
+   - Old per-language services (`easyoref-ru_tlv-south`, `easyoref-he_tlv-south`) removed
+   - Old per-language configs (`config.ru_tlv-south.yaml`, `config.he_tlv-south.yaml`) deleted
+
+### Chat Configuration (Post-Deploy)
+
+After v2.0.0 is running on RPi, configure chats by sending `/start` in each:
+
+| Chat | Type | /start command | Then |
+|------|------|---------------|------|
+| `-1002720800303` | Group | `/start ru` | `/grant -1002720800303` (from admin) |
+| `1929063904` | Private | `/start ru` | `/grant 1929063904` (self, admin) |
+| `-1003872506387` | Group | `/start en` | `/grant -1003872506387` (from admin) |
+
+**Admin flow:**
+1. Add bot to each group chat
+2. Send `/start ru` or `/start en` in each chat (registers in Redis)
+3. From admin account (1929063904): `/grant <chatId>` for each chat that needs pro features
+4. Verify: `/users` shows all registered chats with correct language/tier
+
+**Note:** Groups get pro tier via `/grant` (enrichment, Q&A). Without `/grant`, groups receive free-tier alerts only (no enrichment metadata).

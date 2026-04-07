@@ -31,6 +31,7 @@ interface ShelterYaml {
 
 /** Raw YAML schema */
 interface ConfigYaml {
+  city_ids?: number[];
   alert_types?: AlertTypeConfig[];
   gif_mode?: string;
   emoji_override?: Partial<Record<AlertTypeConfig, string>>;
@@ -174,6 +175,9 @@ export const config = {
   botToken:
     yml.telegram?.bot_token ??
     readSecret("BOT_TOKEN", ["/run/secrets/bot_token", "secrets/bot_token"]),
+
+  /** City IDs to monitor (Hebrew area names resolved via initTranslations) */
+  cityIds: yml.city_ids ?? [],
 
   /** Which alert types to send */
   alertTypes: parseAlertTypes(yml.alert_types),

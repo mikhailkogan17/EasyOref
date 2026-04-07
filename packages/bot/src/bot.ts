@@ -51,6 +51,7 @@ import { registerAdminHandler } from "./handlers/admin.js";
 import { registerInlineHandler } from "./handlers/inline.js";
 import { registerQaHandler } from "./handlers/qa.js";
 import { registerShelterHandler } from "./handlers/shelter.js";
+import { initDefaultAreas, registerStartHandler } from "./handlers/start.js";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Per-user Area Filter
@@ -809,6 +810,8 @@ async function main(): Promise<void> {
   initGifState(config.dataDir);
   bot = initBot();
   if (bot) {
+    initDefaultAreas();
+    registerStartHandler(bot);
     registerAdminHandler(bot);
     registerShelterHandler(bot);
     registerQaHandler(bot);
