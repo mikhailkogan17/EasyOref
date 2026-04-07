@@ -203,9 +203,7 @@ const seenAlerts = new Set<string>();
 
 /** Deterministic ID for dedup when pikud-haoref-api returns no id (history fallback). */
 function alertDedupKey(alert: PikudAlert): string {
-  return (
-    alert.id ?? textHash([alert.type, ...alert.cities.sort()].join("|"))
-  );
+  return alert.id ?? textHash([alert.type, ...alert.cities.sort()].join("|"));
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -456,7 +454,9 @@ async function processAlert(alert: PikudAlert): Promise<void> {
   const dedupKey = alertDedupKey(alert);
   // ── Load all registered users and find those matching this alert's areas ──
   const allUsers = await getAllUsers();
-  const matchedUsers = allUsers.filter((u) => userMatchesAlert(u, alert.cities));
+  const matchedUsers = allUsers.filter((u) =>
+    userMatchesAlert(u, alert.cities),
+  );
 
   if (matchedUsers.length === 0) {
     logger.info("Alert — no users matched area", {

@@ -153,8 +153,7 @@ export async function contextNode(
   if (currentAlerts.length > 0) {
     const formatted = currentAlerts
       .map(
-        (a) =>
-          `[ACTIVE] ${a.instructions ?? a.type}: ${a.cities.join(", ")}`,
+        (a) => `[ACTIVE] ${a.instructions ?? a.type}: ${a.cities.join(", ")}`,
       )
       .join("\n");
     parts.push(`CURRENT OREF ALERTS:\n${formatted}`);
