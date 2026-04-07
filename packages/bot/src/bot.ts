@@ -28,6 +28,7 @@ import {
   config,
   fetchActiveAlerts,
   getActiveSession,
+  getAlertEmoji,
   getAllUsers,
   getLanguagePack,
   getLastUpdateTs,
@@ -35,7 +36,6 @@ import {
   initLangSmithTracing,
   initTranslations,
   loadCooldownState,
-  PHASE_ENRICH_DELAY_MS,
   PHASE_INITIAL_DELAY_MS,
   RESOLVED_RUN_OFFSETS_MS,
   saveAlertMeta,
@@ -343,7 +343,7 @@ function formatMessage(
   const defaults = lp.alerts[cfgKey];
   const labels = lp.labels;
 
-  const emoji = config.emojiOverride[cfgKey] ?? defaults.emoji;
+  const emoji = config.emojiOverride[cfgKey] ?? getAlertEmoji(cfgKey);
   const title = config.titleOverride[cfgKey] ?? defaults.title;
   const desc = config.descriptionOverride[cfgKey] ?? defaults.description;
 

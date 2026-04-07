@@ -74,9 +74,10 @@ export async function fetchActiveAlerts(
 export async function fetchOrefHistory(
   timeoutMs = 5000,
 ): Promise<OrefHistoryEntry[]> {
-  const today = new Date().toLocaleDateString("en-GB", {
-    timeZone: "Asia/Jerusalem",
-  }); // DD.MM.YYYY
+  const d = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Jerusalem" }),
+  );
+  const today = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`; // DD.MM.YYYY
   const url = `https://alerts-history.oref.org.il/Shared/Ajax/GetAlarmsHistory.aspx?lang=he&fromDate=${today}&toDate=${today}&mode=0`;
   try {
     const res = await fetch(url, {

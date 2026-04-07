@@ -64,7 +64,7 @@ describe("isRelevantArea", () => {
 describe("message format", () => {
   it("produces valid HTML with plain district line, empty line after title, no blockquote in base", () => {
     const msg = [
-      "<b>⚠️ Early Warning</b> (14:32)",
+      "<b>🟨 Early Warning</b> (14:32)",
       "",
       "Rocket launches detected. Stay near a protected space.",
       "Area: Tel Aviv - South And Jaffa",
@@ -72,12 +72,12 @@ describe("message format", () => {
 
     expect(msg).not.toContain("<blockquote>");
     expect(msg).toContain("Area: Tel Aviv");
-    expect(msg).toContain("<b>⚠️ Early Warning</b>");
+    expect(msg).toContain("<b>🟨 Early Warning</b>");
   });
 
   it("siren/resolved enrichment is wrapped in blockquote", () => {
     const base = [
-      "<b>🚨 Red Alert</b> (14:35)",
+      "<b>� Red Alert</b> (14:35)",
       "",
       "Area: Tel Aviv - South And Jaffa",
     ].join("\n");

@@ -21,9 +21,20 @@ export type Language = "ru" | "en" | "he" | "ar";
 export type AlertKind = "early" | "red_alert" | "resolved";
 
 export interface AlertLocales {
-  emoji: string;
   title: string;
   description: string;
+}
+
+/** Centralized emoji mapping — same for all languages. */
+export function getAlertEmoji(kind: AlertKind): string {
+  switch (kind) {
+    case "early":
+      return "🟨";
+    case "red_alert":
+      return "🟥";
+    case "resolved":
+      return "🟩";
+  }
 }
 
 export interface I18nLabels {
@@ -55,17 +66,14 @@ export interface LanguagePack {
 const ruPack: LanguagePack = {
   alerts: {
     early: {
-      emoji: "⚠️",
       title: "Раннее предупреждение",
       description: "Обнаружены запуски ракет по Израилю.",
     },
     red_alert: {
-      emoji: "🚨",
       title: "Cирена",
       description: "",
     },
     resolved: {
-      emoji: "😮‍💨",
       title: "Инцидент завершён",
       description: "Можно покинуть защищённое помещение.",
     },
@@ -92,17 +100,14 @@ const ruPack: LanguagePack = {
 const enPack: LanguagePack = {
   alerts: {
     early: {
-      emoji: "⚠️",
       title: "Early Warning",
       description: "Rocket launches detected. Stay near a protected space.",
     },
     red_alert: {
-      emoji: "🚨",
       title: "Red Alert",
       description: "Enter a protected space immediately.",
     },
     resolved: {
-      emoji: "😮‍💨",
       title: "Incident Over",
       description: "You may leave the protected space.",
     },
@@ -129,17 +134,14 @@ const enPack: LanguagePack = {
 const hePack: LanguagePack = {
   alerts: {
     early: {
-      emoji: "⚠️",
       title: "התרעה מוקדמת",
       description: "זוהו שיגורים. הישארו בקרבת מרחב מוגן.",
     },
     red_alert: {
-      emoji: "🚨",
       title: "אזעקה",
       description: "היכנסו למרחב מוגן.",
     },
     resolved: {
-      emoji: "😮‍💨",
       title: "האירוע הסתיים",
       description: "ניתן לצאת מהמרחב המוגן.",
     },
@@ -166,17 +168,14 @@ const hePack: LanguagePack = {
 const arPack: LanguagePack = {
   alerts: {
     early: {
-      emoji: "⚠️",
       title: "إنذار مبكر",
       description: "تم رصد إطلاق صواريخ. ابقوا بالقرب من الملجأ.",
     },
     red_alert: {
-      emoji: "🚨",
       title: "صفارة إنذار",
       description: "ادخلوا إلى الملجأ فوراً.",
     },
     resolved: {
-      emoji: "😮‍💨",
       title: "انتهى الحادث",
       description: "يمكنكم مغادرة الملجأ.",
     },

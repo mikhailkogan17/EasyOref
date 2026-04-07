@@ -173,7 +173,10 @@ export async function contextNode(
   const history = await fetchOrefHistory();
   if (history.length > 0) {
     // Group by alertDate+category to deduplicate (each alert fires for many sub-areas)
-    const groups = new Map<string, { time: string; type: string; areas: string[] }>();
+    const groups = new Map<
+      string,
+      { time: string; type: string; areas: string[] }
+    >();
     for (const e of history) {
       const key = `${e.alertDate}|${e.category}`;
       const g = groups.get(key);
@@ -181,7 +184,7 @@ export async function contextNode(
         if (!g.areas.includes(e.data)) g.areas.push(e.data);
       } else {
         const time = e.alertDate.includes("T")
-          ? e.alertDate.split("T")[1]?.slice(0, 5) ?? e.alertDate
+          ? (e.alertDate.split("T")[1]?.slice(0, 5) ?? e.alertDate)
           : e.alertDate;
         groups.set(key, { time, type: e.title, areas: [e.data] });
       }
