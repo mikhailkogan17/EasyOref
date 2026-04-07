@@ -1,4 +1,4 @@
-import type { QaState } from "../../qa-graph.js";
+import type { QaState } from "../qa-graph.js";
 
 export type QaIntent =
   | "current_alert"

@@ -21,8 +21,8 @@ import {
 import * as logger from "@easyoref/shared/logger";
 import { Bot } from "grammy";
 import { AIMessage } from "langchain";
-import type { AgentStateType } from "../graph.js";
-import { buildEnrichedMessage, formatCitations } from "../utils/message.js";
+import type { AgentStateType } from "../enrichment-graph.js";
+import { buildEnrichedMessage, formatCitations } from "../../../utils/message.js";
 
 // ── Types ──────────────────────────────────────────────
 

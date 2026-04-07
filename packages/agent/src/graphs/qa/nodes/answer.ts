@@ -2,7 +2,7 @@ import { config } from "@easyoref/shared";
 import * as logger from "@easyoref/shared/logger";
 import { ChatOpenRouter } from "@langchain/openrouter";
 import { z } from "zod";
-import type { QaState } from "../../qa-graph.js";
+import type { QaState } from "../qa-graph.js";
 
 const OutputSchema = z.object({
   text: z.string().describe("Answer in the user's language"),

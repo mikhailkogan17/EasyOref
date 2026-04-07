@@ -279,7 +279,7 @@ import {
   getChannelPosts as _getChannelPosts,
   getLastUpdateTs as _getLastUpdateTs,
 } from "@easyoref/shared";
-import { filterNode } from "../src/nodes/pre-filter-node.js";
+import { filterNode } from "../src/graphs/enrichment/nodes/pre-filter.js";
 
 const mockGetChannelPosts = _getChannelPosts as ReturnType<typeof vi.fn>;
 const mockGetActiveSession = _getActiveSession as ReturnType<typeof vi.fn>;

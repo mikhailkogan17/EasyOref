@@ -61,7 +61,7 @@ vi.mock("../src/models.js", () => ({
 }));
 
 // Import AFTER mocks
-import { extractChannelNode } from "../src/nodes/extract-node.js";
+import { extractChannelNode } from "../src/graphs/enrichment/nodes/extract.js";
 import { getPhaseRule } from "../src/utils/phase-rules.js";
 
 // ── Helpers ────────────────────────────────────────────────
@@ -294,7 +294,7 @@ describe("extractFromChannel (exported helper)", () => {
 
 // ── extractionAgentOpts — prompt safety rules (postmortem Apr 4 2026) ──────
 
-import { extractionAgentOpts } from "../src/nodes/extract-node.js";
+import { extractionAgentOpts } from "../src/graphs/enrichment/nodes/extract.js";
 
 describe("extractionAgentOpts — prompt safety rules", () => {
   /**

@@ -4,7 +4,7 @@ import { Insight } from "@easyoref/shared";
 import { type BaseMessage, HumanMessage, SystemMessage } from "langchain";
 import type z from "zod";
 import { extractFallback, invokeWithFallback } from "../models.js";
-import { extractionAgentOpts } from "../nodes/extract-node.js";
+import { extractionAgentOpts } from "../graphs/enrichment/nodes/extract.js";
 
 export async function extractFromChannel(
   channel: NewsChannelWithUpdatesType,

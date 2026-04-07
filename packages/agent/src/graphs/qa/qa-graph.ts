@@ -14,9 +14,9 @@
 import { getUser } from "@easyoref/shared";
 import { END, START, StateGraph, StateSchema } from "@langchain/langgraph";
 import { z } from "zod";
-import { answerNode } from "./nodes/qa/answer-node.js";
-import { contextNode } from "./nodes/qa/context-node.js";
-import { intentNode } from "./nodes/qa/intent-node.js";
+import { answerNode } from "./nodes/answer.js";
+import { contextNode } from "./nodes/context.js";
+import { intentNode } from "./nodes/intent.js";
 
 export const QaState = new StateSchema({
   userMessage: z.string(),

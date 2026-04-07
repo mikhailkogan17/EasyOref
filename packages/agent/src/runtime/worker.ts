@@ -21,7 +21,7 @@ import {
 } from "@easyoref/shared";
 import * as logger from "@easyoref/shared/logger";
 import { Worker } from "bullmq";
-import { runEnrichment } from "../graph.js";
+import { runEnrichment } from "../graphs/enrichment/enrichment-graph.js";
 import { enqueueEnrich, enrichQueueName, type EnrichJobData } from "./queue.js";
 
 /** In-memory run counter per session (keyed by sessionId). */

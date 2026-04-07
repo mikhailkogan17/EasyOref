@@ -61,12 +61,12 @@ vi.mock("@easyoref/shared/logger", () => ({
 import type {
   EditMessageInput,
   TelegramTargetMessage,
-} from "../src/nodes/edit-node.js";
+} from "../src/graphs/enrichment/nodes/edit.js";
 import {
   editNode,
   editTelegramMessage,
   sendMetaReply,
-} from "../src/nodes/edit-node.js";
+} from "../src/graphs/enrichment/nodes/edit.js";
 
 // ── Helpers ────────────────────────────────────────────────
 

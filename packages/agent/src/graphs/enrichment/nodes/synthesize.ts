@@ -20,14 +20,14 @@ import {
   providerStrategy,
 } from "langchain";
 import { z } from "zod";
-import type { AgentStateType } from "../graph.js";
+import type { AgentStateType } from "../enrichment-graph.js";
 import {
   invokeWithFallback,
   preFilterFallback,
   preFilterModel,
-} from "../models.js";
-import { buildConsensus } from "../utils/consensus.js";
-import { fieldKeyToKind } from "../utils/field-key-map.js";
+} from "../../../models.js";
+import { buildConsensus } from "../../../utils/consensus.js";
+import { fieldKeyToKind } from "../../../utils/field-key-map.js";
 
 // ── Output schema ──────────────────────────────────────────
 

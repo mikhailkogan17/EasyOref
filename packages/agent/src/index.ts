@@ -4,13 +4,13 @@
  * LangGraph-based enrichment pipeline for Israeli missile alert processing.
  */
 
-export * from "./graph.js";
-export * from "./qa-graph.js";
+export * from "./graphs/enrichment/enrichment-graph.js";
+export * from "./graphs/qa/qa-graph.js";
 
-export * from "./nodes/edit-node.js";
-export * from "./nodes/extract-node.js";
-export * from "./nodes/pre-filter-node.js";
-export * from "./nodes/synthesize-node.js";
+export * from "./graphs/enrichment/nodes/edit.js";
+export * from "./graphs/enrichment/nodes/extract.js";
+export * from "./graphs/enrichment/nodes/pre-filter.js";
+export * from "./graphs/enrichment/nodes/synthesize.js";
 
 export * from "./utils/channel-extract.js";
 export * from "./utils/consensus.js";

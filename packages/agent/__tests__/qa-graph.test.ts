@@ -5,8 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 
 // ── Intent node tests (no mocks needed — purely deterministic) ─────────────
 
-import { intentNode } from "../src/nodes/qa/intent-node.js";
-import type { QaState } from "../src/qa-graph.js";
+import { intentNode } from "../src/graphs/qa/nodes/intent.js";
+import type { QaState } from "../src/graphs/qa/qa-graph.js";
 
 function makeState(userMessage: string): QaState {
   return {
@@ -86,7 +86,7 @@ describe("intentNode", () => {
 
 describe("answerNode (mocked LLM)", () => {
   it("returns context directly for bot_help intent", async () => {
-    const { answerNode } = await import("../src/nodes/qa/answer-node.js");
+    const { answerNode } = await import("../src/graphs/qa/nodes/answer.js");
     const state: QaState = {
       ...makeState("help"),
       intent: "bot_help",
@@ -108,7 +108,7 @@ describe("answerNode (mocked LLM)", () => {
     }));
 
     const { answerNode: answerNodeMocked } =
-      await import("../src/nodes/qa/answer-node.js");
+      await import("../src/graphs/qa/nodes/answer.js");
     const state: QaState = {
       ...makeState("what is happening?"),
       intent: "current_alert",
@@ -148,7 +148,7 @@ describe("runQa integration", () => {
         };
       });
 
-      const { runQa } = await import("../src/qa-graph.js");
+      const { runQa } = await import("../src/graphs/qa/qa-graph.js");
       const answer = await runQa("help", "test_user");
       expect(answer).toBeTruthy();
       expect(typeof answer).toBe("string");

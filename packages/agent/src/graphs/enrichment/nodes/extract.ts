@@ -13,10 +13,10 @@ import { Insight } from "@easyoref/shared";
 import * as logger from "@easyoref/shared/logger";
 import { AIMessage } from "langchain";
 import z from "zod";
-import type { AgentStateType } from "../graph.js";
-import { extractModel } from "../models.js";
-import { extractFromChannel } from "../utils/channel-extract.js";
-import { getPhaseRule } from "../utils/phase-rules.js";
+import type { AgentStateType } from "../enrichment-graph.js";
+import { extractModel } from "../../../models.js";
+import { extractFromChannel } from "../../../utils/channel-extract.js";
+import { getPhaseRule } from "../../../utils/phase-rules.js";
 
 // --- Agent options (reused for primary + fallback) ---
 

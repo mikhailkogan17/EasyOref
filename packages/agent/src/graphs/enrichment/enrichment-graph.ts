@@ -49,11 +49,11 @@ import {
   StateSchema,
 } from "@langchain/langgraph";
 import { z } from "zod";
-import { editNode } from "./nodes/edit-node.js";
-import { extractChannelNode } from "./nodes/extract-node.js";
-import { postFilterNode } from "./nodes/post-filter-node.js";
-import { filterNode as preFilterNode } from "./nodes/pre-filter-node.js";
-import { synthesizeNode } from "./nodes/synthesize-node.js";
+import { editNode } from "./nodes/edit.js";
+import { extractChannelNode } from "./nodes/extract.js";
+import { postFilterNode } from "./nodes/post-filter.js";
+import { filterNode as preFilterNode } from "./nodes/pre-filter.js";
+import { synthesizeNode } from "./nodes/synthesize.js";
 
 export const AgentState = new StateSchema({
   messages: MessagesValue,

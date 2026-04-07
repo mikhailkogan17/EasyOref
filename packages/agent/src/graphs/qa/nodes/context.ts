@@ -1,6 +1,6 @@
 import { config, getActiveSession, getVotedInsights } from "@easyoref/shared";
 import * as logger from "@easyoref/shared/logger";
-import type { QaState } from "../../qa-graph.js";
+import type { QaState } from "../qa-graph.js";
 
 const OREF_HISTORY_URL =
   "https://www.oref.org.il/WarningMessages/History/AlertsHistory.json";

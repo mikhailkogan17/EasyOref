@@ -63,7 +63,7 @@ vi.mock("../src/utils/resolve-area.js", () => ({
 
 // ── Import (after mocks) ──────────────────────────────────
 
-import { postFilterNode } from "../src/nodes/post-filter-node.js";
+import { postFilterNode } from "../src/graphs/enrichment/nodes/post-filter.js";
 
 // ── Helpers ───────────────────────────────────────────────
 

@@ -50,7 +50,7 @@ vi.mock("../src/models.js", () => ({
 
 // ── Import (after mocks) ──────────────────────────────────
 
-import { synthesizeNode } from "../src/nodes/synthesize-node.js";
+import { synthesizeNode } from "../src/graphs/enrichment/nodes/synthesize.js";
 
 // ── Helpers ───────────────────────────────────────────────
 
