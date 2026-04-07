@@ -1,0 +1,97 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`extract-node snapshots > happy path — multi-insight extraction from one channel 1`] = `
+[
+  {
+    "confidence": 0.85,
+    "kind": {
+      "kind": "country_origins",
+      "value": [
+        "Lebanon",
+      ],
+    },
+    "regionRelevance": 0.9,
+    "source": {
+      "channelId": "@N12LIVE",
+      "sourceType": "telegram_channel",
+      "sourceUrl": "https://t.me/N12LIVE/12345",
+      "text": "30 רקטות שוגרו מלבנון",
+      "timestamp": 1712000000000,
+    },
+    "timeRelevance": 0.95,
+    "timeStamp": "2024-04-01T19:33:20.000Z",
+  },
+  {
+    "confidence": 0.88,
+    "kind": {
+      "kind": "rocket_count",
+      "value": {
+        "type": "exact",
+        "value": 30,
+      },
+    },
+    "regionRelevance": 0.9,
+    "source": {
+      "channelId": "@N12LIVE",
+      "sourceType": "telegram_channel",
+      "sourceUrl": "https://t.me/N12LIVE/12345",
+      "text": "30 רקטות שוגרו מלבנון",
+      "timestamp": 1712000000000,
+    },
+    "timeRelevance": 0.95,
+    "timeStamp": "2024-04-01T19:33:20.000Z",
+  },
+]
+`;
+
+exports[`synthesize-node snapshots > full synthesis — origin + eta + rocket_count → 3 synthesized insights 1`] = `
+[
+  {
+    "confidence": 0.9,
+    "key": "origin",
+    "sourceUrls": [
+      "https://t.me/N12LIVE/12345",
+    ],
+    "value": {
+      "ar": "لبنان",
+      "en": "Lebanon",
+      "he": "לבנון",
+      "ru": "Ливан",
+    },
+  },
+  {
+    "confidence": 0.9,
+    "key": "eta",
+    "sourceUrls": [
+      "https://t.me/N12LIVE/12345",
+    ],
+    "value": {
+      "ar": "~2 دقيقة",
+      "en": "~2 min",
+      "he": "~2 דק'",
+      "ru": "~2 мин",
+    },
+  },
+  {
+    "confidence": 0.9,
+    "key": "rocket_count",
+    "sourceUrls": [
+      "https://t.me/N12LIVE/12345",
+    ],
+    "value": {
+      "ar": "30",
+      "en": "30",
+      "he": "30",
+      "ru": "30",
+    },
+  },
+]
+`;
+
+exports[`synthesize-node snapshots > full synthesis — origin + eta + rocket_count → 3 synthesized insights 2`] = `
+[
+  "country_origins",
+  "eta",
+  "rocket_count",
+]
+`;
