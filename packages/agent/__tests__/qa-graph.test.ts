@@ -52,7 +52,7 @@ describe("intentNode", () => {
   });
 
   it("classifies 'help' → bot_help", async () => {
-    const result = await intentNode(makeState("help me please"));
+    const result = await intentNode(makeState("help"));
     expect(result.intent).toBe("bot_help");
   });
 
@@ -79,6 +79,11 @@ describe("intentNode", () => {
   it("defaults to general_security for generic question", async () => {
     const result = await intentNode(makeState("what happened in Tel Aviv?"));
     expect(result.intent).toBe("general_security");
+  });
+
+  it("classifies off-topic → off_topic", async () => {
+    const result = await intentNode(makeState("what is the weather today?"));
+    expect(result.intent).toBe("off_topic");
   });
 });
 

@@ -852,3 +852,55 @@ After v2.0.0 is running on RPi, configure chats by sending `/start` in each:
 4. Verify: `/users` shows all registered chats with correct language/tier
 
 **Note:** Groups get pro tier via `/grant` (enrichment, Q&A). Without `/grant`, groups receive free-tier alerts only (no enrichment metadata).
+
+---
+
+## Postmortem — April 7 2026 Q&A Failure (13:33)
+
+### Problem
+
+User asked bot: "Когда была последняя азака сегодня в тель авиве? Сколько было ракет? Были ли кассетные?"
+Response came **9 minutes later** with generic "no data" answer.
+
+### LangSmith Trace (019d6826-361d-7188-8a5b-1e738f80e606)
+
+| Node | Start | End | Duration | Issue |
+|------|-------|-----|----------|-------|
+| `intent-classify` | 13:33:48.028 | 13:33:48.039 | 11ms | ✅ OK — classified `current_alert` |
+| `context-gather` | 13:33:48.046 | 13:33:48.057 | 11ms | ❌ Returned `"No active alert at the moment."` only |
+| `answer-generate` | 13:33:48.062 | 13:42:43.673 | **8min 55s** | ❌ `withStructuredOutput()` hung → fallback after timeout |
+
+- `ChatOpenRouterStructuredOutput` (13:33:48 → 13:42:39): 8m52s → `TypeError: terminated` (connection abort)
+- `ChatOpenRouter` fallback (13:42:39 → 13:42:43): 4s → generated "no data" response (correct given empty context)
+
+### Root Causes (2 bugs)
+
+**Bug #1: Context node too shallow**
+- Old `contextNode` only checked `getActiveSession()` — if no active session → returned 1 sentence `"No active alert at the moment."`
+- Did NOT check: Oref history API, GramJS channel posts in Redis, enrichment cache
+- Result: LLM given zero data → correctly said "no data"
+
+**Bug #2: No timeout on LLM calls**
+- `withStructuredOutput()` on `openai/gpt-oss-120b` has no timeout
+- OpenRouter hung for 8m52s before TCP connection was terminated by the client
+- No `AbortSignal.timeout()` was used → unbounded wait
+
+### Fixes (v2.0.4)
+
+| Fix | File | Change |
+|-----|------|--------|
+| Context: 5 data sources | `context.ts` | Rewrote to fetch: active session + enrichment cache + current Oref API + Oref history + channel posts from Redis |
+| Context: status callbacks | `context.ts` | Sends "🔎 Checking alerts..." / "🔎 Searching history..." status messages via `statusCallback` |
+| Context: off_topic guard | `context.ts` + `intent.ts` | New `off_topic` intent — polite rejection for non-security questions |
+| Answer: 30s timeout | `answer.ts` | `AbortSignal.timeout(30_000)` on both structured output and fallback LLM calls |
+| Answer: [[channel]](url) citations | `answer.ts` | System prompt instructs LLM to use `[[channel_name]](url)` format |
+| Bot: typing indicator loop | `qa.ts` | Sends typing action every 4s while processing |
+| Bot: group chat support | `qa.ts` | Q&A works in groups when bot is @mentioned or replied to |
+| Inline: link preview disabled | `inline.ts` | `link_preview_options: { is_disabled: true }` in Q&A answers |
+| Enrichment: emoji keys | `message.ts` + `edit.ts` | Replaced `<b>Key:</b>` with emoji-prefixed keys (⏱🌍🚀🛡💥🏥) |
+| Enrichment: no blockquote | `message.ts` | Removed `<blockquote>` wrapping for all phases — plain text enrichment lines |
+| Intent: broader patterns | `intent.ts` | Added `history|yesterday|happened|вчера|прошл|истори|было|произош|אתמול|שבוע` to SECURITY_PATTERNS |
+
+### Tests
+
+- **258 tests** across 17 test files — 254 passed, 4 skipped (integration, need API key)

@@ -1,14 +1,17 @@
 /**
- * QA LangGraph pipeline — RAG-style Q&A using Redis session data + Oref history.
+ * QA LangGraph pipeline — RAG-style Q&A using Redis session data + Oref history + channel news.
  *
  * ┌────────────────┐    ┌──────────────────┐    ┌───────────────┐
  * │ intent-classify│───▶│  context-gather  │───▶│answer-generate│
  * └────────────────┘    └──────────────────┘    └───────────────┘
  *
  * intent-classify:  Deterministic regex (0 tokens). Categories:
- *                   current_alert | recent_history | general_security | bot_help
- * context-gather:   Redis (active session, voted insights) + Oref history API.
- * answer-generate:  LLM structured answer in user's language.
+ *                   current_alert | recent_history | general_security | bot_help | off_topic
+ * context-gather:   Oref API (current + history) + Redis session + channel posts + enrichment cache.
+ *                   Sends status messages via statusCallback if provided.
+ * answer-generate:  LLM structured answer in user's language with [[channel]](url) citations.
+ *
+ * off_topic / bot_help are short-circuited in context-gather (no LLM call).
  */
 
 import { getUser } from "@easyoref/shared";
@@ -18,6 +21,9 @@ import { answerNode } from "./nodes/answer.js";
 import { contextNode } from "./nodes/context.js";
 import { intentNode } from "./nodes/intent.js";
 
+/** Callback for sending status messages ("🔎 Searching...") during Q&A processing. */
+export type QaStatusCallback = (message: string) => Promise<void>;
+
 export const QaState = new StateSchema({
   userMessage: z.string(),
   chatId: z.string(),
@@ -26,9 +32,12 @@ export const QaState = new StateSchema({
   context: z.string().default(""),
   answer: z.string().default(""),
   sources: z.array(z.string()).default([]),
+  // statusCallback is not serializable — passed via runtime but not part of graph state schema
 });
 
-export type QaState = typeof QaState.State;
+export type QaState = typeof QaState.State & {
+  statusCallback?: QaStatusCallback;
+};
 
 const buildQaGraph = () =>
   new StateGraph(QaState)
@@ -46,10 +55,13 @@ const qaGraph = buildQaGraph();
 /**
  * Run the Q&A graph for a user message.
  * Returns a localized answer string in the user's configured language.
+ *
+ * @param statusCallback - optional callback to send "searching..." status messages to the user
  */
 export async function runQa(
   userMessage: string,
   chatId: string,
+  statusCallback?: QaStatusCallback,
 ): Promise<string> {
   const user = await getUser(chatId);
   const language = user?.language ?? "ru";
@@ -62,7 +74,8 @@ export async function runQa(
     context: "",
     answer: "",
     sources: [],
-  });
+    statusCallback,
+  } as any);
 
   return result.answer || "No answer available.";
 }

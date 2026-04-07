@@ -17,13 +17,21 @@ export function registerInlineHandler(bot: Bot): void {
         if (session) {
           const phase = session.phase;
           const areas = session.alertAreas.slice(0, 3).join(", ");
+          const time = new Date(session.latestAlertTs).toLocaleTimeString(
+            "he-IL",
+            {
+              hour: "2-digit",
+              minute: "2-digit",
+              timeZone: "Asia/Jerusalem",
+            },
+          );
           results.push({
             type: "article",
             id: "current_status",
-            title: `\u{1F6A8} Active Alert (${phase})`,
+            title: `\u{1F6A8} Active Alert (${phase}) — ${time}`,
             description: areas,
             input_message_content: {
-              message_text: `<b>\u{1F6A8} Active Alert</b>\nPhase: ${phase}\nAreas: ${areas}`,
+              message_text: `<b>\u{1F6A8} Active Alert</b>\nPhase: ${phase}\nTime: ${time}\nAreas: ${areas}`,
               parse_mode: "HTML",
             },
           });
@@ -41,7 +49,7 @@ export function registerInlineHandler(bot: Bot): void {
           });
         }
       } else {
-        // Q&A — run the QA graph
+        // Q&A — run the same QA graph (no status callback for inline)
         const chatId = String(ctx.from.id);
         const user = await getUser(chatId);
         if (user) {
@@ -55,6 +63,7 @@ export function registerInlineHandler(bot: Bot): void {
             input_message_content: {
               message_text: answer,
               parse_mode: "HTML",
+              link_preview_options: { is_disabled: true },
             },
           });
         } else {

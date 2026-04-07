@@ -197,18 +197,18 @@ export const sendMetaReply = async (
       const rocketInsight = get("rocket_count")!;
       const cites = formatCitations(rocketInsight.sourceUrls);
       lines.push(
-        `${labels.metaRockets}${originPart}: ${rocketCount}${clusterMunitionPart}${cites}`,
+        `\u{1F680} ${labels.metaRockets}${originPart}: ${rocketCount}${clusterMunitionPart}${cites}`,
       );
     } else if (origin) {
       const originInsight = get("origin")!;
       const cites = formatCitations(originInsight.sourceUrls);
-      lines.push(`${labels.metaOrigin}: ${origin}${cites}`);
+      lines.push(`\u{1F30D} ${labels.metaOrigin}: ${origin}${cites}`);
     }
 
     if (etaAbsolute) {
       const etaInsight = get("eta_absolute")!;
       const cites = formatCitations(etaInsight.sourceUrls);
-      lines.push(`${labels.metaArrival}: ${etaAbsolute}${cites}`);
+      lines.push(`\u23F1 ${labels.metaArrival}: ${etaAbsolute}${cites}`);
     }
 
     if (lines.length === 0) continue;

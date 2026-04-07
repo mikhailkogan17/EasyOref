@@ -117,11 +117,9 @@ export function isNeuroslop(value: string | undefined): boolean {
 /**
  * Build enriched Telegram HTML message from current text + synthesized insights.
  *
- * New format (2026-04):
- *   - early_warning: enrichment lines as plain text (no blockquote)
- *     — meta reply (sendMetaReply) handles citations separately
- *   - siren/resolved: enrichment wrapped in <blockquote>...</blockquote>
- *     appended after the base text
+ * Format (2026-04):
+ *   - All phases: emoji-prefixed plain text lines (no blockquote)
+ *   - Meta reply (sendMetaReply) handles citations separately for early_warning
  *
  * Keys used from SynthesizedInsight[]:
  *   eta_absolute, origin, rocket_count, is_cluster_munition,
@@ -162,7 +160,7 @@ export function buildEnrichedMessage(
   const etaVal = getVal("eta_absolute");
   if (etaVal && !isNeuroslop(etaVal) && alertType !== "resolved") {
     const cites = formatCitations(etaInsight!.sourceUrls);
-    enrichLines.push(`<b>${lp.metaArrival}:</b> ${etaVal}${cites}`);
+    enrichLines.push(`\u23F1 ${lp.metaArrival}: ${etaVal}${cites}`);
   }
 
   // ── Origin ──
@@ -170,7 +168,7 @@ export function buildEnrichedMessage(
   const originVal = getVal("origin");
   if (originVal && !isNeuroslop(originVal)) {
     const cites = formatCitations(originInsight!.sourceUrls);
-    enrichLines.push(`<b>${lp.metaOrigin}:</b> ${originVal}${cites}`);
+    enrichLines.push(`\u{1F30D} ${lp.metaOrigin}: ${originVal}${cites}`);
   }
 
   // ── Rocket count ──
@@ -183,7 +181,7 @@ export function buildEnrichedMessage(
         : "";
     const cites = formatCitations(rocketInsight!.sourceUrls);
     enrichLines.push(
-      `<b>${lp.metaRockets}:</b> ${rocketVal}${clusterVal}${cites}`,
+      `\u{1F680} ${lp.metaRockets}: ${rocketVal}${clusterVal}${cites}`,
     );
   }
 
@@ -196,7 +194,9 @@ export function buildEnrichedMessage(
     alertType !== "early_warning"
   ) {
     const cites = formatCitations(interceptedInsight!.sourceUrls);
-    enrichLines.push(`<b>${lp.metaIntercepted}:</b> ${interceptedVal}${cites}`);
+    enrichLines.push(
+      `\u{1F6E1} ${lp.metaIntercepted}: ${interceptedVal}${cites}`,
+    );
   }
 
   // ── Hits (not early_warning) ──
@@ -204,7 +204,7 @@ export function buildEnrichedMessage(
   const hitsVal = getVal("hits");
   if (hitsVal && !isNeuroslop(hitsVal) && alertType !== "early_warning") {
     const cites = formatCitations(hitsInsight!.sourceUrls);
-    enrichLines.push(`<b>${lp.metaHits}:</b> ${hitsVal}${cites}`);
+    enrichLines.push(`\u{1F4A5} ${lp.metaHits}: ${hitsVal}${cites}`);
   }
 
   // ── Casualties (resolved only) ──
@@ -217,7 +217,9 @@ export function buildEnrichedMessage(
     !hasStrictNoCasualties
   ) {
     const cites = formatCitations(casualtiesInsight!.sourceUrls);
-    enrichLines.push(`<b>${lp.metaCasualties}:</b> ${casualtiesVal}${cites}`);
+    enrichLines.push(
+      `\u{1F3E5} ${lp.metaCasualties}: ${casualtiesVal}${cites}`,
+    );
   }
 
   // ── No casualties (resolved only) ──
@@ -228,18 +230,12 @@ export function buildEnrichedMessage(
         : lp.metaNoVictimsUnreported;
     const noCasInsight = get("no_casualties")!;
     const cites = formatCitations(noCasInsight.sourceUrls);
-    enrichLines.push(`<b>${lp.metaCasualties}:</b> ${valueLabel}${cites}`);
+    enrichLines.push(`\u{1F3E5} ${lp.metaCasualties}: ${valueLabel}${cites}`);
   }
 
-  // ── Append enrichment ──
+  // ── Append enrichment (plain text, no blockquote) ──
   if (enrichLines.length > 0) {
-    if (alertType === "early_warning") {
-      // Early warning: plain text enrichment (no blockquote)
-      text += "\n" + enrichLines.join("\n");
-    } else {
-      // Siren / resolved: wrap enrichment in blockquote
-      text += "\n<blockquote>" + enrichLines.join("\n") + "</blockquote>";
-    }
+    text += "\n" + enrichLines.join("\n");
   }
 
   return text;

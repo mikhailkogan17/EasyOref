@@ -205,7 +205,7 @@ describe("buildEnrichedMessage", () => {
       alertTs,
       insights,
     );
-    expect(result).toContain("<b>Откуда:</b> Иран");
+    expect(result).toContain("\u{1F30D} Откуда: Иран");
   });
 
   it("inserts rocket count line", () => {
@@ -216,7 +216,7 @@ describe("buildEnrichedMessage", () => {
       alertTs,
       insights,
     );
-    expect(result).toContain("<b>Ракет:</b> ~10–15");
+    expect(result).toContain("\u{1F680} Ракет: ~10–15");
   });
 
   it("inserts rocket count with cluster munition", () => {
@@ -247,7 +247,7 @@ describe("buildEnrichedMessage", () => {
       alertTs,
       insights,
     );
-    expect(siren).toContain("<b>Перехваты:</b> 8");
+    expect(siren).toContain("\u{1F6E1} Перехваты: 8");
     expect(early).not.toContain("Перехваты:");
   });
 
@@ -265,7 +265,7 @@ describe("buildEnrichedMessage", () => {
       alertTs,
       insights,
     );
-    expect(siren).toContain("<b>Попадания:</b> Рамат-Ган");
+    expect(siren).toContain("\u{1F4A5} Попадания: Рамат-Ган");
     expect(early).not.toContain("Попадания:");
   });
 
@@ -283,7 +283,7 @@ describe("buildEnrichedMessage", () => {
       alertTs,
       insights,
     );
-    expect(resolved).toContain("<b>Пострадавшие:</b> 2 погибших");
+    expect(resolved).toContain("\u{1F3E5} Пострадавшие: 2 погибших");
     expect(siren).not.toContain("Пострадавшие:");
   });
 
@@ -296,7 +296,7 @@ describe("buildEnrichedMessage", () => {
       alertTs,
       insights,
     );
-    expect(result).toContain("<b>Прилёт:</b> ~18:07");
+    expect(result).toContain("\u23F1 Прилёт: ~18:07");
   });
 
   it("does NOT add ETA in resolved phase", () => {

@@ -296,8 +296,9 @@ export const config = {
        * Absolute time offsets (ms from phaseStartTs) for resolved enrichment runs.
        * Run 1 at +2min, Run 2 at +10min, Run 3 at +20min.
        */
-      resolvedRunOffsetsMs:
-        ai?.resolved_run_offsets_ms ?? [120_000, 600_000, 1_200_000],
+      resolvedRunOffsetsMs: ai?.resolved_run_offsets_ms ?? [
+        120_000, 600_000, 1_200_000,
+      ],
     };
   })(),
 };
