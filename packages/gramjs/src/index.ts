@@ -439,6 +439,11 @@ export async function stopMonitor(): Promise<void> {
   }
 }
 
+/** Check if GramJS client is connected */
+export function isGramJsConnected(): boolean {
+  return _client?.connected ?? false;
+}
+
 // ── Fetch recent posts (used by MCP tools) ─────────────
 
 /**

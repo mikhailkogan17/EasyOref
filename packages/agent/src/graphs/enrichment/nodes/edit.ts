@@ -24,6 +24,8 @@ import { AIMessage } from "langchain";
 import type { AgentStateType } from "../enrichment-graph.js";
 import { buildEnrichedMessage, formatCitations } from "../../../utils/message.js";
 
+export const CANARY_ALERT_PREFIX = "canary-";
+
 // ── Types ──────────────────────────────────────────────
 
 export interface TelegramTargetMessage {
@@ -56,6 +58,14 @@ export interface EditMessageInput {
 export const editTelegramMessage = async (
   input: EditMessageInput,
 ): Promise<void> => {
+  // Skip Telegram API for canary (synthetic test) alerts
+  if (input.alertId.startsWith(CANARY_ALERT_PREFIX)) {
+    logger.info("edit-node: canary alert — skipping Telegram edit", {
+      alertId: input.alertId,
+    });
+    return;
+  }
+
   if (!config.botToken) return;
 
   const tgBot = new Bot(config.botToken);

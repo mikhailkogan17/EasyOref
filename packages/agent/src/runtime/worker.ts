@@ -169,8 +169,12 @@ export function startEnrichWorker(): void {
   });
 
   _worker.on("failed", (job, err) => {
-    logger.error("Enrich worker: job failed", {
+    logger.error("Enrich worker: job FAILED → DLQ", {
       jobId: job?.id,
+      alertId: job?.data?.alertId,
+      alertTs: job?.data?.alertTs,
+      attempt: job?.attemptsMade,
+      maxAttempts: job?.opts?.attempts,
       error: String(err),
       stack: err instanceof Error ? err.stack : undefined,
     });

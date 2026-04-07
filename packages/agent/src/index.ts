@@ -14,12 +14,14 @@ export * from "./graphs/enrichment/nodes/synthesize.js";
 
 export * from "./utils/channel-extract.js";
 export * from "./utils/consensus.js";
+export * from "./utils/guardrails.js";
 export * from "./utils/message.js";
 export * from "./utils/phase-rules.js";
 
 export * from "./models.js";
 
 // export * from "./runtime/auth.js"; // CLI tool, not for import
+export * from "./runtime/canary.js";
 export * from "./runtime/dry-run.js";
 export * from "./runtime/queue.js";
 export * from "./runtime/redis.js";

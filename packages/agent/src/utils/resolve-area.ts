@@ -6,7 +6,7 @@
  *  3. LLM fallback: "Is '{userArea}' part of '{mentioned}'?"
  */
 
-import { ZONE_HIERARCHY } from "@easyoref/shared";
+import { config, ZONE_HIERARCHY } from "@easyoref/shared";
 import { freeModel } from "../models.js";
 
 // ── Tier 1: direct string matching ────────────────────────
@@ -53,6 +53,7 @@ async function llmMatch(
   mentioned: string,
   userAreas: string[],
 ): Promise<string[]> {
+  if (!config.agent.apiKey) return [];
   try {
     const matched: string[] = [];
 

@@ -28,6 +28,7 @@ import {
 } from "../../../models.js";
 import { buildConsensus } from "../../../utils/consensus.js";
 import { fieldKeyToKind } from "../../../utils/field-key-map.js";
+import { applyGuardrails } from "../../../utils/guardrails.js";
 
 // ── Output schema ──────────────────────────────────────────
 
@@ -200,6 +201,14 @@ export async function synthesizeNode(
     synthesizedKeys: synthesized.map((s) => s.key),
   });
 
+  // Step 3: guardrails — reject neuroslop, overlong, sourceless fields
+  const { passed: guarded, rejected } = applyGuardrails(synthesized);
+  if (rejected.length > 0) {
+    logger.warn("synthesize-node: guardrails rejected fields", {
+      rejected: rejected.map((r) => ({ key: r.insight.key, reason: r.reason })),
+    });
+  }
+
   // Update previousInsights with current consensus for next phase
   const newPreviousInsights = Object.values(votedResult.consensus);
 
@@ -209,7 +218,7 @@ export async function synthesizeNode(
   return {
     messages,
     votedResult,
-    synthesizedInsights: synthesized,
+    synthesizedInsights: guarded,
     previousInsights: newPreviousInsights,
   };
 }

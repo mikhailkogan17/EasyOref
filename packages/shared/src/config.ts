@@ -101,6 +101,8 @@ interface ConfigYamlAi {
   qa_rate_limit_per_min?: number;
   /** Model to use for Q&A answers (defaults to filter model) */
   qa_model?: string;
+  /** Run canary (synthetic test alert) on startup to verify pipeline health */
+  canary?: boolean;
 }
 
 // ── YAML Loader ──────────────────────────────────────────
@@ -279,6 +281,8 @@ export const config = {
       /** Model for Q&A answers */
       qaModel:
         ai?.qa_model ?? ai?.openrouter_filter_model ?? "openai/gpt-oss-120b",
+      /** Run canary (synthetic test alert) on startup */
+      canary: ai?.canary ?? false,
     };
   })(),
 };

@@ -16,10 +16,11 @@
 import {
   buildEnrichedMessage,
   enqueueEnrich,
+  runCanary,
   startEnrichWorker,
   stopEnrichWorker,
 } from "@easyoref/agent";
-import { startMonitor, stopMonitor } from "@easyoref/gramjs";
+import { isGramJsConnected, startMonitor, stopMonitor } from "@easyoref/gramjs";
 import {
   AlertType,
   clearSession,
@@ -29,6 +30,7 @@ import {
   getAllUsers,
   getEnrichment,
   getLanguagePack,
+  getLastUpdateTs,
   initLangSmithTracing,
   initTranslations,
   PHASE_ENRICH_DELAY_MS,
@@ -95,6 +97,28 @@ function classifyAlertType(title: string): AlertType {
   if (title.includes("בדקות הקרובות") || title.includes("צפויות להתקבל"))
     return "early_warning";
   return "red_alert";
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Health tracking
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+let lastAlertTs = 0;
+let registeredUserCount = 0;
+
+/** Called by processAlert after sending a Telegram message */
+function trackAlert(): void {
+  lastAlertTs = Date.now();
+}
+
+/** Update registered user count (called periodically) */
+async function refreshUserCount(): Promise<void> {
+  try {
+    const users = await getAllUsers();
+    registeredUserCount = users.length;
+  } catch {
+    // non-critical
+  }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -510,6 +534,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
   }
 
   markSent(alertType);
+  trackAlert();
 
   // Build canonical (English) base message for session storage
   const baseMessage = formatMessage(alertType, areas, "en");
@@ -716,8 +741,20 @@ async function processAlert(alert: OrefAlert): Promise<void> {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function startHealthServer(): void {
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
     if (req.url === "/health") {
+      let redisConnected = false;
+      let activeSessionPhase: string | null = null;
+      let lastEnrichTs = 0;
+      try {
+        const session = await getActiveSession();
+        activeSessionPhase = session?.phase ?? null;
+        lastEnrichTs = await getLastUpdateTs();
+        redisConnected = true;
+      } catch {
+        // Redis unreachable
+      }
+
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
@@ -726,6 +763,15 @@ function startHealthServer(): void {
           uptime: process.uptime(),
           seen_alerts: seenAlerts.size,
           gif_mode: config.gifMode,
+          last_alert_ts: lastAlertTs || null,
+          last_enrichment_ts: lastEnrichTs || null,
+          registered_users: registeredUserCount,
+          redis_connected: redisConnected,
+          gramjs_connected: config.agent.enabled
+            ? isGramJsConnected()
+            : null,
+          active_session_phase: activeSessionPhase,
+          agent_enabled: config.agent.enabled,
         }),
       );
     } else {
@@ -786,6 +832,13 @@ async function main(): Promise<void> {
       channels: 14, // MONITORED_CHANNELS length (hardcoded)
       enrich_delay_ms: config.agent.enrichDelayMs,
     });
+
+    // Canary: synthetic self-test (non-blocking)
+    if (config.agent.canary) {
+      runCanary().catch((err) => {
+        logger.error("Canary failed", { error: String(err) });
+      });
+    }
   }
 
   // Poll loop
@@ -802,12 +855,13 @@ async function main(): Promise<void> {
     }
   }, config.pollIntervalMs);
 
-  // Heartbeat — flush Logtail buffer every 30s
+  // Heartbeat — flush Logtail buffer + refresh user count every 30s
   setInterval(async () => {
     logger.debug("heartbeat", {
       uptime_s: Math.round(process.uptime()),
       seen_alerts: seenAlerts.size,
     });
+    await refreshUserCount();
     await logger.flush();
   }, 30_000);
 

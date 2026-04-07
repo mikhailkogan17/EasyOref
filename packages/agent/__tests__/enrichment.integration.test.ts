@@ -158,7 +158,7 @@ describe("resolveArea (deterministic)", () => {
     // London is geographically unambiguous — no capable LLM should say it contains Tel Aviv
     const result = await resolveArea("London", userAreas);
     expect(result.relevant).toBe(false);
-  });
+  }, 30_000);
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
