@@ -52,7 +52,9 @@ switch (command) {
 
       // Kill any stale node process occupying port 3100 before restart
       try {
-        execSync("sudo fuser -k 3100/tcp 2>/dev/null || true", { stdio: "pipe" });
+        execSync("sudo fuser -k 3100/tcp 2>/dev/null || true", {
+          stdio: "pipe",
+        });
       } catch {
         // ignore — port may not be in use
       }
