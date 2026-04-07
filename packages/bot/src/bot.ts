@@ -46,6 +46,7 @@ import { Bot } from "grammy";
 import { createServer } from "node:http";
 import { initGifState, pickGif } from "./gif-state.js";
 import { registerAdminHandler } from "./handlers/admin.js";
+import { registerShelterHandler } from "./handlers/shelter.js";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Per-user Area Filter
@@ -763,6 +764,7 @@ async function main(): Promise<void> {
   bot = initBot();
   if (bot) {
     registerAdminHandler(bot);
+    registerShelterHandler(bot);
   }
   startHealthServer();
 

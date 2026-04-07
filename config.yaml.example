@@ -138,3 +138,17 @@ gif_mode: none
 #     "קריות": "Галилея (Крайот)"
 #     "ירושלים": "Иерусалим"
 
+# ── Shelter Search (optional) ─────────────────────
+# Responds to location messages with nearest civil defense shelters.
+# Data source: OpenStreetMap via Overpass API (live query, no API key needed).
+# Free feature — available to all tiers.
+#
+# shelter:
+#   max_distance_km: 2    # search radius (km)
+#   max_results: 5        # max shelters to return
+#   source: overpass      # "overpass" = live OSM query (default)
+
+# ── Admin ────────────────────────────────────────
+# Telegram user IDs that can use /grant and /revoke commands
+# admin_chat_ids: [123456789]
+
