@@ -13,12 +13,6 @@ const pikudHaoref = require("pikud-haoref-api") as {
     options?: { alertsHistoryJson?: boolean; proxy?: string },
   ) => void;
 };
-const pikudHaorefConfig = require("pikud-haoref-api/config") as {
-  hfc: {
-    alertsHistory: { api: string };
-    alerts: { api: string };
-  };
-};
 
 // ── Types ────────────────────────────────────────────
 
@@ -30,11 +24,11 @@ export interface PikudAlert {
   id?: string; // unique ID (from Alerts.json only)
 }
 
-/** Raw entry from AlertsHistory.json (unfiltered). */
+/** Entry from GetAlarmsHistory.aspx (full-day history). */
 export interface OrefHistoryEntry {
   alertDate: string;
-  title: string;
-  data: string; // single city name (NOT array)
+  title: string; // mapped from category_desc
+  data: string; // single city name
   category: number;
 }
 
@@ -74,20 +68,20 @@ export async function fetchActiveAlerts(
 }
 
 /**
- * Fetch full alert history from Oref AlertsHistory.json (no 120s filter).
- * pikud-haoref-api hard-filters to last 120s — we need the full dataset for Q&A.
- * URL sourced from pikud-haoref-api/config. Headers match the library's approach.
+ * Fetch full alert history from alerts-history.oref.org.il (full-day, not just last 120s).
+ * AlertsHistory.json only contains currently-active alerts; GetAlarmsHistory.aspx has the full day.
  */
 export async function fetchOrefHistory(
   timeoutMs = 5000,
 ): Promise<OrefHistoryEntry[]> {
-  const url = `${pikudHaorefConfig.hfc.alertsHistory.api}?${Date.now()}`;
+  const today = new Date().toLocaleDateString("en-GB", {
+    timeZone: "Asia/Jerusalem",
+  }); // DD.MM.YYYY
+  const url = `https://alerts-history.oref.org.il/Shared/Ajax/GetAlarmsHistory.aspx?lang=he&fromDate=${today}&toDate=${today}&mode=0`;
   try {
     const res = await fetch(url, {
       headers: {
-        Pragma: "no-cache",
-        "Cache-Control": "max-age=0",
-        Referer: "https://www.oref.org.il/11226-he/pakar.aspx",
+        Referer: "https://www.oref.org.il/",
         "X-Requested-With": "XMLHttpRequest",
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.106 Safari/537.36",
@@ -95,21 +89,22 @@ export async function fetchOrefHistory(
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) return [];
-    // Handle encoding (BOM detection) matching pikud-haoref-api's approach
-    const buf = Buffer.from(await res.arrayBuffer());
-    let text: string;
-    if (buf[0] === 0xff && buf[1] === 0xfe) {
-      text = buf.toString("utf16le").replace(/^\uFEFF/, "");
-    } else if (buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
-      text = buf.toString("utf8").replace(/^\uFEFF/, "");
-    } else {
-      text = buf.toString("utf8");
-    }
-    text = text.replace(/\0/g, "");
-    if (!text.trim()) return [];
-    const data: unknown = JSON.parse(text);
-    if (!Array.isArray(data)) return [];
-    return data;
+    const raw: unknown = await res.json();
+    if (!Array.isArray(raw)) return [];
+    // Map category_desc → title for compatibility with existing consumers
+    return raw.map(
+      (e: {
+        alertDate: string;
+        category_desc: string;
+        data: string;
+        category: number;
+      }) => ({
+        alertDate: e.alertDate,
+        title: e.category_desc,
+        data: e.data,
+        category: e.category,
+      }),
+    );
   } catch {
     return [];
   }

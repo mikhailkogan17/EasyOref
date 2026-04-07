@@ -172,11 +172,29 @@ export async function contextNode(
 
   const history = await fetchOrefHistory();
   if (history.length > 0) {
-    const formatted = history
-      .slice(0, 50)
-      .map((e) => `[${e.alertDate}] ${e.title}: ${e.data}`)
+    // Group by alertDate+category to deduplicate (each alert fires for many sub-areas)
+    const groups = new Map<string, { time: string; type: string; areas: string[] }>();
+    for (const e of history) {
+      const key = `${e.alertDate}|${e.category}`;
+      const g = groups.get(key);
+      if (g) {
+        if (!g.areas.includes(e.data)) g.areas.push(e.data);
+      } else {
+        const time = e.alertDate.includes("T")
+          ? e.alertDate.split("T")[1]?.slice(0, 5) ?? e.alertDate
+          : e.alertDate;
+        groups.set(key, { time, type: e.title, areas: [e.data] });
+      }
+    }
+    const events = [...groups.values()];
+    // Take last 80 unique events (most recent first — history already sorted desc)
+    const formatted = events
+      .slice(0, 80)
+      .map((g) => `[${g.time}] ${g.type}: ${g.areas.join(", ")}`)
       .join("\n");
-    parts.push(`OREF ALERT HISTORY (last 24h):\n${formatted}`);
+    parts.push(
+      `OREF ALERT HISTORY (today, ${history.length} raw alerts, ${events.length} unique events):\n${formatted}`,
+    );
   }
 
   // 5. Fetch channel news from Redis
