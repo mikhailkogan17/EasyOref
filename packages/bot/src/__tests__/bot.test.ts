@@ -89,6 +89,8 @@ describe("message format", () => {
     expect(enriched).toContain("</blockquote>");
     expect(enriched).toContain("<b>Origin:</b> Iran");
     // District stays outside blockquote
-    expect(enriched.indexOf("Area:")).toBeLessThan(enriched.indexOf("<blockquote>"));
+    expect(enriched.indexOf("Area:")).toBeLessThan(
+      enriched.indexOf("<blockquote>"),
+    );
   });
 });
