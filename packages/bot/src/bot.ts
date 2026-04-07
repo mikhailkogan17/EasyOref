@@ -45,6 +45,7 @@ import * as logger from "@easyoref/shared/logger";
 import { Bot } from "grammy";
 import { createServer } from "node:http";
 import { initGifState, pickGif } from "./gif-state.js";
+import { registerShelterHandler } from "./handlers/shelter.js";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Per-user Area Filter
@@ -749,6 +750,12 @@ async function main(): Promise<void> {
 
   initGifState(config.dataDir);
   bot = initBot();
+
+  // Register bot handlers
+  if (bot) {
+    registerShelterHandler(bot);
+  }
+
   startHealthServer();
 
   // Start agent subsystems if enabled

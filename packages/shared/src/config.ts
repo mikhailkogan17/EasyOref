@@ -22,6 +22,13 @@ const VALID_GIF_MODES: GifMode[] = ["funny_cats", "none"];
 
 const ALL_ALERT_TYPES: AlertTypeConfig[] = ["early", "red_alert", "resolved"];
 
+interface ShelterYaml {
+  max_distance_km?: number;
+  max_results?: number;
+  source?: "static" | "overpass";
+  api_url?: string;
+}
+
 /** Raw YAML schema */
 interface ConfigYaml {
   alert_types?: AlertTypeConfig[];
@@ -48,6 +55,7 @@ interface ConfigYaml {
    */
   redis_prefix?: string;
   ai?: ConfigYamlAi;
+  shelter?: ShelterYaml;
 }
 
 interface PhaseTimingYaml {
@@ -202,6 +210,14 @@ export const config = {
   /** Path for persistent data */
   dataDir: yml.data_dir ?? join(CONFIG_DIR, "data"),
 
+  /** Civil defense shelter search config (YAML key: `shelter`) */
+  shelter: {
+    maxDistanceKm: yml.shelter?.max_distance_km ?? 2,
+    maxResults: yml.shelter?.max_results ?? 5,
+    source: yml.shelter?.source ?? ("overpass" as "static" | "overpass"),
+    apiUrl: yml.shelter?.api_url ?? "",
+  },
+
   /** AI enrichment config (YAML key: `ai`) */
   agent: (() => {
     const ai = yml.ai;
@@ -270,5 +286,6 @@ export function initLangSmithTracing(): void {
 export {
   loadYaml as _loadYaml,
   parseAlertTypes as _parseAlertTypes,
-  type ConfigYaml,
+  type ConfigYaml
 };
+
