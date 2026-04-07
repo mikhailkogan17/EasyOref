@@ -208,6 +208,202 @@ const packs: Record<Language, LanguagePack> = {
 };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Bot UI Strings — localized text for interactive flows
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+export interface BotStrings {
+  // /start onboarding
+  welcome: string;
+  askLanguage: string;
+  languageSaved: string;
+  askLocation: string;
+  shareLocationBtn: string;
+  skipLocationBtn: string;
+  registered: string; // {areas}, {lang}
+  updated: string;
+  areaDetected: string; // {area}
+  areaNotDetected: string;
+  // /settings
+  settingsTitle: string;
+  settingsLanguage: string;
+  settingsLocation: string;
+  settingsInfo: string;
+  infoDisplay: string; // {chatId}, {lang}, {tier}, {areas}
+  // Shelter
+  shelterTitle: string;
+  shelterNone: string;
+  shelterFallback: string;
+  // Q&A
+  qaRateLimit: string;
+  qaNotRegistered: string;
+  qaError: string;
+  // Admin
+  adminUnauthorized: string;
+  adminGrantUsage: string;
+  adminGranted: string; // {target}
+  adminRevoked: string; // {target}
+  adminUserNotFound: string; // {target}
+  // Common
+  btnShelter: string;
+  btnSettings: string;
+}
+
+const ruBot: BotStrings = {
+  welcome:
+    "👋 Привет! Я EasyOref — бот оповещений о ракетных атаках.\n\nВыберите язык:",
+  askLanguage: "🌐 Выберите язык:",
+  languageSaved: "✅ Язык сохранён.",
+  askLocation:
+    "📍 Отправьте вашу геолокацию, чтобы определить зону оповещений.\n\nИли нажмите «Пропустить» для зоны по умолчанию.",
+  shareLocationBtn: "📍 Отправить геолокацию",
+  skipLocationBtn: "⏭ Пропустить",
+  registered:
+    "✅ Регистрация завершена!\n\n🌐 Язык: {lang}\n📍 Зона: {areas}\n\nВы будете получать оповещения для этой зоны.",
+  updated: "✅ Настройки обновлены!",
+  areaDetected: "📍 Определена зона: {area}",
+  areaNotDetected:
+    "📍 Не удалось определить зону по геолокации. Установлена зона по умолчанию.",
+  settingsTitle: "⚙️ Настройки",
+  settingsLanguage: "🌐 Язык",
+  settingsLocation: "📍 Зона",
+  settingsInfo: "ℹ️ Мои данные",
+  infoDisplay:
+    "ℹ️ <b>Ваш профиль</b>\n\n🆔 Chat ID: <code>{chatId}</code>\n🌐 Язык: {lang}\n👤 Тариф: {tier}\n📍 Зоны: {areas}",
+  shelterTitle: "🏚 <b>Ближайшие укрытия:</b>",
+  shelterNone:
+    "Укрытия поблизости не найдены.\n\nПопробуйте на сайте Пикуд ха-Ореф:\nhttps://www.oref.org.il/NAShelters/",
+  shelterFallback: "https://www.oref.org.il/NAShelters/",
+  qaRateLimit: "Слишком много вопросов. Подождите минуту.",
+  qaNotRegistered: "Используйте /start для регистрации.",
+  qaError: "Не удалось обработать вопрос. Попробуйте ещё раз.",
+  adminUnauthorized: "Нет доступа.",
+  adminGrantUsage:
+    "Использование: /grant <chatId или @username или t.me/ссылка>",
+  adminGranted: "✅ {target} повышен до Pro.",
+  adminRevoked: "✅ {target} понижен до Free.",
+  adminUserNotFound: "Пользователь {target} не найден.",
+  btnShelter: "🏚 Укрытие",
+  btnSettings: "⚙️ Настройки",
+};
+
+const enBot: BotStrings = {
+  welcome: "👋 Hi! I'm EasyOref — a rocket alert bot.\n\nChoose your language:",
+  askLanguage: "🌐 Choose a language:",
+  languageSaved: "✅ Language saved.",
+  askLocation:
+    '📍 Send your location to detect your alert zone.\n\nOr tap "Skip" for the default zone.',
+  shareLocationBtn: "📍 Share location",
+  skipLocationBtn: "⏭ Skip",
+  registered:
+    "✅ Registered!\n\n🌐 Language: {lang}\n📍 Zone: {areas}\n\nYou'll receive alerts for this zone.",
+  updated: "✅ Settings updated!",
+  areaDetected: "📍 Detected zone: {area}",
+  areaNotDetected:
+    "📍 Could not detect zone from your location. Default zone set.",
+  settingsTitle: "⚙️ Settings",
+  settingsLanguage: "🌐 Language",
+  settingsLocation: "📍 Zone",
+  settingsInfo: "ℹ️ My info",
+  infoDisplay:
+    "ℹ️ <b>Your profile</b>\n\n🆔 Chat ID: <code>{chatId}</code>\n🌐 Language: {lang}\n👤 Tier: {tier}\n📍 Zones: {areas}",
+  shelterTitle: "🏚 <b>Nearest shelters:</b>",
+  shelterNone:
+    "No shelters found nearby.\n\nTry the official Pikud HaOref shelter finder:\nhttps://www.oref.org.il/NAShelters/",
+  shelterFallback: "https://www.oref.org.il/NAShelters/",
+  qaRateLimit: "Too many questions. Please wait a minute.",
+  qaNotRegistered: "Please use /start to register first.",
+  qaError: "I couldn't process your question. Please try again.",
+  adminUnauthorized: "Unauthorized.",
+  adminGrantUsage: "Usage: /grant <chatId or @username or t.me/link>",
+  adminGranted: "✅ {target} upgraded to Pro.",
+  adminRevoked: "✅ {target} downgraded to Free.",
+  adminUserNotFound: "User {target} not found.",
+  btnShelter: "🏚 Shelter",
+  btnSettings: "⚙️ Settings",
+};
+
+const heBot: BotStrings = {
+  welcome: "👋 שלום! אני EasyOref — בוט התרעות טילים.\n\nבחר שפה:",
+  askLanguage: "🌐 בחר שפה:",
+  languageSaved: "✅ השפה נשמרה.",
+  askLocation:
+    '📍 שלח את המיקום שלך כדי לזהות את אזור ההתרעה.\n\nאו לחץ על "דלג" לאזור ברירת מחדל.',
+  shareLocationBtn: "📍 שלח מיקום",
+  skipLocationBtn: "⏭ דלג",
+  registered:
+    "✅ נרשמת!\n\n🌐 שפה: {lang}\n📍 אזור: {areas}\n\nתקבל התרעות לאזור זה.",
+  updated: "✅ ההגדרות עודכנו!",
+  areaDetected: "📍 זוהה אזור: {area}",
+  areaNotDetected: "📍 לא הצלחנו לזהות אזור מהמיקום. הוגדר אזור ברירת מחדל.",
+  settingsTitle: "⚙️ הגדרות",
+  settingsLanguage: "🌐 שפה",
+  settingsLocation: "📍 אזור",
+  settingsInfo: "ℹ️ המידע שלי",
+  infoDisplay:
+    "ℹ️ <b>הפרופיל שלך</b>\n\n🆔 Chat ID: <code>{chatId}</code>\n🌐 שפה: {lang}\n👤 מנוי: {tier}\n📍 אזורים: {areas}",
+  shelterTitle: "🏚 <b>מקלטים קרובים:</b>",
+  shelterNone:
+    "לא נמצאו מקלטים בסביבה.\n\nנסה באתר פיקוד העורף:\nhttps://www.oref.org.il/NAShelters/",
+  shelterFallback: "https://www.oref.org.il/NAShelters/",
+  qaRateLimit: "יותר מדי שאלות. אנא המתן דקה.",
+  qaNotRegistered: "אנא השתמש ב-/start כדי להירשם.",
+  qaError: "לא הצלחתי לעבד את השאלה. נסה שוב.",
+  adminUnauthorized: "אין הרשאה.",
+  adminGrantUsage: "שימוש: /grant <chatId או @username או קישור t.me>",
+  adminGranted: "✅ {target} שודרג ל-Pro.",
+  adminRevoked: "✅ {target} שודרג ל-Free.",
+  adminUserNotFound: "משתמש {target} לא נמצא.",
+  btnShelter: "🏚 מקלט",
+  btnSettings: "⚙️ הגדרות",
+};
+
+const arBot: BotStrings = {
+  welcome: "👋 مرحبًا! أنا EasyOref — بوت تنبيهات صواريخ.\n\nاختر لغتك:",
+  askLanguage: "🌐 اختر لغة:",
+  languageSaved: "✅ تم حفظ اللغة.",
+  askLocation:
+    '📍 أرسل موقعك لتحديد منطقة التنبيه.\n\nأو اضغط "تخطي" للمنطقة الافتراضية.',
+  shareLocationBtn: "📍 مشاركة الموقع",
+  skipLocationBtn: "⏭ تخطي",
+  registered:
+    "✅ تم التسجيل!\n\n🌐 اللغة: {lang}\n📍 المنطقة: {areas}\n\nستتلقى تنبيهات لهذه المنطقة.",
+  updated: "✅ تم تحديث الإعدادات!",
+  areaDetected: "📍 تم تحديد المنطقة: {area}",
+  areaNotDetected: "📍 لم نتمكن من تحديد المنطقة. تم تعيين المنطقة الافتراضية.",
+  settingsTitle: "⚙️ الإعدادات",
+  settingsLanguage: "🌐 اللغة",
+  settingsLocation: "📍 المنطقة",
+  settingsInfo: "ℹ️ معلوماتي",
+  infoDisplay:
+    "ℹ️ <b>ملفك الشخصي</b>\n\n🆔 Chat ID: <code>{chatId}</code>\n🌐 اللغة: {lang}\n👤 الباقة: {tier}\n📍 المناطق: {areas}",
+  shelterTitle: "🏚 <b>أقرب الملاجئ:</b>",
+  shelterNone:
+    "لم يتم العثور على ملاجئ قريبة.\n\nجرب موقع بيكود هعوريف:\nhttps://www.oref.org.il/NAShelters/",
+  shelterFallback: "https://www.oref.org.il/NAShelters/",
+  qaRateLimit: "أسئلة كثيرة جدًا. انتظر دقيقة.",
+  qaNotRegistered: "استخدم /start للتسجيل أولاً.",
+  qaError: "لم أتمكن من معالجة سؤالك. حاول مرة أخرى.",
+  adminUnauthorized: "غير مصرح.",
+  adminGrantUsage: "الاستخدام: /grant <chatId أو @username أو رابط t.me>",
+  adminGranted: "✅ تمت ترقية {target} إلى Pro.",
+  adminRevoked: "✅ تم تخفيض {target} إلى Free.",
+  adminUserNotFound: "المستخدم {target} غير موجود.",
+  btnShelter: "🏚 ملجأ",
+  btnSettings: "⚙️ الإعدادات",
+};
+
+const botStrings: Record<Language, BotStrings> = {
+  ru: ruBot,
+  en: enBot,
+  he: heBot,
+  ar: arBot,
+};
+
+export function getBotStrings(lang: Language): BotStrings {
+  return botStrings[lang] ?? botStrings.ru;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Area Name Translation — loaded from pikud-haoref-api/cities.json
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -224,6 +420,8 @@ interface CityEntry {
   zone_en: string;
   zone_ru: string;
   zone_ar: string;
+  lat: number;
+  lng: number;
 }
 
 type LangKey = "en" | "ru" | "ar";
@@ -234,6 +432,53 @@ const cityMap = new Map<string, Record<LangKey, string>>();
 const zoneMap = new Map<string, Record<LangKey, string>>();
 /** City ID → Hebrew name (for YAML city_ids resolution) */
 const idToNameMap = new Map<number, string>();
+
+// ── Polygon-based area geo-lookup ──────────────────────
+
+const POLYGONS_JSON_URL =
+  "https://raw.githubusercontent.com/eladnava/pikud-haoref-api/master/polygons.json";
+
+/** City ID → polygon [[lat, lng], ...] */
+const polygonMap = new Map<number, [number, number][]>();
+
+/**
+ * Ray-casting point-in-polygon test.
+ * Returns true if (lat, lng) is inside the closed polygon.
+ */
+function pointInPolygon(
+  lat: number,
+  lng: number,
+  polygon: [number, number][],
+): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [yi, xi] = polygon[i];
+    const [yj, xj] = polygon[j];
+    if (
+      yi > lat !== yj > lat &&
+      lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi
+    ) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
+ * Find the Hebrew area name for a GPS location using Pikud HaOref polygons.
+ * Returns undefined if no polygon matches (e.g. outside Israel).
+ */
+export function findAreaByLocation(
+  lat: number,
+  lng: number,
+): string | undefined {
+  for (const [cityId, polygon] of polygonMap) {
+    if (pointInPolygon(lat, lng, polygon)) {
+      return idToNameMap.get(cityId);
+    }
+  }
+  return undefined;
+}
 
 /** Country name translation map (Source: agent extraction names) */
 const COUNTRY_NAMES: Record<string, Record<Exclude<Language, "he">, string>> = {
@@ -291,6 +536,27 @@ export async function initTranslations(): Promise<void> {
     console.log(
       `[i18n] Loaded ${cityMap.size} city + ${zoneMap.size} zone translations`,
     );
+
+    // Load polygon data for GPS-based area lookup
+    try {
+      const polyRes = await fetch(POLYGONS_JSON_URL);
+      if (!polyRes.ok) throw new Error(`HTTP ${polyRes.status}`);
+      const polyData = (await polyRes.json()) as Record<
+        string,
+        [number, number][]
+      >;
+      for (const [idStr, polygon] of Object.entries(polyData)) {
+        polygonMap.set(Number(idStr), polygon);
+      }
+      // eslint-disable-next-line no-console
+      console.log(`[i18n] Loaded ${polygonMap.size} area polygons`);
+    } catch (polyErr) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[i18n] Failed to load polygons.json — location-based area detection unavailable",
+        polyErr,
+      );
+    }
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn(

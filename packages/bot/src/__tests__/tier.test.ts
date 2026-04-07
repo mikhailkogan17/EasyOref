@@ -6,14 +6,18 @@ const mockGetUser = vi.fn();
 const mockSetUserTier = vi.fn();
 const mockGetAllUsers = vi.fn();
 
-vi.mock("@easyoref/shared", () => ({
-  getUser: mockGetUser,
-  setUserTier: mockSetUserTier,
-  getAllUsers: mockGetAllUsers,
-  config: {
-    adminChatIds: [111111],
-  },
-}));
+vi.mock("@easyoref/shared", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@easyoref/shared")>();
+  return {
+    ...actual,
+    getUser: mockGetUser,
+    setUserTier: mockSetUserTier,
+    getAllUsers: mockGetAllUsers,
+    config: {
+      adminChatIds: [111111],
+    },
+  };
+});
 
 vi.mock("@easyoref/shared/logger", () => ({
   info: vi.fn(),
@@ -104,7 +108,7 @@ describe("admin command handlers", () => {
     await bot.trigger("grant", ctx);
     expect(mockSetUserTier).toHaveBeenCalledWith("222222", "pro");
     expect(ctx.reply).toHaveBeenCalledWith(
-      expect.stringContaining("upgraded to Pro"),
+      expect.stringContaining("Pro"),
     );
   });
 
@@ -116,7 +120,9 @@ describe("admin command handlers", () => {
     const ctx = makeCtx(999999, "222222");
     await bot.trigger("grant", ctx);
     expect(mockSetUserTier).not.toHaveBeenCalled();
-    expect(ctx.reply).toHaveBeenCalledWith("Unauthorized.");
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("доступа"),
+    );
   });
 
   it("/grant replies not found when user missing", async () => {
@@ -128,7 +134,7 @@ describe("admin command handlers", () => {
     const ctx = makeCtx(111111, "999");
     await bot.trigger("grant", ctx);
     expect(ctx.reply).toHaveBeenCalledWith(
-      expect.stringContaining("not found"),
+      expect.stringContaining("999"),
     );
   });
 
@@ -142,7 +148,7 @@ describe("admin command handlers", () => {
     await bot.trigger("revoke", ctx);
     expect(mockSetUserTier).toHaveBeenCalledWith("222222", "free");
     expect(ctx.reply).toHaveBeenCalledWith(
-      expect.stringContaining("downgraded to Free"),
+      expect.stringContaining("Free"),
     );
   });
 
@@ -154,7 +160,9 @@ describe("admin command handlers", () => {
     const ctx = makeCtx(999999, "222222");
     await bot.trigger("revoke", ctx);
     expect(mockSetUserTier).not.toHaveBeenCalled();
-    expect(ctx.reply).toHaveBeenCalledWith("Unauthorized.");
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("доступа"),
+    );
   });
 
   it("/users lists all users (admin)", async () => {
@@ -196,7 +204,9 @@ describe("admin command handlers", () => {
     const ctx = makeCtx(999999);
     await bot.trigger("users", ctx);
     expect(mockGetAllUsers).not.toHaveBeenCalled();
-    expect(ctx.reply).toHaveBeenCalledWith("Unauthorized.");
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("доступа"),
+    );
   });
 
   it("/users replies when no users registered", async () => {

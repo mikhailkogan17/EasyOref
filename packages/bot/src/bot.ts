@@ -50,6 +50,7 @@ import { initGifState, pickGif } from "./gif-state.js";
 import { registerAdminHandler } from "./handlers/admin.js";
 import { registerInlineHandler } from "./handlers/inline.js";
 import { registerQaHandler } from "./handlers/qa.js";
+import { registerSettingsHandler } from "./handlers/settings.js";
 import { registerShelterHandler } from "./handlers/shelter.js";
 import { initDefaultAreas, registerStartHandler } from "./handlers/start.js";
 
@@ -812,10 +813,21 @@ async function main(): Promise<void> {
   if (bot) {
     initDefaultAreas();
     registerStartHandler(bot);
+    registerSettingsHandler(bot);
     registerAdminHandler(bot);
     registerShelterHandler(bot);
     registerQaHandler(bot);
     registerInlineHandler(bot);
+
+    // Set bot menu commands (per-language)
+    const commands = [
+      { command: "start", description: "Register / restart" },
+      { command: "settings", description: "Settings" },
+    ];
+    bot.api.setMyCommands(commands).catch((err: unknown) => {
+      logger.warn("Failed to set bot commands", { error: String(err) });
+    });
+
     bot.start({ drop_pending_updates: true }).catch((err: unknown) => {
       logger.error("Bot polling failed", { error: String(err) });
     });
