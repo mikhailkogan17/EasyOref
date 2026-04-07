@@ -105,12 +105,17 @@ describe("answerNode (mocked LLM)", () => {
   it("handles LLM failure gracefully", async () => {
     vi.mock("@langchain/openrouter", () => ({
       ChatOpenRouter: vi.fn().mockImplementation(() => ({
-        withStructuredOutput: () => ({
+        bindTools: vi.fn().mockReturnValue({
           invoke: vi.fn().mockRejectedValue(new Error("API error")),
         }),
         invoke: vi.fn().mockRejectedValue(new Error("API error")),
       })),
     }));
+
+    vi.mock("@easyoref/shared", async (importOriginal) => {
+      const original = await importOriginal<typeof import("@easyoref/shared")>();
+      return { ...original, fetchOrefHistory: vi.fn().mockResolvedValue([]) };
+    });
 
     const { answerNode: answerNodeMocked } =
       await import("../src/graphs/qa/nodes/answer.js");

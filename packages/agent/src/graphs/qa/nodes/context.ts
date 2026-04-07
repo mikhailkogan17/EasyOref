@@ -1,10 +1,11 @@
 import {
+  config,
   fetchActiveAlerts,
-  fetchOrefHistory,
   getActiveSession,
   getSessionPosts,
   getSynthesizedInsights,
   getVotedInsights,
+  resolveCityIds,
   translateAreas,
 } from "@easyoref/shared";
 import * as logger from "@easyoref/shared/logger";
@@ -23,22 +24,6 @@ const OFF_TOPIC_TEXT: Record<string, string> = {
   en: 'Hi! I\'m @easyoref — an AI assistant for Israeli rocket alerts 🇮🇱\n\nI only answer questions about sirens, rocket attacks, interceptions, and shelters.\n\nFor example:\n• "When was the last siren in Tel Aviv?"\n• "How many rockets were there?"\n• "Were there any casualties?"',
   he: 'שלום! אני @easyoref — עוזר בינה מלאכותית להתרעות טילים 🇮🇱\n\nאני עונה רק על שאלות לגבי אזעקות, תקיפות טילים, יירוטים ומקלטים.\n\nלמשל:\n• "מתי הייתה האזעקה האחרונה בתל אביב?"\n• "כמה טילים היו?"',
   ar: "مرحبًا! أنا @easyoref — مساعد تنبيهات صاروخية 🇮🇱\n\nأجيب فقط على أسئلة حول صفارات الإنذار والهجمات الصاروخية والاعتراضات والملاجئ.",
-};
-
-/** Translate Oref Hebrew category_desc to English. Fallback: original Hebrew. */
-const CATEGORY_EN: Record<number, string> = {
-  1: "Rocket/missile fire (siren)",
-  2: "Hostile aircraft (siren)",
-  3: "Unconventional weapon",
-  4: "Earthquake",
-  5: "Radiological event",
-  6: "Terrorist infiltration",
-  7: "Tsunami",
-  9: "Hazardous materials",
-  10: "Unknown threat",
-  11: "Early warning",
-  12: "Practice drill",
-  13: "Incident resolved",
 };
 
 /** Get recent channel posts from Redis (from GramJS monitoring). */
@@ -176,56 +161,18 @@ export async function contextNode(
     parts.push(`CURRENT OREF ALERTS:\n${formatted}`);
   }
 
-  // 4. Fetch Oref history (full, no 120s filter)
-  if (statusCallback) {
-    const histMsg: Record<string, string> = {
-      ru: "🔎 Поиск в истории оповещений...",
-      en: "🔎 Searching alert history...",
-      he: "🔎 חיפוש בהיסטוריית ההתרעות...",
-      ar: "🔎 البحث في سجل التنبيهات...",
-    };
-    await statusCallback(histMsg[lang] ?? histMsg.ru);
-  }
-
-  const history = await fetchOrefHistory();
-  if (history.length > 0) {
-    // Group by alertDate+category to deduplicate (each alert fires for many sub-areas)
-    const groups = new Map<
-      string,
-      { time: string; type: string; category: number; areas: string[] }
-    >();
-    for (const e of history) {
-      const key = `${e.alertDate}|${e.category}`;
-      const g = groups.get(key);
-      if (g) {
-        if (!g.areas.includes(e.data)) g.areas.push(e.data);
-      } else {
-        const time = e.alertDate.includes("T")
-          ? (e.alertDate.split("T")[1]?.slice(0, 5) ?? e.alertDate)
-          : e.alertDate;
-        groups.set(key, {
-          time,
-          type: e.title,
-          category: e.category,
-          areas: [e.data],
-        });
-      }
+  // 4. Configured zones (for use with query_alert_history tool in answer node)
+  if (config.cityIds.length > 0) {
+    const zoneLines = ["  0: all configured zones (aggregated)"];
+    for (const id of config.cityIds) {
+      const hebrewNames = resolveCityIds([id]);
+      const nameEn = hebrewNames[0]
+        ? translateAreas(hebrewNames[0], "en")
+        : `zone_${id}`;
+      zoneLines.push(`  ${id}: ${nameEn}`);
     }
-    // Filter out "Incident resolved" (category 13) — resolved timestamps confuse LLM
-    // (e.g. siren at 18:18 has a resolved event at 18:52, LLM counts 18:52 as a siren)
-    const events = [...groups.values()].filter((g) => g.category !== 13);
-    // Take last 80 unique events (most recent first — history already sorted desc)
-    // Translate area names to English so LLM can match city names reliably
-    const formatted = events
-      .slice(0, 80)
-      .map((g) => {
-        const typeEn = CATEGORY_EN[g.category] ?? g.type;
-        const areasEn = translateAreas(g.areas.join(", "), "en");
-        return `[${g.time}] ${typeEn}: ${areasEn}`;
-      })
-      .join("\n");
     parts.push(
-      `OREF ALERT HISTORY (today, ${history.length} raw alerts, ${events.length} unique events):\n${formatted}`,
+      `CONFIGURED_ZONES (zone_id integers for query_alert_history tool):\n${zoneLines.join("\n")}`,
     );
   }
 
