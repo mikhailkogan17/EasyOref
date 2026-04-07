@@ -30,15 +30,10 @@ vi.mock("@easyoref/shared", async () => {
         extractModel: "google/gemini-2.5-flash-lite",
         extractFallbackModel: "meta-llama/llama-3.3-70b-instruct:free",
         apiKey: "test-key",
-        mcpTools: false,
-        clarifyFetchCount: 3,
-        confidenceThreshold: 0.6,
         channels: [],
         areaLabels: {},
       },
       botToken: "",
-      areas: ["תל אביב - דרום העיר ויפו"],
-      language: "ru",
     },
   };
 });
@@ -62,7 +57,7 @@ vi.mock("../src/models.js", () => ({
 
 // resolveArea mock — controlled per-test
 const mockResolveArea = vi.fn();
-vi.mock("../src/tools/resolve-area.js", () => ({
+vi.mock("../src/utils/resolve-area.js", () => ({
   resolveArea: (...args: unknown[]) => mockResolveArea(...args),
 }));
 
@@ -87,7 +82,6 @@ function makeBaseState(overrides: Record<string, unknown> = {}) {
     filteredInsights: [],
     synthesizedInsights: [],
     votedResult: undefined,
-    clarifyAttempted: false,
     previousInsights: [],
     telegramMessages: [],
     ...overrides,
@@ -98,18 +92,23 @@ function makeBaseState(overrides: Record<string, unknown> = {}) {
  * Minimal InsightType-compatible object with the extra runtime fields
  * post-filter-node expects (source.text, source.channelId, extractionReason).
  */
-function makeInsight(overrides: {
-  kindLiteral?: string;
-  sourceText?: string;
-  channelId?: string;
-  location?: string;
-} = {}): InsightType & {
+function makeInsight(
+  overrides: {
+    kindLiteral?: string;
+    sourceText?: string;
+    channelId?: string;
+    location?: string;
+  } = {},
+): InsightType & {
   source: { text?: string; channelId?: string };
   extractionReason?: string;
 } {
   const kindLiteral = overrides.kindLiteral ?? "rocket_count";
   return {
-    kind: { kind: kindLiteral, value: { type: "exact", value: 5 } } as InsightType["kind"],
+    kind: {
+      kind: kindLiteral,
+      value: { type: "exact", value: 5 },
+    } as InsightType["kind"],
     timeRelevance: 1,
     regionRelevance: 1,
     confidence: 0.8,
@@ -123,7 +122,13 @@ function makeInsight(overrides: {
     extractionReason: "test insight",
     // Add location for impact/casualities insights
     ...(overrides.location
-      ? { kind: { kind: kindLiteral, value: {}, location: overrides.location } as InsightType["kind"] }
+      ? {
+          kind: {
+            kind: kindLiteral,
+            value: {},
+            location: overrides.location,
+          } as InsightType["kind"],
+        }
       : {}),
   };
 }
@@ -151,7 +156,9 @@ describe("postFilterNode", () => {
     expect(mockInvokeWithFallback).not.toHaveBeenCalled();
     expect(result.filteredInsights).toHaveLength(1);
     expect(result.filteredInsights![0].isValid).toBe(false);
-    expect(result.filteredInsights![0].rejectionReason).toBe("source_text_missing");
+    expect(result.filteredInsights![0].rejectionReason).toBe(
+      "source_text_missing",
+    );
     expect(result.filteredInsights![0].sourceTrust).toBe(0);
   });
 
@@ -165,16 +172,25 @@ describe("postFilterNode", () => {
 
     expect(mockInvokeWithFallback).not.toHaveBeenCalled();
     expect(result.filteredInsights![0].isValid).toBe(false);
-    expect(result.filteredInsights![0].rejectionReason).toBe("source_text_missing");
+    expect(result.filteredInsights![0].rejectionReason).toBe(
+      "source_text_missing",
+    );
   });
 
   it("marks insight invalid when LLM returns supported=false (resolved phase)", async () => {
     mockInvokeWithFallback.mockResolvedValueOnce({
-      structuredResponse: { supported: false, reason: "not in post", sourceTrust: 0.3 },
+      structuredResponse: {
+        supported: false,
+        reason: "not in post",
+        sourceTrust: 0.3,
+      },
     });
 
     const insight = makeInsight({ sourceText: "Some post text" });
-    const state = makeBaseState({ extractedInsights: [insight], alertType: "resolved" });
+    const state = makeBaseState({
+      extractedInsights: [insight],
+      alertType: "resolved",
+    });
 
     const result = await postFilterNode(state as any);
 
@@ -186,17 +202,26 @@ describe("postFilterNode", () => {
 
   it("soft-passes insight during red_alert when LLM returns supported=false", async () => {
     mockInvokeWithFallback.mockResolvedValueOnce({
-      structuredResponse: { supported: false, reason: "not in post", sourceTrust: 0.3 },
+      structuredResponse: {
+        supported: false,
+        reason: "not in post",
+        sourceTrust: 0.3,
+      },
     });
 
     const insight = makeInsight({ sourceText: "Some post text" });
-    const state = makeBaseState({ extractedInsights: [insight], alertType: "red_alert" });
+    const state = makeBaseState({
+      extractedInsights: [insight],
+      alertType: "red_alert",
+    });
 
     const result = await postFilterNode(state as any);
 
     expect(result.filteredInsights).toHaveLength(1);
     expect(result.filteredInsights![0].isValid).toBe(true);
-    expect(result.filteredInsights![0].rejectionReason).toBe("soft_pass_critical_phase");
+    expect(result.filteredInsights![0].rejectionReason).toBe(
+      "soft_pass_critical_phase",
+    );
     expect(result.filteredInsights![0].sourceTrust).toBe(0.2);
     // confidence preserved from original insight (0.8), fallback 0.3 only when undefined
     expect(result.filteredInsights![0].confidence).toBe(0.8);
@@ -204,26 +229,42 @@ describe("postFilterNode", () => {
 
   it("soft-passes insight during early_warning when LLM returns supported=false", async () => {
     mockInvokeWithFallback.mockResolvedValueOnce({
-      structuredResponse: { supported: false, reason: "weak evidence", sourceTrust: 0.4 },
+      structuredResponse: {
+        supported: false,
+        reason: "weak evidence",
+        sourceTrust: 0.4,
+      },
     });
 
     const insight = makeInsight({ sourceText: "Possible launch detected" });
-    const state = makeBaseState({ extractedInsights: [insight], alertType: "early_warning" });
+    const state = makeBaseState({
+      extractedInsights: [insight],
+      alertType: "early_warning",
+    });
 
     const result = await postFilterNode(state as any);
 
     expect(result.filteredInsights).toHaveLength(1);
     expect(result.filteredInsights![0].isValid).toBe(true);
-    expect(result.filteredInsights![0].rejectionReason).toBe("soft_pass_critical_phase");
+    expect(result.filteredInsights![0].rejectionReason).toBe(
+      "soft_pass_critical_phase",
+    );
     expect(result.filteredInsights![0].sourceTrust).toBe(0.2);
   });
 
   it("marks insight valid when LLM returns supported=true for non-location insight", async () => {
     mockInvokeWithFallback.mockResolvedValueOnce({
-      structuredResponse: { supported: true, reason: "clear evidence", sourceTrust: 0.9 },
+      structuredResponse: {
+        supported: true,
+        reason: "clear evidence",
+        sourceTrust: 0.9,
+      },
     });
 
-    const insight = makeInsight({ kindLiteral: "rocket_count", sourceText: "10 rockets fired" });
+    const insight = makeInsight({
+      kindLiteral: "rocket_count",
+      sourceText: "10 rockets fired",
+    });
     const state = makeBaseState({ extractedInsights: [insight] });
 
     const result = await postFilterNode(state as any);
@@ -242,7 +283,10 @@ describe("postFilterNode", () => {
     });
     mockResolveArea.mockResolvedValueOnce({ relevant: false, tier: "none" });
 
-    const insight = makeInsight({ kindLiteral: "impact", sourceText: "Hit in Haifa" });
+    const insight = makeInsight({
+      kindLiteral: "impact",
+      sourceText: "Hit in Haifa",
+    });
     (insight.kind as any).location = "Haifa";
 
     const state = makeBaseState({ extractedInsights: [insight] });
@@ -250,7 +294,9 @@ describe("postFilterNode", () => {
 
     expect(result.filteredInsights![0].isValid).toBe(false);
     expect(result.filteredInsights![0].insightLocation).toBe("not_a_user_zone");
-    expect(result.filteredInsights![0].rejectionReason).toContain("location_not_user_zone");
+    expect(result.filteredInsights![0].rejectionReason).toContain(
+      "location_not_user_zone",
+    );
   });
 
   it("marks location insight valid with exact_user_zone when resolveArea returns exact tier", async () => {
@@ -259,7 +305,10 @@ describe("postFilterNode", () => {
     });
     mockResolveArea.mockResolvedValueOnce({ relevant: true, tier: "exact" });
 
-    const insight = makeInsight({ kindLiteral: "impact", sourceText: "Hit in Tel Aviv" });
+    const insight = makeInsight({
+      kindLiteral: "impact",
+      sourceText: "Hit in Tel Aviv",
+    });
     (insight.kind as any).location = "Tel Aviv";
 
     const state = makeBaseState({ extractedInsights: [insight] });
@@ -275,14 +324,19 @@ describe("postFilterNode", () => {
     });
     mockResolveArea.mockResolvedValueOnce({ relevant: true, tier: "macro" });
 
-    const insight = makeInsight({ kindLiteral: "impact", sourceText: "Hit in Dan region" });
+    const insight = makeInsight({
+      kindLiteral: "impact",
+      sourceText: "Hit in Dan region",
+    });
     (insight.kind as any).location = "Dan region";
 
     const state = makeBaseState({ extractedInsights: [insight] });
     const result = await postFilterNode(state as any);
 
     expect(result.filteredInsights![0].isValid).toBe(true);
-    expect(result.filteredInsights![0].insightLocation).toBe("user_macro_region");
+    expect(result.filteredInsights![0].insightLocation).toBe(
+      "user_macro_region",
+    );
   });
 
   it("processes multiple insights independently", async () => {
@@ -292,14 +346,21 @@ describe("postFilterNode", () => {
     });
     // insight 2: invalid (LLM not supported)
     mockInvokeWithFallback.mockResolvedValueOnce({
-      structuredResponse: { supported: false, reason: "weak", sourceTrust: 0.3 },
+      structuredResponse: {
+        supported: false,
+        reason: "weak",
+        sourceTrust: 0.3,
+      },
     });
 
     const insights = [
       makeInsight({ sourceText: "first post" }),
       makeInsight({ sourceText: "second post" }),
     ];
-    const state = makeBaseState({ extractedInsights: insights, alertType: "resolved" });
+    const state = makeBaseState({
+      extractedInsights: insights,
+      alertType: "resolved",
+    });
     const result = await postFilterNode(state as any);
 
     expect(result.filteredInsights).toHaveLength(2);
@@ -311,25 +372,35 @@ describe("postFilterNode", () => {
     mockInvokeWithFallback.mockResolvedValueOnce({ structuredResponse: null });
 
     const insight = makeInsight({ sourceText: "some post" });
-    const state = makeBaseState({ extractedInsights: [insight], alertType: "resolved" });
+    const state = makeBaseState({
+      extractedInsights: [insight],
+      alertType: "resolved",
+    });
 
     const result = await postFilterNode(state as any);
 
     // null verification.supported → falsy → invalid (resolved = strict)
     expect(result.filteredInsights![0].isValid).toBe(false);
-    expect(result.filteredInsights![0].rejectionReason).toBe("source_verification_failed");
+    expect(result.filteredInsights![0].rejectionReason).toBe(
+      "source_verification_failed",
+    );
   });
 
   it("soft-passes null structuredResponse during red_alert (LLM failure path)", async () => {
     mockInvokeWithFallback.mockResolvedValueOnce({ structuredResponse: null });
 
     const insight = makeInsight({ sourceText: "some post" });
-    const state = makeBaseState({ extractedInsights: [insight], alertType: "red_alert" });
+    const state = makeBaseState({
+      extractedInsights: [insight],
+      alertType: "red_alert",
+    });
 
     const result = await postFilterNode(state as any);
 
     // null verification.supported → falsy → but red_alert triggers soft pass
     expect(result.filteredInsights![0].isValid).toBe(true);
-    expect(result.filteredInsights![0].rejectionReason).toBe("soft_pass_critical_phase");
+    expect(result.filteredInsights![0].rejectionReason).toBe(
+      "soft_pass_critical_phase",
+    );
   });
 });

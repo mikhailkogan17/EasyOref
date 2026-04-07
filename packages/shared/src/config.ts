@@ -2,7 +2,7 @@
  * EasyOref — Centralized Configuration
  *
  * Primary: config.yaml (searched in cwd, /app, /etc/easyoref)
- * Fallback: environment variables + Docker secrets (for backward compat)
+ * YAML-only SSOT — only EASYOREF_CONFIG env var (path to YAML file) is read from environment.
  *
  * See config.yaml.example for all available options.
  */
@@ -50,6 +50,12 @@ interface ConfigYaml {
   ai?: ConfigYamlAi;
 }
 
+interface PhaseTimingYaml {
+  early_warning?: number;
+  red_alert?: number;
+  resolved?: number;
+}
+
 interface ConfigYamlAi {
   enabled?: boolean;
   openrouter_api_key?: string;
@@ -62,10 +68,14 @@ interface ConfigYamlAi {
   enrich_delay_ms?: number;
   window_minutes?: number;
   timeout_minutes?: number;
-  /** Enable MCP tool calling for low-confidence clarification */
-  mcp_tools?: boolean;
-  /** Number of recent posts to fetch per channel during clarify (1-4) */
-  clarify_fetch_count?: number;
+  /** Max enrichment runs per alert session (default 3) */
+  max_enrich_runs?: number;
+  /** Per-phase initial delay before first enrichment (ms) */
+  phase_initial_delay_ms?: PhaseTimingYaml;
+  /** Per-phase interval between enrichment runs (ms) */
+  phase_enrich_delay_ms?: PhaseTimingYaml;
+  /** Per-phase max duration before auto-expire (ms) */
+  phase_timeout_ms?: PhaseTimingYaml;
   mtproto?: {
     api_id?: number;
     api_hash?: string;
@@ -209,6 +219,26 @@ export const config = {
       enrichDelayMs: ai?.enrich_delay_ms ?? 20_000,
       windowMinutes: ai?.window_minutes ?? 2,
       timeoutMinutes: ai?.timeout_minutes ?? 15,
+      /** Max enrichment runs per alert session */
+      maxEnrichRuns: ai?.max_enrich_runs ?? 3,
+      /** Per-phase initial delay before first enrichment (ms) */
+      phaseInitialDelayMs: {
+        early_warning: ai?.phase_initial_delay_ms?.early_warning ?? 120_000,
+        red_alert: ai?.phase_initial_delay_ms?.red_alert ?? 15_000,
+        resolved: ai?.phase_initial_delay_ms?.resolved ?? 90_000,
+      },
+      /** Per-phase interval between enrichment runs (ms) */
+      phaseEnrichDelayMs: {
+        early_warning: ai?.phase_enrich_delay_ms?.early_warning ?? 60_000,
+        red_alert: ai?.phase_enrich_delay_ms?.red_alert ?? 45_000,
+        resolved: ai?.phase_enrich_delay_ms?.resolved ?? 150_000,
+      },
+      /** Per-phase max duration before auto-expire (ms) */
+      phaseTimeoutMs: {
+        early_warning: ai?.phase_timeout_ms?.early_warning ?? 30 * 60 * 1000,
+        red_alert: ai?.phase_timeout_ms?.red_alert ?? 15 * 60 * 1000,
+        resolved: ai?.phase_timeout_ms?.resolved ?? 10 * 60 * 1000,
+      },
       mtproto: {
         apiId: ai?.mtproto?.api_id ?? 0,
         apiHash: ai?.mtproto?.api_hash ?? "",
@@ -216,10 +246,6 @@ export const config = {
       },
       channels: ai?.channels ?? [],
       areaLabels: ai?.area_labels ?? {},
-      /** Enable MCP tool calling — deterministic fan-out on low confidence */
-      mcpTools: ai?.mcp_tools ?? false,
-      /** Posts per channel to fetch during clarify (1-4, default 3) */
-      clarifyFetchCount: Math.min(4, Math.max(1, ai?.clarify_fetch_count ?? 3)),
       /** LangSmith tracing */
       langsmithApiKey: ai?.langsmith_api_key ?? "",
       langsmithProject: ai?.langsmith_project ?? "",

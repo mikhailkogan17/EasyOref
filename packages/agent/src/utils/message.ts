@@ -38,31 +38,6 @@ export function insertBeforeBlockEnd(text: string, line: string): string {
 // ── Citation formatting ────────────────────────────────
 
 /**
- * Deduplicated citation index map across all insights.
- * Each unique sourceUrl gets a global [N] index.
- * @deprecated — kept for API backwards-compat; formatCitations now uses channel tags.
- */
-export interface CitationMap {
-  urlToIndex: Map<string, number>;
-  nextIndex: number;
-}
-
-export function buildCitationMap(
-  insights: SynthesizedInsightType[],
-): CitationMap {
-  const urlToIndex = new Map<string, number>();
-  let nextIndex = 1;
-  for (const insight of insights) {
-    for (const url of insight.sourceUrls) {
-      if (url && !urlToIndex.has(url)) {
-        urlToIndex.set(url, nextIndex++);
-      }
-    }
-  }
-  return { urlToIndex, nextIndex };
-}
-
-/**
  * Extract channel tag from Telegram URL.
  * - Public:  https://t.me/N12LIVE/12345  → "N12LIVE"
  * - Private: https://t.me/c/1023468930/123 → "src" (generic label for private channels)
@@ -85,10 +60,7 @@ export function channelTagFromUrl(url: string): string {
  * Deduplicates by URL — each unique URL appears at most once.
  * Returns empty string if no valid URLs.
  */
-export function formatCitations(
-  sourceUrls: string[],
-  _citationMap?: CitationMap,
-): string {
+export function formatCitations(sourceUrls: string[]): string {
   const seen = new Set<string>();
   const parts: string[] = [];
   for (const url of sourceUrls) {

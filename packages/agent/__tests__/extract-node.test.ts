@@ -24,15 +24,10 @@ vi.mock("@easyoref/shared", async () => {
         extractModel: "test-extract-model",
         extractFallbackModel: "test-extract-fallback",
         apiKey: "test-key",
-        mcpTools: false,
-        clarifyFetchCount: 3,
-        confidenceThreshold: 0.6,
         channels: ["@N12LIVE"],
         areaLabels: {},
       },
       botToken: "",
-      areas: ["תל אביב - דרום העיר ויפו"],
-      language: "ru",
       orefApiUrl: "https://mock.oref.api/alerts",
       orefHistoryUrl: "",
       logtailToken: "",
@@ -66,7 +61,8 @@ vi.mock("../src/models.js", () => ({
 }));
 
 // Import AFTER mocks
-import { extractChannelNode, getPhaseRule } from "../src/nodes/extract-node.js";
+import { extractChannelNode } from "../src/nodes/extract-node.js";
+import { getPhaseRule } from "../src/utils/phase-rules.js";
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -105,7 +101,6 @@ function makeState(overrides: Record<string, unknown> = {}) {
     extractedInsights: [],
     filteredInsights: [],
     votedResult: undefined,
-    clarifyAttempted: false,
     previousInsights: [],
     synthesizedInsights: [],
     telegramMessages: [],
@@ -287,7 +282,8 @@ describe("extractFromChannel (exported helper)", () => {
     const insight = makeInsight("https://t.me/israel_9/555");
     mockInvokeWithFallback.mockResolvedValue({ structuredResponse: [insight] });
 
-    const { extractFromChannel } = await import("../src/nodes/extract-node.js");
+    const { extractFromChannel } =
+      await import("../src/utils/channel-extract.js");
     const channel = makeChannel({ channel: "@israel_9" });
     const result = await extractFromChannel(channel, "Extract all.");
 

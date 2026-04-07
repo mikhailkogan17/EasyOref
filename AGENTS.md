@@ -296,20 +296,20 @@ easyoref update
 
 **Troubleshooting:**
 
-| Symptom | Fix |
-|---|---|
-| Service fails to restart | `ssh pi@raspberrypi.local "journalctl -u easyoref -n 20"` |
-| Old version still running | `sudo systemctl restart easyoref` |
-| Port 3100 in use | `sudo pkill -9 node` then restart |
+| Symptom                   | Fix                                                       |
+| ------------------------- | --------------------------------------------------------- |
+| Service fails to restart  | `ssh pi@raspberrypi.local "journalctl -u easyoref -n 20"` |
+| Old version still running | `sudo systemctl restart easyoref`                         |
+| Port 3100 in use          | `sudo pkill -9 node` then restart                         |
 
 ### General Troubleshooting
 
-| Problem | Cause | Fix |
-|---|---|---|
-| `easyoref` command not found | NPM global not in PATH | `npm list -g easyoref`, then check `~/.npm-global/bin` is in `$PATH` |
-| npm "already published" | Version already on registry | Delete local tag, bump version, retry: `git tag -d vX.Y.Z && npm run release:patch` |
-| Service won't start | Missing dependencies | `sudo systemctl status easyoref` then `journalctl -u easyoref -n 50` |
-| Port 3100 already in use | Old process still running | `sudo pkill -9 node && sudo systemctl restart easyoref` |
+| Problem                      | Cause                       | Fix                                                                                 |
+| ---------------------------- | --------------------------- | ----------------------------------------------------------------------------------- |
+| `easyoref` command not found | NPM global not in PATH      | `npm list -g easyoref`, then check `~/.npm-global/bin` is in `$PATH`                |
+| npm "already published"      | Version already on registry | Delete local tag, bump version, retry: `git tag -d vX.Y.Z && npm run release:patch` |
+| Service won't start          | Missing dependencies        | `sudo systemctl status easyoref` then `journalctl -u easyoref -n 50`                |
+| Port 3100 already in use     | Old process still running   | `sudo pkill -9 node && sudo systemctl restart easyoref`                             |
 
 ### CRITICAL RULES
 
@@ -325,32 +325,32 @@ easyoref update
 
 ### Environment
 
-| Item | Value |
-|---|---|
-| **Version** | `easyoref@1.27.1` (npm global) |
-| **Services** | `easyoref-ru_tlv-south.service` ✅ active running |
-| | `easyoref-he_tlv-south.service` ✅ active running |
-| **Redis** | Docker container, `redis://localhost:6379` |
-| **Config path (ru)** | `/home/pi/.easyoref/config.ru_tlv-south.yaml` |
-| **Config path (he)** | `/home/pi/.easyoref/config.he_tlv-south.yaml` |
-| **Systemd env** | `EASYOREF_CONFIG` → per-language YAML file, no other env vars |
+| Item                 | Value                                                         |
+| -------------------- | ------------------------------------------------------------- |
+| **Version**          | `easyoref@1.27.1` (npm global)                                |
+| **Services**         | `easyoref-ru_tlv-south.service` ✅ active running              |
+|                      | `easyoref-he_tlv-south.service` ✅ active running              |
+| **Redis**            | Docker container, `redis://localhost:6379`                    |
+| **Config path (ru)** | `/home/pi/.easyoref/config.ru_tlv-south.yaml`                 |
+| **Config path (he)** | `/home/pi/.easyoref/config.he_tlv-south.yaml`                 |
+| **Systemd env**      | `EASYOREF_CONFIG` → per-language YAML file, no other env vars |
 
 ### Plan Items — Verification
 
-| # | Fix | Code | RPi Config | Status |
-|---|---|---|---|---|
-| 1 | GramJS channel ID cache | `gramjs/src/index.ts` — `channelCache` Map, `getChannelEntity()` | N/A (code-level) | ✅ |
-| 2 | GramJS `backfillChannelPosts()` | `gramjs/src/index.ts` — exported, called from pre-filter | N/A | ✅ |
-| 3 | GramJS warn logging on getChat fail | `gramjs/src/index.ts` — `logger.warn()` | N/A | ✅ |
-| 4 | Post-filter soft pass for critical phases | `agent/src/nodes/post-filter-node.ts` — `early_warning`, `red_alert` bypass | N/A | ✅ |
-| 5 | Config: two explicit model keys | `shared/src/config.ts` — `filterModel` + `extractModel` | Both configs: `openrouter_filter_model` + `openrouter_extract_model` ✅ | ✅ |
-| 6 | Config: YAML-only SSOT | `shared/src/config.ts` — zero `process.env` fallbacks (only `EASYOREF_CONFIG`) | systemd: only `EASYOREF_CONFIG` env var ✅ | ✅ |
-| 7 | Remove `confidence_threshold` | Removed from config.ts interface | Not in RPi configs ✅ | ✅ |
-| 8 | Remove `langsmith_tracing` / `langsmith_endpoint` | Removed from config.ts interface | Not in RPi configs ✅ | ✅ |
-| 9 | Model: filter=`openai/gpt-oss-120b` | Default in config.ts | Both RPi configs ✅ | ✅ |
-| 10 | Model: extract=`google/gemini-3.1-flash-lite-preview` | Default in config.ts | Both RPi configs ✅ | ✅ |
-| 11 | Fallbacks=`openai/gpt-oss-120b:free` | Default in config.ts | Both RPi configs ✅ | ✅ |
-| 12 | Remove `process.env.AREAS` from bot.ts | `bot/src/bot.ts` — removed | N/A | ✅ |
+| #   | Fix                                                   | Code                                                                           | RPi Config                                                             | Status |
+| --- | ----------------------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------- | ------ |
+| 1   | GramJS channel ID cache                               | `gramjs/src/index.ts` — `channelCache` Map, `getChannelEntity()`               | N/A (code-level)                                                       | ✅      |
+| 2   | GramJS `backfillChannelPosts()`                       | `gramjs/src/index.ts` — exported, called from pre-filter                       | N/A                                                                    | ✅      |
+| 3   | GramJS warn logging on getChat fail                   | `gramjs/src/index.ts` — `logger.warn()`                                        | N/A                                                                    | ✅      |
+| 4   | Post-filter soft pass for critical phases             | `agent/src/nodes/post-filter-node.ts` — `early_warning`, `red_alert` bypass    | N/A                                                                    | ✅      |
+| 5   | Config: two explicit model keys                       | `shared/src/config.ts` — `filterModel` + `extractModel`                        | Both configs: `openrouter_filter_model` + `openrouter_extract_model` ✅ | ✅      |
+| 6   | Config: YAML-only SSOT                                | `shared/src/config.ts` — zero `process.env` fallbacks (only `EASYOREF_CONFIG`) | systemd: only `EASYOREF_CONFIG` env var ✅                              | ✅      |
+| 7   | Remove `confidence_threshold`                         | Removed from config.ts interface                                               | Not in RPi configs ✅                                                   | ✅      |
+| 8   | Remove `langsmith_tracing` / `langsmith_endpoint`     | Removed from config.ts interface                                               | Not in RPi configs ✅                                                   | ✅      |
+| 9   | Model: filter=`openai/gpt-oss-120b`                   | Default in config.ts                                                           | Both RPi configs ✅                                                     | ✅      |
+| 10  | Model: extract=`google/gemini-3.1-flash-lite-preview` | Default in config.ts                                                           | Both RPi configs ✅                                                     | ✅      |
+| 11  | Fallbacks=`openai/gpt-oss-120b:free`                  | Default in config.ts                                                           | Both RPi configs ✅                                                     | ✅      |
+| 12  | Remove `process.env.AREAS` from bot.ts                | `bot/src/bot.ts` — removed                                                     | N/A                                                                    | ✅      |
 
 ### Tests
 
@@ -384,11 +384,11 @@ pre-filter → extract → post-filter → vote → synthesize → [shouldClarif
 
 ### Phase Timing Constants
 
-| Phase | Initial Delay | Enrich Interval |
-|---|---|---|
-| `early_warning` | 120s | 60s |
-| `red_alert` | 15s | 45s |
-| `resolved` | 90s | 150s |
+| Phase           | Initial Delay | Enrich Interval |
+| --------------- | ------------- | --------------- |
+| `early_warning` | 120s          | 60s             |
+| `red_alert`     | 15s           | 45s             |
+| `resolved`      | 90s           | 150s            |
 
 ### Watermark Mechanism (buildTracking)
 
@@ -398,13 +398,13 @@ pre-filter → extract → post-filter → vote → synthesize → [shouldClarif
 
 ### Noise Filter Rules (pre-filter-node.ts)
 
-| Rule | Condition | Reason |
-|---|---|---|
-| `oref_channel_long` | OREF_CHANNEL_RE + text > 300 chars | noise |
-| `oref_link` | oref.org.il link | noise |
-| `comma_list` | 8+ commas | noise (area lists) |
-| `time_pattern_list` | 2+ time patterns like (HH:MM) | noise |
-| `idf_channel_long` | IDF channel + text > 400 chars | noise |
+| Rule                | Condition                          | Reason             |
+| ------------------- | ---------------------------------- | ------------------ |
+| `oref_channel_long` | OREF_CHANNEL_RE + text > 300 chars | noise              |
+| `oref_link`         | oref.org.il link                   | noise              |
+| `comma_list`        | 8+ commas                          | noise (area lists) |
+| `time_pattern_list` | 2+ time patterns like (HH:MM)      | noise              |
+| `idf_channel_long`  | IDF channel + text > 400 chars     | noise              |
 
 ### Monitored Channels (17 total)
 
@@ -460,24 +460,24 @@ Modified `buildTracking()` in `pre-filter-node.ts` to re-surface channels that h
 
 ## Version History (Recent)
 
-| Version | Date | Changes |
-|---|---|---|
-| v1.27.6 | 2026-04-04 | fix: re-surface watermarked posts for retry extraction |
+| Version | Date       | Changes                                                         |
+| ------- | ---------- | --------------------------------------------------------------- |
+| v1.27.6 | 2026-04-04 | fix: re-surface watermarked posts for retry extraction          |
 | v1.27.5 | 2026-04-03 | feat: add @stranacoil channel + noise filter rejection tracking |
-| v1.27.4 | 2026-04-02 | fix: 5 critical bugs from April 2 attack postmortem |
-| v1.27.1 | 2026-04-02 | RPi verification baseline |
+| v1.27.4 | 2026-04-02 | fix: 5 critical bugs from April 2 attack postmortem             |
+| v1.27.1 | 2026-04-02 | RPi verification baseline                                       |
 
 ### RPi Current State (2026-04-04)
 
-| Item | Value |
-|---|---|
-| **Version** | `easyoref@1.27.6` (npm global) |
-| **Services** | `easyoref-ru_tlv-south.service` active |
-| | `easyoref-he_tlv-south.service` active |
-| **Redis** | Docker container, `redis://localhost:6379` |
-| **Node** | v20.19.1 |
-| **RAM** | 3.8GB |
-| **Crontab** | `0 4 */3 * * sudo reboot` (every 3 days, services auto-restart) |
+| Item         | Value                                                           |
+| ------------ | --------------------------------------------------------------- |
+| **Version**  | `easyoref@1.27.6` (npm global)                                  |
+| **Services** | `easyoref-ru_tlv-south.service` active                          |
+|              | `easyoref-he_tlv-south.service` active                          |
+| **Redis**    | Docker container, `redis://localhost:6379`                      |
+| **Node**     | v20.19.1                                                        |
+| **RAM**      | 3.8GB                                                           |
+| **Crontab**  | `0 4 */3 * * sudo reboot` (every 3 days, services auto-restart) |
 
 ---
 
@@ -502,84 +502,79 @@ Modified `buildTracking()` in `pre-filter-node.ts` to re-surface channels that h
 
 ---
 
-### Phase 0-1 Code Review Findings (MUST FIX in Phase 2)
+### Phase 0-1 Code Review Findings (FIXED in Phase 2) ✅
+
+All findings below have been resolved. Kept for reference.
+
+<details>
+<summary>Original findings (collapsed)</summary>
 
 #### Helpers inside nodes (Rule 2 violations):
-- `pre-filter-node.ts`: `noiseReason()`, `isNoise()`, `toNewsMessage()`, `buildTracking()` → move to `utils/noise-filter.ts` + `utils/tracking.ts`
-- `extract-node.ts`: `getPhaseRule()`, `extractFromChannel()` → move to `utils/`
-- `synthesize-node.ts`: `fieldKeyToKind()` → move to `utils/`
-- `edit-node.ts`: `inlineCites()` → DELETE (unused). Remove deprecated re-exports (`insertBeforeTimeLine`)
+- `pre-filter-node.ts`: `noiseReason()`, `isNoise()`, `toNewsMessage()`, `buildTracking()` → moved to `utils/noise-filter.ts` + `utils/tracking.ts`
+- `extract-node.ts`: `getPhaseRule()`, `extractFromChannel()` → moved to `utils/phase-rules.ts` + `utils/channel-extract.ts`
+- `synthesize-node.ts`: `fieldKeyToKind()` → moved to `utils/field-key-map.ts`
+- `synthesize-node.ts`: `buildConsensus()`, `groupInsightsByKind()`, `computeOptions()` → moved to `utils/consensus.ts`
+- `edit-node.ts`: `inlineCites()` → DELETED (unused). Deprecated re-exports removed.
 
 #### Dead code (Rule 4 violations):
-- `pre-filter-node.ts` L52: `isNoise()` — dead, never called. DELETE
-- `edit-node.ts` L33-37: `// Re-exports for backwards-compat` + `@deprecated insertBeforeTimeLine`. DELETE
-- `edit-node.ts` L8: `"Re-exports legacy helpers for backwards-compat."` — update docstring
-- `message.ts` L43-57: `CitationMap` + `buildCitationMap()` deprecated. DELETE
-- `schemas.ts` L396: stale TODO about vote-node. DELETE
+- `pre-filter-node.ts`: `isNoise()` — DELETED
+- `edit-node.ts`: backwards-compat re-exports — DELETED
+- `message.ts`: `CitationMap` + `buildCitationMap()` — DELETED
+- `schemas.ts`: stale TODO — DELETED
 
 #### Agent opts not top-level (Rule 3 violations):
-- `post-filter-node.ts`: agent opts defined inside node body → hoist to top-level const
-- `synthesize-node.ts`: agent opts defined inside node body → hoist to top-level const
+- `post-filter-node.ts`: fixed — hoisted to top-level
+- `synthesize-node.ts`: fixed — hoisted to top-level
 
 #### Stale test mocks (Rule 5 violations):
-- 14 instances of `confidenceThreshold`, `areas`, `language` in test mocks across 8 files
-- `config.test.ts` L198-226: `resolveCityIds` test suite — dead. DELETE entire describe block
+- All `confidenceThreshold`, `areas`, `language`, `mcpTools`, `clarifyFetchCount` removed from test mocks
+- `config.test.ts`: `resolveCityIds` test suite — DELETED
+
+</details>
 
 ---
 
-### Phase 2: Code Hygiene + Enrichment v2
+### Phase 2: Code Hygiene + Enrichment v2 ✅
 
-**Goal:** Fix all code review findings. Simplify enrichment pipeline (7 → 5 nodes). Enforce strict node format.
+**Status:** COMPLETED. All code review findings fixed, pipeline simplified 7→5 nodes, tests green (168/168).
 
-#### 2a: Code Hygiene (fix review findings)
+**What was done:**
+- Created utils: `noise-filter.ts`, `tracking.ts`, `phase-rules.ts`, `channel-extract.ts`, `field-key-map.ts`, `consensus.ts`, `resolve-area.ts`
+- Deleted: `clarify-node.ts`, `vote-node.ts`, `tools/` directory, `contradictions.ts`, `clarify.test.ts`
+- Graph: 5 nodes — `pre-filter → [Send: extract-channel ×N] → post-filter → synthesize → edit`
+- Vote logic: deterministic `buildConsensus()` merged into synthesize flow (in `utils/consensus.ts`)
+- Config-driven: `max_enrich_runs`, `phase_initial_delay_ms`, `phase_enrich_delay_ms`, `phase_timeout_ms` moved from hardcoded to YAML
+- Worker: run-limited to `config.agent.maxEnrichRuns` (default 3), no infinite loop
+- All 168 tests pass across 11 test files
 
-1. **Extract helpers from nodes** — create:
-   - `utils/noise-filter.ts` ← `noiseReason()`, `toNewsMessage()` from pre-filter
-   - `utils/tracking.ts` ← `buildTracking()`, `FilterStats` from pre-filter
-   - `utils/phase-rules.ts` ← `getPhaseRule()` from extract
-   - `utils/channel-extract.ts` ← `extractFromChannel()` from extract
-   - Move `inlineCites()` → DELETE (unused)
-   - Move `fieldKeyToKind()` → `utils/`
-
-2. **Delete dead code:**
-   - `isNoise()` (pre-filter), `CitationMap` + `buildCitationMap()` (message.ts), `insertBeforeTimeLine` alias (edit-node), stale TODO (schemas.ts)
-
-3. **Enforce node format** — every LLM node becomes:
-   ```ts
-   const agentOpts = { model: "...", prompt: "..." };
-   export async function nodeFunction(state: AgentState): Promise<Partial<AgentState>> { ... }
-   ```
-   Fix: `post-filter-node.ts`, `synthesize-node.ts` (hoist opts), `edit-node.ts` (strip re-exports)
-
-4. **Clean all test mocks** — remove `confidenceThreshold`, `areas`, `language`, `cityIds` from every test mock config. Delete `resolveCityIds` test suite.
-
-5. **Update config.ts comment** — remove "Fallback: environment variables" lie
-
-#### 2b: Enrichment Simplification
-
-1. **2-3 enrichment runs** per alert (not infinite loop):
-   - Run 1: after `initialDelay` (15s/120s/90s)
-   - Run 2: +60s/+120s later
-   - Run 3: only if Run 2 found new data
-   - Remove infinite re-enqueue loop in `worker.ts`
-
-2. **Simplify watermark** — single `since` timestamp instead of `previous`/`latest` partition
-
-3. **Remove clarify-node** — delete `clarify-node.ts`, `packages/agent/src/tools/` directory, remove clarify routing from `graph.ts`. Move `alert_history` tool to Q&A graph (Phase 3)
-
-4. **Simplify vote-node** — merge "pick best per kind" into synthesize-node. Delete `vote-node.ts`, `utils/contradictions.ts`
-
-5. **Pipeline: 5 nodes:**
-   ```
-   pre-filter → [Send: extract per channel] → post-filter → synthesize → edit
-   ```
-
-**Relevant files to DELETE:**
-- `packages/agent/src/nodes/clarify-node.ts`
-- `packages/agent/src/nodes/vote-node.ts`
-- `packages/agent/src/tools/` — entire directory
-- `packages/agent/src/utils/contradictions.ts`
-- `packages/agent/__tests__/clarify.test.ts`
+**Current file structure (agent package):**
+```
+packages/agent/src/
+├── graph.ts              # StateGraph: 5-node pipeline + AgentState
+├── index.ts              # Public API re-exports
+├── models.ts             # LLM model instances + invokeWithFallback
+├── nodes/
+│   ├── pre-filter-node.ts    # Noise filter + tracking (imports from utils/)
+│   ├── extract-node.ts       # Agent opts + extractChannelNode
+│   ├── post-filter-node.ts   # Area relevance + confidence validation
+│   ├── synthesize-node.ts    # Voting + LLM synthesis (imports buildConsensus from utils/)
+│   └── edit-node.ts          # Telegram message editing
+├── utils/
+│   ├── noise-filter.ts       # noiseReason(), toNewsMessage()
+│   ├── tracking.ts           # buildTracking(), FilterStats
+│   ├── phase-rules.ts        # getPhaseRule()
+│   ├── channel-extract.ts    # extractFromChannel()
+│   ├── field-key-map.ts      # fieldKeyToKind()
+│   ├── consensus.ts          # buildConsensus(), groupInsightsByKind(), computeOptions()
+│   ├── resolve-area.ts       # resolveArea() — 3-tier area matching
+│   └── message.ts            # buildEnrichedMessage(), insertBeforeBlockEnd(), formatCitations()
+└── runtime/
+    ├── worker.ts             # BullMQ worker (config-driven max runs)
+    ├── queue.ts              # BullMQ queue
+    ├── redis.ts              # ioredis singleton
+    ├── auth.ts               # GramJS auth
+    └── dry-run.ts            # CLI dry-run
+```
 
 ---
 
@@ -587,26 +582,69 @@ Modified `buildTracking()` in `pre-filter-node.ts` to re-surface channels that h
 
 **Goal:** Second LangGraph graph — RAG-style Q&A. Private messages to bot.
 
-1. **New graph: `qa-graph.ts`** — 3 nodes, strict format:
+**Prerequisites:** Phase 2 complete ✅. The enrichment graph (`packages/agent/src/graph.ts`) is the reference for how to build a LangGraph StateGraph.
+
+#### Architecture
+
+```
+User private message → grammY handler → Q&A graph → response
+                                          │
+                    ┌─────────────────────┤
+                    ▼                     ▼
+           intent-classify        context-gather
+           (deterministic)    (Redis + Oref API)
+                    │                     │
+                    └──────┬──────────────┘
+                           ▼
+                    answer-generate
+                    (LLM + Zod output)
+```
+
+1. **New graph: `qa-graph.ts`** — 3 nodes, strict V2 format:
    ```
    intent-classify → context-gather → answer-generate
    ```
-   - **intent-classify** (deterministic): regex + keyword. Categories: `current_alert`, `recent_history`, `general_security`, `bot_help`
-   - **context-gather**: Redis session + Oref history API (reuses `alert_history` tool from deleted clarify)
-   - **answer-generate**: LLM → structured answer (text + source links). Zod-validated output
+   - **intent-classify** (deterministic, 0 tokens): regex + keyword matching. Categories: `current_alert`, `recent_history`, `general_security`, `bot_help`
+   - **context-gather**: Redis session data (`getSession`, `getVotedInsights`) + Oref history API (`https://www.oref.org.il/WarningMessages/History/AlertsHistory.json`). Reuses alert_history logic from removed tools.
+   - **answer-generate**: LLM → structured answer. Zod-validated output: `{ text: LocalizedValue, sources: string[] }`
 
 2. **Bot handler** — `packages/bot/src/handlers/qa.ts`:
-   - `bot.on("message:text")` for private chats only
-   - Rate limiter: 5 questions/min per user (Redis counter)
-   - Premium gate (Phase 6)
-   - Typing indicator while processing
+   - `bot.on("message:text")` for private chats only (filter: `ctx.chat.type === "private"`)
+   - Rate limiter: 5 questions/min per user (Redis INCR + EXPIRE counter)
+   - Premium gate: check `UserConfig.tier === "pro"` (Phase 6). For now, allow all.
+   - Typing indicator: `ctx.replyWithChatAction("typing")` while processing
+   - Error handling: catch LLM failures, respond with "I couldn't process your question" instead of crashing
 
-3. **New files:**
-   - `packages/agent/src/qa-graph.ts`
-   - `packages/agent/src/nodes/qa/intent-node.ts`
-   - `packages/agent/src/nodes/qa/context-node.ts`
-   - `packages/agent/src/nodes/qa/answer-node.ts`
-   - `packages/bot/src/handlers/qa.ts`
+3. **New files to create:**
+   - `packages/agent/src/qa-graph.ts` — StateGraph definition + QaState type
+   - `packages/agent/src/nodes/qa/intent-node.ts` — deterministic classifier
+   - `packages/agent/src/nodes/qa/context-node.ts` — Redis + API data fetch
+   - `packages/agent/src/nodes/qa/answer-node.ts` — LLM answer generation
+   - `packages/bot/src/handlers/qa.ts` — grammY message handler
+   - `packages/agent/__tests__/qa-graph.test.ts` — unit tests
+
+4. **Key implementation details:**
+   - Intent patterns (regex):
+     - `current_alert`: `/alert|מתקפה|צבע אדום|ракет|тревог/i`
+     - `recent_history`: `/history|yesterday|אתמול|вчера|история/i`
+     - `bot_help`: `/help|start|עזרה|помощь/i`
+     - Default: `general_security`
+   - Context-gather reads: `getSession(alertId)` for current enrichment data, `getVotedInsights(alertId)` for consensus
+   - Oref history API: `GET https://www.oref.org.il/WarningMessages/History/AlertsHistory.json` (public, no auth)
+   - Answer model: use `config.agent.filterModel` (cheap, fast) for Q&A answers
+   - Answer must include `language` field from `UserConfig` to respond in user's preferred language
+
+5. **Config additions:**
+   ```yaml
+   ai:
+     qa_rate_limit_per_min: 5        # max questions per user per minute
+     qa_model: "openai/gpt-oss-120b" # model for Q&A answers (default: filterModel)
+   ```
+
+6. **Testing:**
+   - Unit test intent-node with regex patterns
+   - Unit test answer-node with mocked LLM
+   - Integration test: full Q&A graph with mocked context
 
 ---
 
@@ -614,12 +652,37 @@ Modified `buildTracking()` in `pre-filter-node.ts` to re-surface channels that h
 
 **Goal:** `@easyorefbot` inline queries — status widget + Q&A.
 
-1. **Empty query** → `InlineQueryResultArticle` with current alert status
-2. **Text query** → run Q&A graph → return answer as article
-3. **Cache** answers for 30s (`cache_time`)
+**Prerequisites:** Phase 3 complete (Q&A graph).
 
-**New files:**
-- `packages/bot/src/handlers/inline.ts`
+1. **Empty query** → `InlineQueryResultArticle` with current alert status:
+   - Title: "Current Status" / "Текущий статус"
+   - Description: last alert time + type + areas (from Redis session)
+   - Message text: formatted status summary
+
+2. **Text query** → run Q&A graph → return answer as article:
+   - Title: first 50 chars of answer
+   - Description: source count
+   - Message text: full answer
+
+3. **Cache** answers for 30s (`cache_time: 30` in `answerInlineQuery`)
+
+4. **grammY handler:**
+   ```ts
+   bot.on("inline_query", async (ctx) => {
+     const query = ctx.inlineQuery.query.trim();
+     if (!query) {
+       // status widget
+     } else {
+       // Q&A via qa-graph
+     }
+     await ctx.answerInlineQuery(results, { cache_time: 30 });
+   });
+   ```
+
+5. **New files:**
+   - `packages/bot/src/handlers/inline.ts` — inline query handler
+
+6. **Rate limiting:** same Redis counter as Q&A (shared limit)
 
 **Depends on:** Phase 3
 
@@ -629,15 +692,62 @@ Modified `buildTracking()` in `pre-filter-node.ts` to re-surface channels that h
 
 **Goal:** Location → nearest shelters with distances.
 
-1. **Static dataset** — `packages/shared/src/data/shelters.json` (~15K entries)
-2. **Geosearch** — `findNearestShelters(lat, lng, limit=5, maxDistanceKm=2)` — Haversine, O(n) scan
-3. **Bot handler** — `bot.on("message:location")` → 5 nearest → list with Google Maps links
-4. **Free feature** — safety critical, available to ALL tiers
+**Prerequisites:** None — can run in parallel with Phases 2-4.
 
-**New files:**
-- `packages/shared/src/data/shelters.json`
-- `packages/shared/src/shelter.ts`
-- `packages/bot/src/handlers/shelter.ts`
+#### Research: Existing APIs & Data Sources
+
+Before implementing, research these existing solutions. The subagent executing this phase MUST check which options are still available:
+
+1. **Pikud HaOref Shelter API** — check if `https://www.oref.org.il/` has a public shelter endpoint. Look for `/NAShelters/`, `/Areas/`, or similar paths.
+
+2. **Existing Telegram bots** — research working shelter bots:
+   - `@MiklutBot` (מקלטבוט) — may have shelter location data
+   - `@PikudHaorefBot` — official or unofficial, check if exposes shelter data
+   - Search for "מקלט" or "shelter" in Telegram bot search
+
+3. **Open data sources:**
+   - `data.gov.il` — Israel open data portal, search for "מקלט" (shelter) datasets
+   - Municipal open data (Tel Aviv, Jerusalem, Haifa) — some cities publish shelter GeoJSON
+   - OpenStreetMap — `amenity=shelter` + `shelter_type=public_protection` tags for Israel
+
+4. **Google Maps / Places API** — `type=civil_defense` or keyword search "מקלט ציבורי" (has cost implications)
+
+#### Implementation Plan
+
+1. **Data acquisition** — based on research:
+   - **Option A (preferred):** If Oref/gov API exists → use it live. No static dataset needed.
+   - **Option B:** If open data CSV/GeoJSON found → import to `packages/shared/src/data/shelters.json` (~15K entries)
+   - **Option C:** If no API → scrape from municipal sites (one-time) → static JSON
+
+2. **Geosearch** — `findNearestShelters(lat, lng, limit=5, maxDistanceKm=2)`:
+   - Haversine formula for distance calculation
+   - O(n) scan for <15K entries (no spatial index needed)
+   - Returns: `{ name, address, lat, lng, distanceKm, googleMapsUrl }[]`
+
+3. **Bot handler** — `bot.on("message:location")`:
+   - Extract `latitude`, `longitude` from message
+   - Call `findNearestShelters(lat, lng)`
+   - Format as numbered list with Google Maps links: `https://www.google.com/maps/dir/?api=1&destination={lat},{lng}`
+   - Include walking time estimate (assuming 5 km/h)
+
+4. **Also support:** text address → geocode → shelters (Phase 5b, optional)
+
+5. **Free feature** — safety critical, available to ALL tiers (free + pro)
+
+6. **New files:**
+   - `packages/shared/src/data/shelters.json` (if static dataset)
+   - `packages/shared/src/shelter.ts` — `findNearestShelters()`, `haversine()`
+   - `packages/bot/src/handlers/shelter.ts` — location message handler
+   - `packages/shared/__tests__/shelter.test.ts` — unit tests
+
+7. **Config additions:**
+   ```yaml
+   shelter:
+     max_distance_km: 2       # max search radius
+     max_results: 5            # max shelters to return
+     source: "static"          # "static" | "api" (if live API found)
+     api_url: ""               # populated if live API discovered
+   ```
 
 **No dependencies** — parallel with Phase 2-4.
 
@@ -647,13 +757,15 @@ Modified `buildTracking()` in `pre-filter-node.ts` to re-surface channels that h
 
 **Goal:** Free/pro tier separation. No payment integration — admin `/grant` only.
 
-| Feature | Free | Pro |
-|---|---|---|
-| Alerts (Oref → Telegram) | ✅ private msg, **ETA time only** | ✅ **chat integration** (groups) |
-| Shelter search | ✅ | ✅ |
-| AI enrichment metadata | ❌ | ✅ full (origin, rockets, interceptions, etc.) |
-| Q&A chat | ❌ | ✅ |
-| Inline Q&A | ❌ | ✅ (inline status widget: free) |
+**Prerequisites:** Phase 1 complete ✅ (UserConfig schema + multi-user already implemented).
+
+| Feature                  | Free                             | Pro                                           |
+| ------------------------ | -------------------------------- | --------------------------------------------- |
+| Alerts (Oref → Telegram) | ✅ private msg, **ETA time only** | ✅ **chat integration** (groups)               |
+| Shelter search           | ✅                                | ✅                                             |
+| AI enrichment metadata   | ❌                                | ✅ full (origin, rockets, interceptions, etc.) |
+| Q&A chat                 | ❌                                | ✅                                             |
+| Inline Q&A               | ❌                                | ✅ (inline status widget: free)                |
 
 **Free tier details:**
 - Private message only (no group/channel support)
@@ -667,13 +779,49 @@ Modified `buildTracking()` in `pre-filter-node.ts` to re-surface channels that h
 - Message edited with enrichment data in real-time
 - Q&A chat + inline Q&A
 
-**Implementation:**
-1. `tier: "free" | "pro"` in `UserConfig` (already exists as `"free" | "premium"` → rename to `"pro"`)
-2. Gate middleware: `packages/bot/src/middleware/tier.ts`
-3. Alert fanout: free users get stripped message (ETA only), pro users get full enrichment
-4. Admin: `/grant <chatId>`, `/revoke <chatId>`
+#### Implementation Details
 
-**Depends on:** Phase 1
+1. **UserConfig.tier** — already exists as `"free" | "premium"` in `packages/shared/src/schemas.ts`:
+   - Rename `"premium"` → `"pro"` (search: `UserConfig`, `tier`, `premium`)
+   - Default tier for new users: `"free"`
+
+2. **Gate middleware** — `packages/bot/src/middleware/tier.ts`:
+   ```ts
+   export function requirePro(ctx: Context, next: NextFunction) {
+     const user = getUserConfig(ctx.chat.id);
+     if (user?.tier !== "pro") {
+       return ctx.reply("This feature requires Pro tier. Contact admin.");
+     }
+     return next();
+   }
+   ```
+
+3. **Alert fanout** — modify `packages/bot/src/bot.ts` alert sending logic:
+   - Free users: send stripped message with ETA only → `buildFreeAlertMessage(alertType, areas, eta)`
+   - Pro users: send full message → proceed with enrichment pipeline (edit message later)
+   - Free users: do NOT enqueue enrichment job (no message editing)
+
+4. **Admin commands** — add to bot:
+   - `/grant <chatId>` — set `tier: "pro"` for chatId in Redis
+   - `/revoke <chatId>` — set `tier: "free"` for chatId in Redis
+   - `/users` — list all registered users with their tier
+   - Only allow from admin chatId(s) configured in YAML:
+     ```yaml
+     admin_chat_ids: [123456789]  # Telegram user IDs with admin access
+     ```
+
+5. **New files:**
+   - `packages/bot/src/middleware/tier.ts` — tier gate middleware
+   - `packages/bot/src/handlers/admin.ts` — `/grant`, `/revoke`, `/users` commands
+   - `packages/bot/src/__tests__/tier.test.ts` — unit tests
+
+6. **Modified files:**
+   - `packages/shared/src/schemas.ts` — rename `"premium"` → `"pro"` in UserConfig
+   - `packages/shared/src/store.ts` — add `setUserTier(chatId, tier)` helper
+   - `packages/bot/src/bot.ts` — add tier check in alert fanout, register admin handlers
+   - `packages/shared/src/config.ts` — add `admin_chat_ids` to ConfigYaml
+
+**Depends on:** Phase 1 ✅
 
 ---
 
@@ -695,13 +843,16 @@ Modified `buildTracking()` in `pre-filter-node.ts` to re-surface channels that h
 ```
 Phase 0 ✅ → Phase 1 ✅
   ↓
-Phase 2 (Hygiene + Enrichment v2)
+Phase 2 ✅ (Hygiene + Enrichment v2)
   ↓
   ├── Phase 3 (Q&A) ──→ Phase 4 (Inline)
-  ├── Phase 5 (Shelter) [parallel]
+  ├── Phase 5 (Shelter) [parallel, no deps]
   └── Phase 6 (Monetization) [parallel after Phase 1]
         ↓
 Phase 7 (Stability) — runs through end
 ```
 
-**Critical path:** Phase 2 → Phase 3 → Phase 4 → Phase 7
+**Critical path:** Phase 2 ✅ → Phase 3 → Phase 4 → Phase 7
+
+**Parallelizable now:** Phase 5 (Shelter) + Phase 6 (Monetization) can start immediately.
+Phase 3 (Q&A) can also start immediately since Phase 2 is done.

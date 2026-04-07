@@ -9,16 +9,14 @@
  * and returns extracted insights for that one channel.
  */
 
+import { Insight } from "@easyoref/shared";
 import * as logger from "@easyoref/shared/logger";
-import { Insight, type NewsChannelWithUpdatesType } from "@easyoref/shared";
-import { AIMessage, BaseMessage, HumanMessage, SystemMessage } from "langchain";
+import { AIMessage } from "langchain";
 import z from "zod";
 import type { AgentStateType } from "../graph.js";
-import {
-  extractFallback,
-  extractModel,
-  invokeWithFallback,
-} from "../models.js";
+import { extractModel } from "../models.js";
+import { extractFromChannel } from "../utils/channel-extract.js";
+import { getPhaseRule } from "../utils/phase-rules.js";
 
 // --- Agent options (reused for primary + fallback) ---
 
@@ -54,42 +52,6 @@ RULES:
 - Return [] if no extractable military facts found.
 `,
 };
-
-// --- Phase-specific extraction rules ---
-
-export function getPhaseRule(alertType: string): string {
-  switch (alertType) {
-    case "early_warning":
-      return "Focus on country_origins, eta, rocket_count, cluser_munition_used. Do NOT extract impact, hits, or casualities in this early phase.";
-    case "red_alert":
-      return "Focus on country_origins, eta, rocket_count, cluser_munition_used, impact (interceptions, sea falls, open area falls). Do NOT extract casualities or detailed hits yet.";
-    case "resolved":
-      return "Extract ALL insight kinds: country_origins, rocket_count, impact (interceptions, hits, sea/open area falls), cluser_munition_used, casualities. Prioritize reports with exact numbers or locations.";
-    default:
-      return "Extract all relevant information about the attack.";
-  }
-}
-
-// --- Per-channel extraction helper ---
-
-export async function extractFromChannel(
-  channel: NewsChannelWithUpdatesType,
-  phaseSpecificRule: string,
-): Promise<{ channel: string; insights: z.infer<typeof Insight>[] }> {
-  const messages: BaseMessage[] = [];
-  messages.push(new SystemMessage(phaseSpecificRule));
-  messages.push(new HumanMessage(JSON.stringify(channel)));
-
-  const result = await invokeWithFallback({
-    agentOpts: extractionAgentOpts,
-    fallbackModel: extractFallback,
-    input: { messages },
-    label: `extract-node:${channel.channel}`,
-  });
-
-  const insights = result.structuredResponse ?? [];
-  return { channel: channel.channel, insights };
-}
 
 // --- Single-channel extraction node (invoked via Send() fan-out) ---
 

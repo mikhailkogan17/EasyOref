@@ -90,17 +90,12 @@ vi.mock("@easyoref/shared", async () => {
         extractModel: FREE_PRIMARY,
         extractFallbackModel: FREE_FALLBACK,
         apiKey: API_KEY || "test-key",
-        mcpTools: false,
-        confidenceThreshold: 0.65,
         enrichDelayMs: 20_000,
         windowMinutes: 2,
         timeoutMinutes: 15,
         areaLabels: {},
-        clarifyFetchCount: 3,
         channels: [],
       },
-      areas: ["תל אביב - דרום העיר ויפו"],
-      language: "ru",
       botToken: "",
       chatId: "",
       orefApiUrl: "",
@@ -132,7 +127,7 @@ vi.mock("@easyoref/shared", async () => {
 // ── Imports (after mocks) ──────────────────────────────
 
 import * as logger from "@easyoref/shared/logger";
-import { resolveArea } from "../src/tools/resolve-area.js";
+import { resolveArea } from "../src/utils/resolve-area.js";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // resolveArea — deterministic tiers (no LLM)

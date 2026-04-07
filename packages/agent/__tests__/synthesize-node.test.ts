@@ -24,9 +24,6 @@ vi.mock("@easyoref/shared", async () => {
         extractModel: "google/gemini-2.5-flash-lite",
         extractFallbackModel: "meta-llama/llama-3.3-70b-instruct:free",
         apiKey: "test-key",
-        mcpTools: false,
-        clarifyFetchCount: 3,
-        confidenceThreshold: 0.6,
         channels: [],
         areaLabels: {},
       },
@@ -70,7 +67,6 @@ function makeState(overrides: Record<string, unknown> = {}) {
     currentText: "Red Alert",
     votedResult: undefined,
     synthesizedInsights: [],
-    clarifyAttempted: false,
     extractedInsights: [],
     filteredInsights: [],
     previousInsights: [],
@@ -79,33 +75,26 @@ function makeState(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeVotedResult(kinds: Record<string, unknown> = {}) {
-  return {
-    consensus: kinds,
-    needsClarify: false,
-  };
-}
-
-function makeConsensusEntry(
+/** Create a ValidatedInsight with the given kind object for use in filteredInsights. */
+function makeFilteredInsight(
   kindObj: Record<string, unknown>,
   confidence = 0.9,
 ) {
   return {
     kind: kindObj,
-    sources: [
-      {
-        channelId: "@test",
-        sourceType: "telegram_channel",
-        timestamp: Date.now(),
-        text: "test",
-      },
-    ],
-    confidence,
-    sourceTrust: 0.8,
+    source: {
+      channelId: "@test",
+      sourceType: "telegram_channel",
+      timestamp: Date.now(),
+      text: "test",
+    },
     timeRelevance: 0.9,
     regionRelevance: 0.9,
-    reason: "test consensus",
-    rejectedInsights: [],
+    confidence,
+    sourceTrust: 0.8,
+    timeStamp: new Date().toISOString(),
+    isValid: true,
+    extractionReason: "test",
     insightLocation: undefined,
   };
 }
@@ -188,12 +177,9 @@ describe("synthesizeNode — cassette / cluster munition (postmortem Apr 4: Find
     });
 
     const state = makeState({
-      votedResult: makeVotedResult({
-        cluser_munition_used: makeConsensusEntry({
-          kind: "cluser_munition_used",
-          value: true,
-        }),
-      }),
+      filteredInsights: [
+        makeFilteredInsight({ kind: "cluser_munition_used", value: true }),
+      ],
     });
 
     const result = await synthesizeNode(state as any);
@@ -217,13 +203,10 @@ describe("synthesizeNode — cassette / cluster munition (postmortem Apr 4: Find
     });
 
     const state = makeState({
-      votedResult: makeVotedResult({
-        country_origins: makeConsensusEntry({
-          kind: "country_origins",
-          value: ["Iran"],
-        }),
-        // cluser_munition_used intentionally absent
-      }),
+      filteredInsights: [
+        makeFilteredInsight({ kind: "country_origins", value: ["Iran"] }),
+        // cluser_munition_used intentionally absent from filteredInsights
+      ],
     });
 
     const result = await synthesizeNode(state as any);
@@ -251,16 +234,10 @@ describe("synthesizeNode — cassette / cluster munition (postmortem Apr 4: Find
     });
 
     const state = makeState({
-      votedResult: makeVotedResult({
-        country_origins: makeConsensusEntry({
-          kind: "country_origins",
-          value: ["Iran"],
-        }),
-        cluser_munition_used: makeConsensusEntry({
-          kind: "cluser_munition_used",
-          value: true,
-        }),
-      }),
+      filteredInsights: [
+        makeFilteredInsight({ kind: "country_origins", value: ["Iran"] }),
+        makeFilteredInsight({ kind: "cluser_munition_used", value: true }),
+      ],
     });
 
     const result = await synthesizeNode(state as any);

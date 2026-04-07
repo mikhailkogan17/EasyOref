@@ -151,9 +151,9 @@ describe("parseAlertTypes", () => {
   });
 
   it("returns all types when non-array passed", () => {
-    expect(parseAlertTypes("red_alert" as unknown as AlertTypeConfig[])).toEqual(
-      ALL_ALERT_TYPES,
-    );
+    expect(
+      parseAlertTypes("red_alert" as unknown as AlertTypeConfig[]),
+    ).toEqual(ALL_ALERT_TYPES);
   });
 });
 
@@ -190,40 +190,6 @@ describe("isValidLanguage", () => {
     expect(isValidLanguage("fr")).toBe(false);
     expect(isValidLanguage("")).toBe(false);
     expect(isValidLanguage("RU")).toBe(false); // case-sensitive
-  });
-});
-
-// ── City ID Resolution ───────────────────────────────────
-
-describe("resolveCityIds (logic)", () => {
-  // Simulate the id→name map from cities.json
-  const idToName = new Map<number, string>([
-    [722, "תל אביב - דרום העיר ויפו"],
-    [723, "תל אביב - מזרח"],
-    [1, "אופקים"],
-  ]);
-
-  function resolveCityIds(ids: number[]): string[] {
-    return ids.filter((id) => idToName.has(id)).map((id) => idToName.get(id)!);
-  }
-
-  it("resolves known IDs to Hebrew names", () => {
-    expect(resolveCityIds([722, 723])).toEqual([
-      "תל אביב - דרום העיר ויפו",
-      "תל אביב - מזרח",
-    ]);
-  });
-
-  it("skips unknown IDs", () => {
-    expect(resolveCityIds([722, 99999])).toEqual(["תל אביב - דרום העיר ויפו"]);
-  });
-
-  it("returns empty array for all unknown IDs", () => {
-    expect(resolveCityIds([99999, 88888])).toEqual([]);
-  });
-
-  it("handles empty input", () => {
-    expect(resolveCityIds([])).toEqual([]);
   });
 });
 
@@ -352,7 +318,9 @@ describe("model resolution fallback", () => {
     };
     const dumped = yaml.dump(aiConfig);
     const parsed = yaml.load(dumped) as { ai?: Record<string, string> };
-    expect(resolveExtractModel(parsed.ai)).toBe("google/gemini-3.1-flash-lite-preview");
+    expect(resolveExtractModel(parsed.ai)).toBe(
+      "google/gemini-3.1-flash-lite-preview",
+    );
     expect(resolveFilterModel(parsed.ai)).toBe("openai/gpt-oss-120b");
   });
 });

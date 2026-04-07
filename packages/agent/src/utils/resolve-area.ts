@@ -1,18 +1,12 @@
 /**
  * Resolve area relevance — 3-tier matching:
  *
- *  1. Exact / substring match against user's monitored areas (free, O(n))
- *  2. cityMap / zoneMap hierarchy from i18n (free, uses loaded Oref data)
- *  3. LLM fallback: "Is '{userArea}' part of '{mentioned}'?" (gpt-oss-120b:free)
- *
- * The key question is always:
- *   "Is the user's zone X a part of / inside the region Y mentioned in news?"
- *
- * NOT: "are X and Y in the same zone?" (wrong direction — misses macro coverage).
+ *  1. Exact / substring match against user's monitored areas
+ *  2. cityMap / zoneMap hierarchy from i18n (ZONE_HIERARCHY)
+ *  3. LLM fallback: "Is '{userArea}' part of '{mentioned}'?"
  */
 
-import { tool } from "@langchain/core/tools";
-import { z } from "zod";
+import { ZONE_HIERARCHY } from "@easyoref/shared";
 import { freeModel } from "../models.js";
 
 // ── Tier 1: direct string matching ────────────────────────
@@ -25,18 +19,7 @@ function directMatch(mentioned: string, userAreas: string[]): string[] {
   });
 }
 
-// ── Tier 2: geo-hierarchy via cityMap / zoneMap from i18n ─
-
-/**
- * Access i18n maps exported from shared.
- * They're populated after initTranslations(), but we can access the module-level
- * maps by calling translateAreas — however those aren't exported directly.
- *
- * Alternative approach: use ZONE_HIERARCHY from zone-priority which covers
- * the most common Oref API zones (Tel Aviv zones → area=גוש דן, macro=מרכז).
- * For everything else: fall through to LLM.
- */
-import { ZONE_HIERARCHY } from "@easyoref/shared";
+// ── Tier 2: geo-hierarchy via ZONE_HIERARCHY ──────────────
 
 function hierarchyMatch(mentioned: string, userAreas: string[]): string[] {
   const m = mentioned.trim();
@@ -46,7 +29,6 @@ function hierarchyMatch(mentioned: string, userAreas: string[]): string[] {
     const meta = ZONE_HIERARCHY[userArea as keyof typeof ZONE_HIERARCHY];
     if (!meta) continue;
 
-    // Check if mentioned matches city, area, or macro of this user zone
     const candidates = [meta.city, meta.area, meta.macro].filter(
       Boolean,
     ) as string[];
@@ -74,7 +56,6 @@ async function llmMatch(
   try {
     const matched: string[] = [];
 
-    // Batch all userAreas into a single prompt to save tokens
     const prompt =
       `Answer ONLY with a JSON array of indices (0-based) of the user zones that are ` +
       `located inside or are part of "${mentioned}".\n` +
@@ -108,10 +89,6 @@ export interface ResolveAreaResult {
   reasoning: string;
 }
 
-/**
- * Resolve whether `mentioned` (location from news) contains any of `userAreas`.
- * Used in post-filter-node (for insightLocation flag) and as clarify ReAct tool.
- */
 export async function resolveArea(
   mentioned: string,
   userAreas: string[],
@@ -165,54 +142,3 @@ export async function resolveArea(
     reasoning: `"${mentioned}" does not match any of: ${userAreas.join(", ")}`,
   };
 }
-
-// ── ReAct tool (for clarify-node) ─────────────────────────
-
-export const resolveAreaTool = tool(
-  async ({
-    location,
-    userAreas: toolAreas,
-  }: {
-    location: string;
-    userAreas?: string[];
-  }): Promise<string> => {
-    const userAreas = toolAreas ?? [];
-
-    if (!userAreas.length) {
-      return JSON.stringify({ error: "No monitored areas configured" });
-    }
-
-    const result = await resolveArea(location, userAreas);
-
-    return JSON.stringify({
-      location,
-      monitored_areas: userAreas,
-      relevant: result.relevant,
-      matched_areas: result.matchedAreas,
-      tier: result.tier,
-      reasoning: result.reasoning,
-    });
-  },
-  {
-    name: "resolve_area",
-    description:
-      "Determine if a location mentioned in news is relevant to the user's monitored zones. " +
-      "Checks whether the user's zone is inside or part of the mentioned area. " +
-      'Example: user monitors "תל אביב - מרכז העיר", news says "מרכז" → relevant. ' +
-      'Example: user monitors Tel Aviv zones, news says "Petah Tikva hit" → NOT relevant. ' +
-      "Use when news mentions a city/region and you need to decide if it affects the user.",
-    schema: z.object({
-      location: z
-        .string()
-        .describe(
-          "City or region name as mentioned in news (Hebrew preferred, e.g. מרכז, פתח תקווה)",
-        ),
-      userAreas: z
-        .array(z.string())
-        .optional()
-        .describe(
-          "Monitored areas for this alert session (Hebrew names). If omitted, returns empty result.",
-        ),
-    }),
-  },
-);

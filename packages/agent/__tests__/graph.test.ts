@@ -2,14 +2,13 @@
  * Unit tests for core agent pipeline functions.
  *
  * Tests pure/deterministic logic only — no LLM, no network.
- * Covers: voteNode, insertBeforeBlockEnd, buildEnrichedMessage,
- *         describeContradictions, getClarifyNeed, textHash, toIsraelTime.
+ * Covers: buildConsensus, insertBeforeBlockEnd, buildEnrichedMessage,
+ *         getClarifyNeed, textHash, toIsraelTime.
  */
 
 import type {
   SynthesizedInsightType,
   ValidatedInsightType,
-  VotedResultType,
 } from "@easyoref/shared";
 import { getClarifyNeed, textHash, toIsraelTime } from "@easyoref/shared";
 import { describe, expect, it, vi } from "vitest";
@@ -27,15 +26,10 @@ vi.mock("@easyoref/shared", async () => {
         extractModel: "google/gemini-2.5-flash-lite",
         extractFallbackModel: "meta-llama/llama-3.3-70b-instruct:free",
         apiKey: "test-key",
-        mcpTools: false,
-        clarifyFetchCount: 3,
-        confidenceThreshold: 0.6,
         channels: ["@idf_telegram", "@N12LIVE", "@kann_news"],
         areaLabels: {},
       },
       botToken: "",
-      areas: ["תל אביב - דרום העיר ויפו"],
-      language: "ru",
       orefApiUrl: "https://mock.oref.api/alerts",
       orefHistoryUrl: "",
       logtailToken: "",
@@ -63,8 +57,7 @@ vi.mock("@easyoref/shared/logger", () => ({
 
 // ── Imports (after mocks) ──────────────────────────────────
 
-import { voteNode } from "../src/nodes/vote-node.js";
-import { describeContradictions } from "../src/utils/contradictions.js";
+import { buildConsensus } from "../src/utils/consensus.js";
 import {
   buildEnrichedMessage,
   insertBeforeBlockEnd,
@@ -97,29 +90,6 @@ function makeInsight(
     isValid: true,
     sourceTrust: 0.8,
     ...overrides,
-  };
-}
-
-function makeState(
-  filteredInsights: ValidatedInsightType[] = [],
-  previousInsights: VotedResultType["consensus"][string][] = [],
-) {
-  return {
-    messages: [],
-    filteredInsights,
-    previousInsights,
-    extractedInsights: [],
-    votedResult: undefined,
-    synthesizedInsights: [],
-    channelTracking: {
-      trackStartTimestamp: Date.now(),
-      lastUpdateTimestamp: Date.now(),
-      channelsWithUpdates: [],
-    },
-    alertId: "test-alert",
-    alertType: "early_warning" as const,
-    alertTs: Date.now(),
-    alertAreas: [],
   };
 }
 
@@ -339,118 +309,53 @@ describe("buildEnrichedMessage", () => {
 });
 
 // ─────────────────────────────────────────────────────────
-// describeContradictions
+// buildConsensus — deterministic consensus (was voteNode)
 // ─────────────────────────────────────────────────────────
 
-describe("describeContradictions", () => {
-  it("reports multiple country origins", () => {
-    const insights: ValidatedInsightType[] = [
-      makeInsight({
-        kind: "country_origins",
-        value: ["Iran"],
-      }),
-      makeInsight({
-        kind: "country_origins",
-        value: ["Yemen"],
-      }),
-    ];
-    const result = describeContradictions(insights);
-    expect(result).toMatch(/Iran/);
-    expect(result).toMatch(/Yemen/);
-  });
-
-  it("reports wide rocket count range", () => {
-    const insights: ValidatedInsightType[] = [
-      makeInsight({ kind: "rocket_count", value: { type: "exact", value: 5 } }),
-      makeInsight({
-        kind: "rocket_count",
-        value: { type: "exact", value: 15 },
-      }),
-    ];
-    const result = describeContradictions(insights);
-    expect(result).toMatch(/5.{1,5}15/);
-  });
-
-  it("reports low confidence insights", () => {
-    const insights: ValidatedInsightType[] = [
-      makeInsight(
-        { kind: "eta", value: { kind: "minutes", minutes: 5 } },
-        { confidence: 0.3 },
-      ),
-    ];
-    const result = describeContradictions(insights);
-    expect(result).toContain("low confidence");
-  });
-
-  it("always includes total valid insights count", () => {
-    const insights: ValidatedInsightType[] = [
-      makeInsight({
-        kind: "rocket_count",
-        value: { type: "exact", value: 10 },
-      }),
-    ];
-    const result = describeContradictions(insights);
-    expect(result).toContain("Total valid insights: 1");
-  });
-
-  it("returns empty issues for single clean insight", () => {
-    const insights: ValidatedInsightType[] = [
-      makeInsight(
-        { kind: "rocket_count", value: { type: "exact", value: 10 } },
-        { confidence: 0.9 },
-      ),
-    ];
-    const result = describeContradictions(insights);
-    // Should still have kind/count lines
-    expect(result).toContain("rocket_count");
-  });
-});
-
-// ─────────────────────────────────────────────────────────
-// voteNode — deterministic consensus
-// ─────────────────────────────────────────────────────────
-
-describe("voteNode", () => {
-  it("returns empty consensus for no valid insights", async () => {
-    const state = makeState([
-      makeInsight(
-        { kind: "rocket_count", value: { type: "exact", value: 10 } },
-        { isValid: false },
-      ),
-    ]);
-    const result = await voteNode(state as any);
-    expect(result.votedResult).toBeDefined();
-    expect(Object.keys(result.votedResult!.consensus)).toHaveLength(0);
-    expect(result.votedResult!.needsClarify).toBe(false);
-  });
-
-  it("produces consensus for single valid insight", async () => {
-    const state = makeState([
-      makeInsight({
-        kind: "rocket_count",
-        value: { type: "exact", value: 10 },
-      }),
-    ]);
-    const result = await voteNode(state as any);
-    expect(result.votedResult!.consensus["rocket_count"]).toBeDefined();
-    expect(result.votedResult!.consensus["rocket_count"]!.kind.kind).toBe(
-      "rocket_count",
+describe("buildConsensus", () => {
+  it("returns empty consensus for no valid insights", () => {
+    const result = buildConsensus(
+      [
+        makeInsight(
+          { kind: "rocket_count", value: { type: "exact", value: 10 } },
+          { isValid: false },
+        ),
+      ],
+      [],
     );
+    expect(Object.keys(result.consensus)).toHaveLength(0);
+    expect(result.needsClarify).toBe(false);
   });
 
-  it("picks highest-confidence option when values differ", async () => {
-    const state = makeState([
-      makeInsight(
-        { kind: "rocket_count", value: { type: "exact", value: 10 } },
-        { confidence: 0.9 },
-      ),
-      makeInsight(
-        { kind: "rocket_count", value: { type: "exact", value: 20 } },
-        { confidence: 0.5 },
-      ),
-    ]);
-    const result = await voteNode(state as any);
-    const consensus = result.votedResult!.consensus["rocket_count"]!;
+  it("produces consensus for single valid insight", () => {
+    const result = buildConsensus(
+      [
+        makeInsight({
+          kind: "rocket_count",
+          value: { type: "exact", value: 10 },
+        }),
+      ],
+      [],
+    );
+    expect(result.consensus["rocket_count"]).toBeDefined();
+    expect(result.consensus["rocket_count"]!.kind.kind).toBe("rocket_count");
+  });
+
+  it("picks highest-confidence option when values differ", () => {
+    const result = buildConsensus(
+      [
+        makeInsight(
+          { kind: "rocket_count", value: { type: "exact", value: 10 } },
+          { confidence: 0.9 },
+        ),
+        makeInsight(
+          { kind: "rocket_count", value: { type: "exact", value: 20 } },
+          { confidence: 0.5 },
+        ),
+      ],
+      [],
+    );
+    const consensus = result.consensus["rocket_count"]!;
     expect((consensus.kind as any).value.value).toBe(10);
     expect(consensus.rejectedInsights).toHaveLength(1);
     expect(consensus.rejectedInsights[0]?.rejectionReason).toContain(
@@ -458,81 +363,77 @@ describe("voteNode", () => {
     );
   });
 
-  it("drops notAUserZone impact insight", async () => {
-    const state = makeState([
-      makeInsight(
-        {
-          kind: "impact",
-          value: { interceptionsCount: { type: "exact", value: 5 } },
-        },
-        { insightLocation: "not_a_user_zone" },
-      ),
-    ]);
-    const result = await voteNode(state as any);
-    expect(result.votedResult!.consensus["impact"]).toBeUndefined();
-    const payload = JSON.parse((result.messages?.[0] as any)?.content ?? "{}");
-    expect(payload.droppedKinds).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: "impact",
-          reason: expect.stringContaining("refutation_found"),
-        }),
-      ]),
+  it("drops notAUserZone impact insight", () => {
+    const result = buildConsensus(
+      [
+        makeInsight(
+          {
+            kind: "impact",
+            value: { interceptionsCount: { type: "exact", value: 5 } },
+          },
+          { insightLocation: "not_a_user_zone" },
+        ),
+      ],
+      [],
     );
+    expect(result.consensus["impact"]).toBeUndefined();
   });
 
-  it("keeps exactUserZone impact insight", async () => {
-    const state = makeState([
-      makeInsight(
-        {
-          kind: "impact",
-          value: { interceptionsCount: { type: "exact", value: 5 } },
-        },
-        { insightLocation: "exact_user_zone" },
-      ),
-    ]);
-    const result = await voteNode(state as any);
-    expect(result.votedResult!.consensus["impact"]).toBeDefined();
-    expect(result.votedResult!.consensus["impact"]!.insightLocation).toBe(
-      "exact_user_zone",
+  it("keeps exactUserZone impact insight", () => {
+    const result = buildConsensus(
+      [
+        makeInsight(
+          {
+            kind: "impact",
+            value: { interceptionsCount: { type: "exact", value: 5 } },
+          },
+          { insightLocation: "exact_user_zone" },
+        ),
+      ],
+      [],
     );
+    expect(result.consensus["impact"]).toBeDefined();
+    expect(result.consensus["impact"]!.insightLocation).toBe("exact_user_zone");
   });
 
-  it("exactUserZone wins over userMacroRegion in merging", async () => {
-    const state = makeState([
-      makeInsight(
-        {
-          kind: "impact",
-          value: { interceptionsCount: { type: "exact", value: 5 } },
-        },
-        { insightLocation: "user_macro_region", confidence: 0.9 },
-      ),
-      makeInsight(
-        {
-          kind: "impact",
-          value: { interceptionsCount: { type: "exact", value: 5 } },
-        },
-        { insightLocation: "exact_user_zone", confidence: 0.8 },
-      ),
-    ]);
-    const result = await voteNode(state as any);
-    // Both have same value — same option → insightLocation merges: exact wins
-    const consensus = result.votedResult!.consensus["impact"]!;
+  it("exactUserZone wins over userMacroRegion in merging", () => {
+    const result = buildConsensus(
+      [
+        makeInsight(
+          {
+            kind: "impact",
+            value: { interceptionsCount: { type: "exact", value: 5 } },
+          },
+          { insightLocation: "user_macro_region", confidence: 0.9 },
+        ),
+        makeInsight(
+          {
+            kind: "impact",
+            value: { interceptionsCount: { type: "exact", value: 5 } },
+          },
+          { insightLocation: "exact_user_zone", confidence: 0.8 },
+        ),
+      ],
+      [],
+    );
+    const consensus = result.consensus["impact"]!;
     expect(consensus.insightLocation).toBe("exact_user_zone");
   });
 
-  it("sets needsClarify=true when low-confidence eta insight", async () => {
-    const state = makeState([
-      makeInsight(
-        { kind: "eta", value: { kind: "minutes", minutes: 5 } },
-        { confidence: 0.3 }, // below needsClarify threshold for eta (0.4)
-      ),
-    ]);
-    const result = await voteNode(state as any);
-    expect(result.votedResult!.needsClarify).toBe(true);
+  it("always returns needsClarify=false (clarify removed)", () => {
+    const result = buildConsensus(
+      [
+        makeInsight(
+          { kind: "eta", value: { kind: "minutes", minutes: 5 } },
+          { confidence: 0.3 },
+        ),
+      ],
+      [],
+    );
+    expect(result.needsClarify).toBe(false);
   });
 
-  it("carries forward previousInsights into consensus", async () => {
+  it("carries forward previousInsights into consensus", () => {
     const prev = {
       kind: { kind: "country_origins" as const, value: ["Iran"] },
       sources: [makeSource("@prev")],
@@ -544,23 +445,20 @@ describe("voteNode", () => {
       rejectedInsights: [],
       insightLocation: undefined,
     };
-    const state = makeState([], [prev]);
-    const result = await voteNode(state as any);
-    expect(result.votedResult!.consensus["country_origins"]).toBeDefined();
-    expect(result.votedResult!.consensus["country_origins"]!.reason).toContain(
+    const result = buildConsensus([], [prev]);
+    expect(result.consensus["country_origins"]).toBeDefined();
+    expect(result.consensus["country_origins"]!.reason).toContain(
       "carry_forward_refresh",
     );
   });
 
-  it("does not weight Hebrew channels differently from Russian channels", async () => {
-    // Hebrew and Russian channels report the same insight with equal confidence.
-    // The vote node must treat them identically — no language-based weighting.
+  it("does not weight Hebrew channels differently from Russian channels", () => {
     const hebrewInsight = makeInsight(
       { kind: "country_origins", value: ["Iran"] },
       {
         confidence: 0.85,
         sourceTrust: 0.8,
-        source: makeSource("@kann_news"), // Hebrew channel
+        source: makeSource("@kann_news"),
       },
     );
     const russianInsight = makeInsight(
@@ -568,36 +466,27 @@ describe("voteNode", () => {
       {
         confidence: 0.85,
         sourceTrust: 0.8,
-        source: makeSource("@rian_ru"), // Russian channel
+        source: makeSource("@rian_ru"),
       },
     );
 
-    // Run with only Hebrew source
-    const heOnly = makeState([hebrewInsight]);
-    const heResult = await voteNode(heOnly as any);
-    const heCons = heResult.votedResult!.consensus["country_origins"]!;
+    const heResult = buildConsensus([hebrewInsight], []);
+    const heCons = heResult.consensus["country_origins"]!;
 
-    // Run with only Russian source
-    const ruOnly = makeState([russianInsight]);
-    const ruResult = await voteNode(ruOnly as any);
-    const ruCons = ruResult.votedResult!.consensus["country_origins"]!;
+    const ruResult = buildConsensus([russianInsight], []);
+    const ruCons = ruResult.consensus["country_origins"]!;
 
-    // Confidence, sourceTrust, time/region relevance must be identical
     expect(heCons.confidence).toBe(ruCons.confidence);
     expect(heCons.sourceTrust).toBe(ruCons.sourceTrust);
     expect(heCons.timeRelevance).toBe(ruCons.timeRelevance);
     expect(heCons.regionRelevance).toBe(ruCons.regionRelevance);
 
-    // Run with mixed Hebrew + Russian — both contribute equally
-    const mixed = makeState([hebrewInsight, russianInsight]);
-    const mixedResult = await voteNode(mixed as any);
-    const mixedCons = mixedResult.votedResult!.consensus["country_origins"]!;
+    const mixedResult = buildConsensus([hebrewInsight, russianInsight], []);
+    const mixedCons = mixedResult.consensus["country_origins"]!;
 
-    // Mixed consensus should average both (equal weight → same values)
     expect(mixedCons.confidence).toBe(0.85);
     expect(mixedCons.sourceTrust).toBe(0.8);
     expect(mixedCons.sources).toHaveLength(2);
-    // Both channels present as sources
     const channelIds = mixedCons.sources.map((s) => s.channelId);
     expect(channelIds).toContain("@kann_news");
     expect(channelIds).toContain("@rian_ru");

@@ -1,11 +1,9 @@
 /**
  * Edit Node — build enriched message text and send Telegram edit.
  *
- * Receives state.previousEnrichment (built by synthesize-node) and
+ * Receives state.synthesizedInsights (built by synthesize-node) and
  * state.currentText, renders the enriched message, and edits the
  * Telegram message via Bot API.
- *
- * Re-exports legacy helpers for backwards-compat.
  */
 
 import type {
@@ -24,34 +22,7 @@ import * as logger from "@easyoref/shared/logger";
 import { Bot } from "grammy";
 import { AIMessage } from "langchain";
 import type { AgentStateType } from "../graph.js";
-import {
-  buildEnrichedMessage,
-  formatCitations,
-  insertBeforeBlockEnd,
-} from "../utils/message.js";
-
-// Re-exports for backwards-compat
-export { buildEnrichedMessage, insertBeforeBlockEnd };
-
-/** @deprecated Use insertBeforeBlockEnd */
-export const insertBeforeTimeLine = insertBeforeBlockEnd;
-
-// ── Inline citation helper (legacy) ───────────────────
-
-/** Format inline citations: [[1]](url) */
-export function inlineCites(
-  indices: number[],
-  citedSources: Array<{ index: number; messageUrl: string }>,
-): string {
-  const parts: string[] = [];
-  for (const idx of indices) {
-    const src = citedSources.find((s) => s.index === idx);
-    if (src?.messageUrl) {
-      parts.push(`<a href="${src.messageUrl}">[${idx}]</a>`);
-    }
-  }
-  return parts.length > 0 ? " " + parts.join(", ") : "";
-}
+import { buildEnrichedMessage, formatCitations } from "../utils/message.js";
 
 // ── Types ──────────────────────────────────────────────
 

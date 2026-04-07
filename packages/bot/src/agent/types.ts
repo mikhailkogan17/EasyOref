@@ -6,8 +6,6 @@ export type {
   AlertTypeConfig,
   ChannelPost,
   ChannelTrackingType,
-  ClarifyInput,
-  ClarifyOutput,
   Enrichment,
   GifMode,
   Insight,

@@ -1,16 +1,15 @@
 /**
  * BullMQ worker — processes "enrich-alert" jobs.
  *
- * Session-aware scheduling:
- *   early_warning → every 20s, up to 30 min
- *   red_alert     → every 20s, up to 15 min
- *   resolved      → every 60s, up to 10 min (tail — detailed intel)
+ * Session-aware scheduling with configurable run limit:
+ *   Run 1: after initial delay (phase-dependent, from config)
+ *   Run 2: after phase interval (from config)
+ *   Run 3+: up to config.agent.maxEnrichRuns (default 3)
  *
- * After each job, checks the session phase and re-enqueues
- * with the appropriate delay. Stops when phase expires.
+ * After max runs or phase expiry, the session ends.
+ * All timing values are configurable via YAML config.
  */
 
-import * as logger from "@easyoref/shared/logger";
 import {
   clearSession,
   config,
@@ -20,9 +19,13 @@ import {
   setLastUpdateTs,
   type TelegramMessageType as TelegramMessage,
 } from "@easyoref/shared";
+import * as logger from "@easyoref/shared/logger";
 import { Worker } from "bullmq";
 import { runEnrichment } from "../graph.js";
 import { enqueueEnrich, enrichQueueName, type EnrichJobData } from "./queue.js";
+
+/** In-memory run counter per session (keyed by sessionId). */
+const sessionRunCount = new Map<string, number>();
 
 let _worker: Worker | undefined = undefined;
 
@@ -33,7 +36,9 @@ function checkOpenRouterConnectivity(): void {
     signal: AbortSignal.timeout(5000),
   })
     .then((res) => {
-      logger.info("OpenRouter connectivity check passed", { status: res.status });
+      logger.info("OpenRouter connectivity check passed", {
+        status: res.status,
+      });
     })
     .catch((err) => {
       logger.warn("OpenRouter connectivity check FAILED — LLM calls may fail", {
@@ -71,14 +76,36 @@ export function startEnrichWorker(): void {
           alertId: session.latestAlertId,
           phase: session.phase,
         });
+        sessionRunCount.delete(session.sessionId);
         await clearSession();
         return;
       }
 
-      // Run enrichment using latest alert's message as edit target
-      // Fallback: if session.telegramMessages is undefined (legacy sessions),
-      // build the array from the primary chat fields so RunEnrichmentInput
-      // schema validation always receives a non-undefined array.
+      // Track run count
+      const runNum = (sessionRunCount.get(session.sessionId) ?? 0) + 1;
+      sessionRunCount.set(session.sessionId, runNum);
+
+      const maxRuns = config.agent.maxEnrichRuns;
+
+      if (runNum > maxRuns) {
+        logger.info("Enrich worker: max runs reached — ending session", {
+          alertId: session.latestAlertId,
+          phase: session.phase,
+          runNum,
+        });
+        sessionRunCount.delete(session.sessionId);
+        await clearSession();
+        return;
+      }
+
+      logger.info("Enrich worker: starting run", {
+        alertId: session.latestAlertId,
+        phase: session.phase,
+        runNum,
+        maxRuns,
+      });
+
+      // Build telegramMessages array for RunEnrichmentInput
       const telegramMessages: TelegramMessage[] = session.telegramMessages ?? [
         {
           chatId: session.chatId,
@@ -98,14 +125,15 @@ export function startEnrichWorker(): void {
         currentText: session.baseText ?? session.currentText,
       });
 
-      // Advance watermark so the next job only processes posts arriving after this point.
-      // Without this, buildTracking() never classifies posts as "previous", and
-      // the extract-node's URL dedup filters out all channels on subsequent runs.
+      // Advance watermark
       await setLastUpdateTs(Date.now());
 
-      // Re-check session after enrichment (may have changed phase)
+      // Re-check session after enrichment
       const after = await getActiveSession();
-      if (!after) return;
+      if (!after) {
+        sessionRunCount.delete(session.sessionId);
+        return;
+      }
 
       if (isPhaseExpired(after)) {
         logger.info(
@@ -114,13 +142,21 @@ export function startEnrichWorker(): void {
             phase: after.phase,
           },
         );
+        sessionRunCount.delete(after.sessionId);
         await clearSession();
         return;
       }
 
-      // Re-enqueue with phase-appropriate delay
-      const delay = PHASE_ENRICH_DELAY_MS[after.phase];
-      await enqueueEnrich(after.latestAlertId, after.latestAlertTs, delay);
+      // Only re-enqueue if under run limit
+      if (runNum < maxRuns) {
+        const delay = PHASE_ENRICH_DELAY_MS[after.phase];
+        await enqueueEnrich(after.latestAlertId, after.latestAlertTs, delay);
+      } else {
+        logger.info("Enrich worker: final run completed — no re-enqueue", {
+          alertId: after.latestAlertId,
+          phase: after.phase,
+        });
+      }
     },
     {
       connection,

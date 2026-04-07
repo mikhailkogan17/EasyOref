@@ -390,12 +390,6 @@ export const SynthesizedInsight = z.object({
 export type SynthesizedInsightType = z.infer<typeof SynthesizedInsight>;
 
 // ─────────────────────────────────────────────────────────
-//  Vote
-// ─────────────────────────────────────────────────────────
-
-// TODO: Implement vote-node to compute consensus across sources
-
-// ─────────────────────────────────────────────────────────
 // Chat & Alert metadata (store)
 // ─────────────────────────────────────────────────────────
 

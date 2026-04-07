@@ -95,22 +95,33 @@ gif_mode: none
 #
 #   # Delay before running agent after alert (ms). Default 2 min.
 #   enrich_delay_ms: 120000
-##
-#   # MCP tool calling in clarify node (requires GramJS + Redis).
-#   # When true, low-confidence results get an extra LLM call with 2 MCP tools:
-#   #   - telegram_mtproto_mcp_read_sources (fetch last N posts from channels)
-#   #   - pikud_haoref_mcp (official Oref API ground truth)
-#   # The LLM decides autonomously whether to call 0, 1, or 2 tools.
-#   mcp_tools: false
-#
-#   # How many posts to fetch per read_sources tool call (1-4). Default 3.
-#   clarify_fetch_count: 3
 #
 #   # Collect channel posts within ±N minutes of alert_ts. Default 2.
 #   window_minutes: 2
 #
 #   # Stop monitoring if no resolved after N minutes. Default 15.
 #   timeout_minutes: 15
+#
+#   # Max enrichment runs per alert session (default 3).
+#   max_enrich_runs: 3
+#
+#   # Per-phase timing configuration (ms).
+#   # phase_initial_delay_ms — delay before the first enrichment run.
+#   # phase_enrich_delay_ms  — interval between subsequent enrichment runs.
+#   # phase_timeout_ms       — max phase duration before auto-expire.
+#   #
+#   # phase_initial_delay_ms:
+#   #   early_warning: 120000   # 2 min — wait for launch reports
+#   #   red_alert: 15000        # 15s
+#   #   resolved: 90000         # 90s — wait for post-incident reports
+#   # phase_enrich_delay_ms:
+#   #   early_warning: 60000    # 60s
+#   #   red_alert: 45000        # 45s
+#   #   resolved: 150000        # 150s (2.5 min)
+#   # phase_timeout_ms:
+#   #   early_warning: 1800000  # 30 min
+#   #   red_alert: 900000       # 15 min
+#   #   resolved: 600000        # 10 min
 #
 #   # Burner Telegram account credentials (run `npx tsx src/agent/auth.ts` for QR login)
 #   mtproto:

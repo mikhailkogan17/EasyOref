@@ -22,15 +22,10 @@ vi.mock("@easyoref/shared", async () => {
         extractModel: "google/gemini-2.5-flash-lite",
         extractFallbackModel: "meta-llama/llama-3.3-70b-instruct:free",
         apiKey: "test-key",
-        mcpTools: false,
-        clarifyFetchCount: 3,
-        confidenceThreshold: 0.6,
         channels: [],
         areaLabels: {},
       },
       botToken: "",
-      areas: ["תל אביב"],
-      language: "ru",
       orefApiUrl: "https://mock.oref.api/alerts",
       orefHistoryUrl: "",
       logtailToken: "",
@@ -52,12 +47,13 @@ vi.mock("@easyoref/shared/logger", () => ({
 
 // ── Import (after mocks) ──────────────────────────────────
 
-import { buildTracking } from "../src/nodes/pre-filter-node.js";
+import { buildTracking } from "../src/utils/tracking.js";
 
 // ── Helpers ───────────────────────────────────────────────
 
 function makePost(
-  overrides: Partial<ChannelPostType> & Pick<ChannelPostType, "channel" | "text" | "ts">,
+  overrides: Partial<ChannelPostType> &
+    Pick<ChannelPostType, "channel" | "text" | "ts">,
 ): ChannelPostType {
   return { messageUrl: undefined, ...overrides };
 }
@@ -87,12 +83,16 @@ describe("buildTracking", () => {
     const { tracking, stats } = buildTracking(posts, SESSION_START, 0);
     expect(tracking.channelsWithUpdates).toHaveLength(1);
     expect(tracking.channelsWithUpdates[0].unprocessedMessages).toHaveLength(1);
-    expect(tracking.channelsWithUpdates[0].unprocessedMessages[0].text).toBe("new post");
+    expect(tracking.channelsWithUpdates[0].unprocessedMessages[0].text).toBe(
+      "new post",
+    );
     expect(stats.tooEarly).toBe(1);
   });
 
   it("posts at exactly sessionStartTs are included", () => {
-    const posts = [makePost({ channel: "@ch1", text: "exact start", ts: SESSION_START })];
+    const posts = [
+      makePost({ channel: "@ch1", text: "exact start", ts: SESSION_START }),
+    ];
     const { tracking } = buildTracking(posts, SESSION_START, 0);
     expect(tracking.channelsWithUpdates).toHaveLength(1);
   });
@@ -120,7 +120,9 @@ describe("buildTracking", () => {
     expect(tracking.channelsWithUpdates).toHaveLength(1);
     expect(tracking.channelsWithUpdates[0].processedMessages).toHaveLength(0);
     expect(tracking.channelsWithUpdates[0].unprocessedMessages).toHaveLength(1);
-    expect(tracking.channelsWithUpdates[0].unprocessedMessages[0].text).toBe("old only");
+    expect(tracking.channelsWithUpdates[0].unprocessedMessages[0].text).toBe(
+      "old only",
+    );
   });
 
   it("deduplicates channels — multiple posts from same channel are grouped", () => {
@@ -149,9 +151,17 @@ describe("buildTracking", () => {
 
   it("filters oref.org.il link posts as noise", () => {
     const posts = [
-      makePost({ channel: "@random", text: "see oref.org.il for details", ts: LAST_UPDATE + 10 }),
+      makePost({
+        channel: "@random",
+        text: "see oref.org.il for details",
+        ts: LAST_UPDATE + 10,
+      }),
     ];
-    const { tracking, stats } = buildTracking(posts, SESSION_START, LAST_UPDATE);
+    const { tracking, stats } = buildTracking(
+      posts,
+      SESSION_START,
+      LAST_UPDATE,
+    );
     expect(tracking.channelsWithUpdates).toHaveLength(0);
     expect(stats.rejectedByReason["oref_link"]).toBe(1);
   });
@@ -159,9 +169,17 @@ describe("buildTracking", () => {
   it("filters pikud channels with long text (>300 chars) as noise", () => {
     const longText = "A".repeat(301);
     const posts = [
-      makePost({ channel: "@pikudHaoref", text: longText, ts: LAST_UPDATE + 10 }),
+      makePost({
+        channel: "@pikudHaoref",
+        text: longText,
+        ts: LAST_UPDATE + 10,
+      }),
     ];
-    const { tracking, stats } = buildTracking(posts, SESSION_START, LAST_UPDATE);
+    const { tracking, stats } = buildTracking(
+      posts,
+      SESSION_START,
+      LAST_UPDATE,
+    );
     expect(tracking.channelsWithUpdates).toHaveLength(0);
     expect(stats.rejectedByReason["oref_channel_long"]).toBe(1);
   });
@@ -169,7 +187,11 @@ describe("buildTracking", () => {
   it("allows pikud channels with short text", () => {
     const shortText = "Alert in Tel Aviv";
     const posts = [
-      makePost({ channel: "@pikudHaoref", text: shortText, ts: LAST_UPDATE + 10 }),
+      makePost({
+        channel: "@pikudHaoref",
+        text: shortText,
+        ts: LAST_UPDATE + 10,
+      }),
     ];
     const { tracking } = buildTracking(posts, SESSION_START, LAST_UPDATE);
     expect(tracking.channelsWithUpdates).toHaveLength(1);
@@ -180,14 +202,22 @@ describe("buildTracking", () => {
     const posts = [
       makePost({ channel: "@ch1", text: commaText, ts: LAST_UPDATE + 10 }),
     ];
-    const { tracking, stats } = buildTracking(posts, SESSION_START, LAST_UPDATE);
+    const { tracking, stats } = buildTracking(
+      posts,
+      SESSION_START,
+      LAST_UPDATE,
+    );
     expect(tracking.channelsWithUpdates).toHaveLength(0);
     expect(stats.rejectedByReason["comma_list"]).toBe(1);
   });
 
   it("allows Russian news posts with 'минут' (flight time info)", () => {
     const posts = [
-      makePost({ channel: "@Trueisrael", text: "Иран запустил ракеты, через 12 минут прилёт", ts: LAST_UPDATE + 10 }),
+      makePost({
+        channel: "@Trueisrael",
+        text: "Иран запустил ракеты, через 12 минут прилёт",
+        ts: LAST_UPDATE + 10,
+      }),
     ];
     const { tracking } = buildTracking(posts, SESSION_START, LAST_UPDATE);
     expect(tracking.channelsWithUpdates).toHaveLength(1);
@@ -195,7 +225,11 @@ describe("buildTracking", () => {
 
   it("allows IDF channel with normal-length update (<= 400 chars)", () => {
     const posts = [
-      makePost({ channel: "@idf_telegram", text: "צה\"ל מודיע על יירוט מוצלח של רוב הטילים באזור המרכז", ts: LAST_UPDATE + 10 }),
+      makePost({
+        channel: "@idf_telegram",
+        text: 'צה"ל מודיע על יירוט מוצלח של רוב הטילים באזור המרכז',
+        ts: LAST_UPDATE + 10,
+      }),
     ];
     const { tracking } = buildTracking(posts, SESSION_START, LAST_UPDATE);
     expect(tracking.channelsWithUpdates).toHaveLength(1);
@@ -203,8 +237,16 @@ describe("buildTracking", () => {
 
   it("handles multiple channels independently", () => {
     const posts = [
-      makePost({ channel: "@ch1", text: "intel from ch1", ts: LAST_UPDATE + 10 }),
-      makePost({ channel: "@ch2", text: "intel from ch2", ts: LAST_UPDATE + 20 }),
+      makePost({
+        channel: "@ch1",
+        text: "intel from ch1",
+        ts: LAST_UPDATE + 10,
+      }),
+      makePost({
+        channel: "@ch2",
+        text: "intel from ch2",
+        ts: LAST_UPDATE + 20,
+      }),
     ];
     const { tracking } = buildTracking(posts, SESSION_START, LAST_UPDATE);
     expect(tracking.channelsWithUpdates).toHaveLength(2);
@@ -232,12 +274,12 @@ vi.mock("@easyoref/gramjs", () => ({
   backfillChannelPosts: (...args: unknown[]) => mockBackfill(...args),
 }));
 
-import { filterNode } from "../src/nodes/pre-filter-node.js";
 import {
-  getChannelPosts as _getChannelPosts,
   getActiveSession as _getActiveSession,
+  getChannelPosts as _getChannelPosts,
   getLastUpdateTs as _getLastUpdateTs,
 } from "@easyoref/shared";
+import { filterNode } from "../src/nodes/pre-filter-node.js";
 
 const mockGetChannelPosts = _getChannelPosts as ReturnType<typeof vi.fn>;
 const mockGetActiveSession = _getActiveSession as ReturnType<typeof vi.fn>;
@@ -260,7 +302,6 @@ function makeFilterState(overrides: Record<string, unknown> = {}) {
     filteredInsights: [],
     synthesizedInsights: [],
     votedResult: undefined,
-    clarifyAttempted: false,
     previousInsights: [],
     telegramMessages: [],
     ...overrides,
@@ -276,11 +317,13 @@ describe("filterNode — backfill fallback", () => {
 
   it("triggers backfill when getChannelPosts returns empty", async () => {
     // First call: empty. After backfill: has posts
-    mockGetChannelPosts
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        makePost({ channel: "@N12LIVE", text: "rockets launched", ts: SESSION_START + 100 }),
-      ]);
+    mockGetChannelPosts.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      makePost({
+        channel: "@N12LIVE",
+        text: "rockets launched",
+        ts: SESSION_START + 100,
+      }),
+    ]);
     mockBackfill.mockResolvedValue(1);
 
     const result = await filterNode(makeFilterState());

@@ -24,21 +24,13 @@ import {
   extractModel,
   invokeWithFallback,
 } from "../models.js";
-import { resolveArea } from "../tools/resolve-area.js";
+import { resolveArea } from "../utils/resolve-area.js";
 
 /**
  * Local typed view of InsightType fields that post-filter-node reads.
  * InsightKind is a discriminated union, so we can't directly access
  * location/area/zone/extractionReason at the union level — they are present
- * at runtime (set by the LLM) but not in the base schema.  We model them as
- * optional so TypeScript (and us) know they may be absent.
- */
-/**
- * Local typed view of InsightType fields that post-filter-node reads.
- * InsightKind is a discriminated union, so we can't directly access
- * location/area/zone/extractionReason at the union level — they are present
- * at runtime (set by the LLM) but not in the base schema.  We model them as
- * optional so TypeScript (and us) know they may be absent.
+ * at runtime (set by the LLM) but not in the base schema.
  */
 interface InsightWithExtras extends Omit<InsightType, "kind" | "source"> {
   extractionReason?: string;
@@ -72,6 +64,17 @@ const SourceVerification = z.object({
     ),
 });
 
+// ── Agent options ──────────────────────────────────────────
+
+const postFilterAgentOpts = {
+  model: extractModel,
+  responseFormat: providerStrategy(SourceVerification),
+  systemPrompt: `You verify whether a Telegram channel post actually supports a specific military intelligence claim.
+Given the post text and the extracted insight, determine if the post clearly contains evidence for this claim.
+Be strict: only return supported=true if the claim is clearly present in the post text.
+Also assign sourceTrust: IDF Spokesperson/N12/Kan = 0.9+; known mil channels = 0.7; unknown = 0.4.`,
+};
+
 // ── Node ───────────────────────────────────────────────────
 
 export const postFilterNode = async (
@@ -90,15 +93,6 @@ export const postFilterNode = async (
   const validatedInsights: ValidatedInsight[] = [];
   let validCount = 0;
   let invalidCount = 0;
-
-  const agentOpts = {
-    model: extractModel,
-    responseFormat: providerStrategy(SourceVerification),
-    systemPrompt: `You verify whether a Telegram channel post actually supports a specific military intelligence claim.
-Given the post text and the extracted insight, determine if the post clearly contains evidence for this claim.
-Be strict: only return supported=true if the claim is clearly present in the post text.
-Also assign sourceTrust: IDF Spokesperson/N12/Kan = 0.9+; known mil channels = 0.7; unknown = 0.4.`,
-  };
 
   for (const rawInsight of extractedInsights) {
     // Cast to typed view so we can access LLM-populated optional fields without `as any`
@@ -132,7 +126,7 @@ Also assign sourceTrust: IDF Spokesperson/N12/Kan = 0.9+; known mil channels = 0
     ];
 
     const result = await invokeWithFallback({
-      agentOpts,
+      agentOpts: postFilterAgentOpts,
       fallbackModel: extractFallback,
       input: { messages },
       label: "post-filter-node",
