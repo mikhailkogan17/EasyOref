@@ -44,6 +44,7 @@ FOR EACH INSIGHT also set:
 RULES:
 - Extract ONLY facts explicitly stated in the text. Never guess.
 - ALWAYS extract ETA if any time reference (minutes until impact, or clock time HH:MM) appears. ETA is critical; missing it when the text states a time is a failure.
+- CRITICAL — ETA must be about time-to-impact for THIS attack, NOT inter-attack intervals. Phrases like "within less than an hour" / "בתוך פחות משעה" / "again within X minutes" describing how soon ANOTHER attack happened are NOT ETA. Only extract ETA when the text gives a concrete arrival time for missiles currently in the air.
 - CRITICAL — מצרר vs Egypt: Hebrew "מצרר" (cluster munition) is NOT "מצרים" (Egypt). Do NOT output country_origins "Egypt" / "מצרים" unless the text clearly names Egypt as the launch origin. If the text has מצרר, prefer cluser_munition_used: true instead.
 - If the text states both an origin country and a time, output separate insights for each (do not drop one).
 - If a post says "about 30 rockets" → rocket_count {type:"exact",value:30}

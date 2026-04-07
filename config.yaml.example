@@ -60,7 +60,6 @@ gif_mode: none
 # poll_interval_ms: 2000
 # health_port: 3100
 # data_dir: ./data
-# oref_api_url: https://www.oref.org.il/WarningMessages/alert/alerts.json
 
 # Redis key namespace for multi-instance deployments.
 # When running two instances on the same Redis, set a unique prefix per instance

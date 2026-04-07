@@ -19,11 +19,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@langchain/langgraph": "^1.2.1",
     "@logtail/node": "^0.5.6",
-    "js-yaml": "^4.1.1",
     "ioredis": "^5.3.0",
-    "zod": "^4.3.6",
-    "@langchain/langgraph": "^1.2.1"
+    "js-yaml": "^4.1.1",
+    "pikud-haoref-api": "^5.0.3",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

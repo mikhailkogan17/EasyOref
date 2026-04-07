@@ -160,7 +160,7 @@ export function buildEnrichedMessage(
   const etaVal = getVal("eta_absolute");
   if (etaVal && !isNeuroslop(etaVal) && alertType !== "resolved") {
     const cites = formatCitations(etaInsight!.sourceUrls);
-    enrichLines.push(`\u23F1 ${lp.metaArrival}: ${etaVal}${cites}`);
+    enrichLines.push(`\u23F0 ${lp.metaArrival}: ${etaVal}${cites}`);
   }
 
   // ── Origin ──

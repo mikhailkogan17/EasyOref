@@ -208,7 +208,7 @@ export const sendMetaReply = async (
     if (etaAbsolute) {
       const etaInsight = get("eta_absolute")!;
       const cites = formatCitations(etaInsight.sourceUrls);
-      lines.push(`\u23F1 ${labels.metaArrival}: ${etaAbsolute}${cites}`);
+      lines.push(`\u23F0 ${labels.metaArrival}: ${etaAbsolute}${cites}`);
     }
 
     if (lines.length === 0) continue;

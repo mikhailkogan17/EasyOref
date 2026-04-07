@@ -30,8 +30,6 @@ vi.mock("@easyoref/shared", async () => {
         areaLabels: {},
       },
       botToken: "",
-      orefApiUrl: "https://mock.oref.api/alerts",
-      orefHistoryUrl: "",
       logtailToken: "",
     },
     getRedis: vi.fn().mockReturnValue({ lpush: vi.fn(), expire: vi.fn() }),
@@ -296,7 +294,7 @@ describe("buildEnrichedMessage", () => {
       alertTs,
       insights,
     );
-    expect(result).toContain("\u23F1 Прилёт: ~18:07");
+    expect(result).toContain("\u23F0 Прилёт: ~18:07");
   });
 
   it("does NOT add ETA in resolved phase", () => {

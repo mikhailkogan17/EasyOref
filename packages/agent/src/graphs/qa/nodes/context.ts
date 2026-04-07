@@ -1,15 +1,14 @@
 import {
-  config,
+  fetchActiveAlerts,
+  fetchOrefHistory,
   getActiveSession,
   getSessionPosts,
   getSynthesizedInsights,
   getVotedInsights,
 } from "@easyoref/shared";
 import * as logger from "@easyoref/shared/logger";
-import type { QaState } from "../qa-graph.js";
-
-const OREF_HISTORY_URL =
-  "https://www.oref.org.il/WarningMessages/History/AlertsHistory.json";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
+import type { QaState, QaStatusCallback } from "../qa-graph.js";
 
 const BOT_HELP_TEXT: Record<string, string> = {
   ru: "Привет! Я @easyoref — ваш ИИ-помощник по ракетным обстрелам Израиля.\n\nЯ умею:\n🚨 Рассказать о текущих/последних сиренах\n🔍 Найти подробности атак (кол-во ракет, тип, перехваты)\n📰 Искать информацию в новостных каналах\n🏚 Найти ближайшее укрытие (отправьте геолокацию)\n\nПросто напишите вопрос, например:\n• «Когда была последняя сирена?»\n• «Сколько ракет запустили?»\n• «Были ли кассетные?»",
@@ -24,62 +23,6 @@ const OFF_TOPIC_TEXT: Record<string, string> = {
   he: 'שלום! אני @easyoref — עוזר בינה מלאכותית להתרעות טילים 🇮🇱\n\nאני עונה רק על שאלות לגבי אזעקות, תקיפות טילים, יירוטים ומקלטים.\n\nלמשל:\n• "מתי הייתה האזעקה האחרונה בתל אביב?"\n• "כמה טילים היו?"',
   ar: "مرحبًا! أنا @easyoref — مساعد تنبيهات صاروخية 🇮🇱\n\nأجيب فقط على أسئلة حول صفارات الإنذار والهجمات الصاروخية والاعتراضات والملاجئ.",
 };
-
-/** Fetch Oref alert history (last 24h from their public API). */
-async function fetchOrefHistory(): Promise<string> {
-  const url = config.orefHistoryUrl || OREF_HISTORY_URL;
-  try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        Referer: "https://www.oref.org.il/",
-      },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return "";
-    const data = await res.json();
-    if (!Array.isArray(data)) return "";
-    return data
-      .slice(0, 20)
-      .map(
-        (e: { alertDate?: string; title?: string; data?: string[] }) =>
-          `[${e.alertDate ?? ""}] ${e.title ?? ""}: ${(e.data ?? []).join(", ")}`,
-      )
-      .join("\n");
-  } catch (err) {
-    logger.warn("contextNode: Oref history fetch failed", {
-      error: String(err),
-    });
-    return "";
-  }
-}
-
-/** Fetch current active alerts from Oref API. */
-async function fetchCurrentAlerts(): Promise<string> {
-  try {
-    const res = await fetch(config.orefApiUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        Referer: "https://www.oref.org.il/",
-        "X-Requested-With": "XMLHttpRequest",
-      },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return "";
-    const text = await res.text();
-    if (!text.trim()) return "";
-    const data = JSON.parse(text);
-    if (!Array.isArray(data) || data.length === 0) return "";
-    return data
-      .map(
-        (a: { alertDate?: string; title?: string; data?: string[] }) =>
-          `[ACTIVE ${a.alertDate ?? ""}] ${a.title ?? ""}: ${(a.data ?? []).join(", ")}`,
-      )
-      .join("\n");
-  } catch {
-    return "";
-  }
-}
 
 /** Get recent channel posts from Redis (from GramJS monitoring). */
 async function getRecentChannelNews(): Promise<string> {
@@ -142,8 +85,14 @@ async function getEnrichmentCache(): Promise<string> {
   }
 }
 
-export async function contextNode(state: QaState): Promise<Partial<QaState>> {
+export async function contextNode(
+  state: QaState,
+  config: LangGraphRunnableConfig,
+): Promise<Partial<QaState>> {
   const lang = (state.language ?? "ru") as keyof typeof BOT_HELP_TEXT;
+  const statusCallback = config.configurable?.statusCallback as
+    | QaStatusCallback
+    | undefined;
 
   if (state.intent === "bot_help") {
     return {
@@ -160,14 +109,14 @@ export async function contextNode(state: QaState): Promise<Partial<QaState>> {
   }
 
   // Status callback: searching alerts
-  if (state.statusCallback) {
+  if (statusCallback) {
     const searchMsg: Record<string, string> = {
       ru: "🔎 Проверяю оповещения...",
       en: "🔎 Checking alerts...",
       he: "🔎 בודק התרעות...",
       ar: "🔎 فحص التنبيهات...",
     };
-    await state.statusCallback(searchMsg[lang] ?? searchMsg.ru);
+    await statusCallback(searchMsg[lang] ?? searchMsg.ru);
   }
 
   const parts: string[] = [];
@@ -199,37 +148,49 @@ export async function contextNode(state: QaState): Promise<Partial<QaState>> {
     );
   }
 
-  // 3. Fetch current alerts from Oref API
-  const currentAlerts = await fetchCurrentAlerts();
-  if (currentAlerts) {
-    parts.push(`CURRENT OREF ALERTS:\n${currentAlerts}`);
+  // 3. Fetch current alerts via pikud-haoref-api
+  const currentAlerts = await fetchActiveAlerts();
+  if (currentAlerts.length > 0) {
+    const formatted = currentAlerts
+      .map(
+        (a) =>
+          `[ACTIVE] ${a.instructions ?? a.type}: ${a.cities.join(", ")}`,
+      )
+      .join("\n");
+    parts.push(`CURRENT OREF ALERTS:\n${formatted}`);
   }
 
-  // 4. Fetch Oref history
-  if (state.statusCallback) {
+  // 4. Fetch Oref history (full, no 120s filter)
+  if (statusCallback) {
     const histMsg: Record<string, string> = {
       ru: "🔎 Поиск в истории оповещений...",
       en: "🔎 Searching alert history...",
       he: "🔎 חיפוש בהיסטוריית ההתרעות...",
       ar: "🔎 البحث في سجل التنبيهات...",
     };
-    await state.statusCallback(histMsg[lang] ?? histMsg.ru);
+    await statusCallback(histMsg[lang] ?? histMsg.ru);
   }
 
   const history = await fetchOrefHistory();
-  if (history) parts.push(`OREF ALERT HISTORY (last 24h):\n${history}`);
+  if (history.length > 0) {
+    const formatted = history
+      .slice(0, 50)
+      .map((e) => `[${e.alertDate}] ${e.title}: ${e.data}`)
+      .join("\n");
+    parts.push(`OREF ALERT HISTORY (last 24h):\n${formatted}`);
+  }
 
   // 5. Fetch channel news from Redis
   const news = await getRecentChannelNews();
   if (news) {
-    if (state.statusCallback) {
+    if (statusCallback) {
       const newsMsg: Record<string, string> = {
         ru: "🔎 Поиск по новостным каналам...",
         en: "🔎 Searching news channels...",
         he: "🔎 חיפוש בערוצי חדשות...",
         ar: "🔎 البحث في القنوات الإخبارية...",
       };
-      await state.statusCallback(newsMsg[lang] ?? newsMsg.ru);
+      await statusCallback(newsMsg[lang] ?? newsMsg.ru);
     }
     parts.push(`NEWS CHANNEL POSTS (from Telegram monitoring):\n${news}`);
   }

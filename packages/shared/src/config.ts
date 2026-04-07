@@ -213,14 +213,6 @@ export const config = {
   /** Health endpoint port */
   healthPort: yml.health_port ?? 3100,
 
-  /** Oref API URL */
-  orefApiUrl:
-    yml.oref_api_url ??
-    "https://www.oref.org.il/WarningMessages/alert/alerts.json",
-
-  /** Oref alert history URL (base, without date params) */
-  orefHistoryUrl: yml.oref_history_url ?? "",
-
   /** Better Stack Logtail token */
   logtailToken: yml.observability?.betterstack_token ?? "",
 

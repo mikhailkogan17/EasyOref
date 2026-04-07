@@ -12,6 +12,7 @@
 import { config, getActiveAlert, pushChannelPost } from "@easyoref/shared";
 import * as logger from "@easyoref/shared/logger";
 import { Api, TelegramClient } from "telegram";
+import { EditedMessage } from "telegram/events/EditedMessage.js";
 import { NewMessage } from "telegram/events/index.js";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
 import { StringSession } from "telegram/sessions/index.js";
@@ -262,13 +263,23 @@ export async function startMonitor(): Promise<void> {
     });
   }, new NewMessage({}));
 
+  // Subscribe to edited messages (channels often edit posts with updates)
+  _client.addEventHandler(async (event: NewMessageEvent) => {
+    await handleNewMessage(event, true).catch((err) => {
+      logger.warn("GramJS: edited handler error", { error: String(err) });
+    });
+  }, new EditedMessage({}));
+
   logger.info("GramJS: monitoring channels", {
     public: MONITORED_CHANNELS.length,
     private: PRIVATE_CHANNELS.length,
   });
 }
 
-async function handleNewMessage(event: NewMessageEvent): Promise<void> {
+async function handleNewMessage(
+  event: NewMessageEvent,
+  isEdit = false,
+): Promise<void> {
   const msg = event.message;
   if (!msg?.text || !msg.peerId) {
     logger.debug("GramJS: skipped message (no text or peerId)");
@@ -371,11 +382,12 @@ async function handleNewMessage(event: NewMessageEvent): Promise<void> {
     messageUrl,
   });
 
-  logger.info("GramJS: stored channel post", {
+  logger.info(`GramJS: stored channel post${isEdit ? " (edited)" : ""}`, {
     channel,
     alertId: active.alertId,
     text_len: msg.text.length,
     private: isPrivate,
+    edited: isEdit,
   });
 }
 

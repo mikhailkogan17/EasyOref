@@ -32,12 +32,9 @@ export const QaState = new StateSchema({
   context: z.string().default(""),
   answer: z.string().default(""),
   sources: z.array(z.string()).default([]),
-  // statusCallback is not serializable — passed via runtime but not part of graph state schema
 });
 
-export type QaState = typeof QaState.State & {
-  statusCallback?: QaStatusCallback;
-};
+export type QaState = typeof QaState.State;
 
 const buildQaGraph = () =>
   new StateGraph(QaState)
@@ -66,16 +63,18 @@ export async function runQa(
   const user = await getUser(chatId);
   const language = user?.language ?? "ru";
 
-  const result = await qaGraph.invoke({
-    userMessage,
-    chatId,
-    language,
-    intent: "general_security",
-    context: "",
-    answer: "",
-    sources: [],
-    statusCallback,
-  } as any);
+  const result = await qaGraph.invoke(
+    {
+      userMessage,
+      chatId,
+      language,
+      intent: "general_security",
+      context: "",
+      answer: "",
+      sources: [],
+    },
+    { configurable: { statusCallback } },
+  );
 
   return result.answer || "No answer available.";
 }

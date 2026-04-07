@@ -26,6 +26,7 @@ import {
   clearSession,
   closeRedis,
   config,
+  fetchActiveAlerts,
   getActiveSession,
   getAllUsers,
   getLanguagePack,
@@ -33,14 +34,18 @@ import {
   getSynthesizedInsights,
   initLangSmithTracing,
   initTranslations,
+  loadCooldownState,
   PHASE_ENRICH_DELAY_MS,
   PHASE_INITIAL_DELAY_MS,
   RESOLVED_RUN_OFFSETS_MS,
   saveAlertMeta,
+  saveCooldownState,
   setActiveSession,
+  textHash,
   translateAreas,
   type ActiveSessionType as ActiveSession,
   type Language,
+  type PikudAlert,
   type TelegramMessageType as TelegramMessage,
   type UserConfigType as UserConfig,
 } from "@easyoref/shared";
@@ -133,11 +138,26 @@ const COOLDOWN_RED_ALERT_MS = 90 * 1000; // 1.5 min (no prior early warning)
 const COOLDOWN_RED_ALERT_AFTER_EARLY_MS = 3 * 60 * 1000; // 3 min (early warning already sent)
 const COOLDOWN_RESOLVED_MS = 5 * 60 * 1000; // 5 min
 
-const lastSent: Record<AlertType, number> = {
+let lastSent: Record<AlertType, number> = {
   early_warning: 0,
   red_alert: 0,
   resolved: 0,
 };
+
+/** Load cooldown state from Redis on startup (survives restart). */
+async function initCooldownState(): Promise<void> {
+  try {
+    lastSent = await loadCooldownState();
+    const nonZero = Object.entries(lastSent).filter(([, v]) => v > 0);
+    if (nonZero.length > 0) {
+      logger.info("Cooldown state restored from Redis", {
+        entries: nonZero.map(([k, v]) => `${k}=${Date.now() - v}ms ago`),
+      });
+    }
+  } catch {
+    // Non-critical — start with zeros if Redis fails
+  }
+}
 
 function shouldSend(type: AlertType): boolean {
   const elapsed = Date.now() - lastSent[type];
@@ -170,18 +190,9 @@ function markSent(type: AlertType): void {
   }
   // After early_warning → allow resolved
   if (type === "early_warning") lastSent.resolved = 0;
-}
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Types
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-interface OrefAlert {
-  id: string;
-  cat: string;
-  title: string;
-  data: string[];
-  desc: string;
+  // Persist to Redis (fire-and-forget, non-blocking)
+  saveCooldownState(lastSent).catch(() => {});
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -190,60 +201,11 @@ interface OrefAlert {
 
 const seenAlerts = new Set<string>();
 
-async function fetchAlerts(): Promise<OrefAlert[]> {
-  const t0 = Date.now();
-  try {
-    const res = await fetch(config.orefApiUrl, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "X-Requested-With": "XMLHttpRequest",
-        Referer: "https://www.oref.org.il/",
-        Accept: "application/json, text/plain, */*",
-      },
-    });
-
-    const ms = Date.now() - t0;
-
-    if (!res.ok) {
-      logger.warn("Oref API error", { status: res.status, ms });
-      return [];
-    }
-
-    const text = await res.text();
-    if (!text.trim()) {
-      logger.debug("Oref poll — quiet", { status: res.status, ms, raw: text });
-      return [];
-    }
-
-    const parsed: unknown = JSON.parse(text);
-
-    if (Array.isArray(parsed)) {
-      logger.info("Oref poll — alerts received", {
-        count: parsed.length,
-        ms,
-        raw: text.slice(0, 2000),
-      });
-      return parsed;
-    }
-
-    if (parsed && typeof parsed === "object" && "id" in parsed) {
-      logger.info("Oref poll — single alert", {
-        ms,
-        raw: text.slice(0, 2000),
-      });
-      return [parsed as OrefAlert];
-    }
-
-    logger.warn("Oref unexpected response", { raw: text.slice(0, 500), ms });
-    return [];
-  } catch (err) {
-    logger.warn("Oref fetch failed", {
-      error: String(err),
-      ms: Date.now() - t0,
-    });
-    return [];
-  }
+/** Deterministic ID for dedup when pikud-haoref-api returns no id (history fallback). */
+function alertDedupKey(alert: PikudAlert): string {
+  return (
+    alert.id ?? textHash([alert.type, ...alert.cities.sort()].join("|"))
+  );
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -490,26 +452,27 @@ async function sendTelegram(
 // Alert Processing
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async function processAlert(alert: OrefAlert): Promise<void> {
+async function processAlert(alert: PikudAlert): Promise<void> {
+  const dedupKey = alertDedupKey(alert);
   // ── Load all registered users and find those matching this alert's areas ──
   const allUsers = await getAllUsers();
-  const matchedUsers = allUsers.filter((u) => userMatchesAlert(u, alert.data));
+  const matchedUsers = allUsers.filter((u) => userMatchesAlert(u, alert.cities));
 
   if (matchedUsers.length === 0) {
     logger.info("Alert — no users matched area", {
-      alert_id: alert.id,
-      areas_he: alert.data,
+      alert_id: dedupKey,
+      areas_he: alert.cities,
     });
     return;
   }
 
-  const alertType = classifyAlertType(alert.title);
+  const alertType = classifyAlertType(alert.instructions ?? "");
 
   // Filter by configured alert types
   const cfgKey = ALERT_TYPE_TO_CONFIG[alertType];
   if (!config.alertTypes.includes(cfgKey)) {
     logger.info("Alert type filtered out by config", {
-      alert_id: alert.id,
+      alert_id: dedupKey,
       type: alertType,
       config_key: cfgKey,
     });
@@ -517,19 +480,19 @@ async function processAlert(alert: OrefAlert): Promise<void> {
   }
 
   const areas = matchedUsers[0]
-    ? userMatchedLabel(matchedUsers[0], alert.data)
-    : alert.data.slice(0, 3).join(", ");
+    ? userMatchedLabel(matchedUsers[0], alert.cities)
+    : alert.cities.slice(0, 3).join(", ");
 
   logger.info("Alert — RELEVANT", {
-    alert_id: alert.id,
+    alert_id: dedupKey,
     type: alertType,
-    areas_he: alert.data,
+    areas_he: alert.cities,
     matched_users: matchedUsers.length,
   });
 
   if (!shouldSend(alertType)) {
     logger.info("Cooldown active, skipping Telegram", {
-      alert_id: alert.id,
+      alert_id: dedupKey,
       type: alertType,
     });
     return;
@@ -583,7 +546,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
       const isPro = user.tier === "pro";
 
       const lang = (user.language ?? "ru") as Language;
-      const userAreaLabel = userMatchedLabel(user, alert.data);
+      const userAreaLabel = userMatchedLabel(user, alert.cities);
       let message = formatMessage(alertType, userAreaLabel, lang);
 
       // Only pro users get carry-forward enrichment pre-populated
@@ -620,13 +583,13 @@ async function processAlert(alert: OrefAlert): Promise<void> {
 
       // Save meta for this alert (primary chat; English canonical text)
       await saveAlertMeta({
-        alertId: alert.id,
+        alertId: dedupKey,
         messageId: primary.messageId,
         chatId: primary.chatId,
         isCaption: primary.isCaption,
         alertTs,
         alertType,
-        alertAreas: alert.data,
+        alertAreas: alert.cities,
         currentText: baseMessage,
       });
 
@@ -637,7 +600,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
             ...existingSession,
             phase: "resolved",
             phaseStartTs: Date.now(),
-            latestAlertId: alert.id,
+            latestAlertId: dedupKey,
             latestMessageId: primary.messageId,
             latestAlertTs: alertTs,
             chatId: primary.chatId,
@@ -648,14 +611,14 @@ async function processAlert(alert: OrefAlert): Promise<void> {
           };
           await setActiveSession(updated);
           const delay = RESOLVED_RUN_OFFSETS_MS[0];
-          await enqueueEnrich(alert.id, alertTs, delay);
+          await enqueueEnrich(dedupKey, alertTs, delay);
           logger.info("Session: entered resolved phase", {
             sessionId: existingSession.sessionId,
-            alertId: alert.id,
+            alertId: dedupKey,
           });
         } else {
           logger.info("Resolved alert without active session — no enrichment", {
-            alert_id: alert.id,
+            alert_id: dedupKey,
           });
         }
       } else {
@@ -666,14 +629,14 @@ async function processAlert(alert: OrefAlert): Promise<void> {
             ...existingSession,
             phase: alertType,
             phaseStartTs: Date.now(),
-            latestAlertId: alert.id,
+            latestAlertId: dedupKey,
             latestMessageId: primary.messageId,
             latestAlertTs: alertTs,
             chatId: primary.chatId,
             isCaption: primary.isCaption,
             currentText: baseMessage,
             baseText: baseMessage,
-            alertAreas: alert.data,
+            alertAreas: alert.cities,
             telegramMessages,
           };
           await setActiveSession(updated);
@@ -681,7 +644,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
             sessionId: existingSession.sessionId,
             from: existingSession.phase,
             to: alertType,
-            alertId: alert.id,
+            alertId: dedupKey,
           });
         } else {
           // New session (or previous one was in resolved — start fresh)
@@ -689,36 +652,36 @@ async function processAlert(alert: OrefAlert): Promise<void> {
             await clearSession();
           }
           const session: ActiveSession = {
-            sessionId: alert.id,
+            sessionId: dedupKey,
             sessionStartTs: alertTs,
             phase: alertType,
             phaseStartTs: alertTs,
-            latestAlertId: alert.id,
+            latestAlertId: dedupKey,
             latestMessageId: primary.messageId,
             latestAlertTs: alertTs,
             chatId: primary.chatId,
             isCaption: primary.isCaption,
             currentText: baseMessage,
             baseText: baseMessage,
-            alertAreas: alert.data,
+            alertAreas: alert.cities,
             telegramMessages,
           };
           await setActiveSession(session);
           logger.info("Session: started", {
-            sessionId: alert.id,
+            sessionId: dedupKey,
             phase: alertType,
             chatCount: telegramMessages.length,
           });
         }
 
         const delay = PHASE_INITIAL_DELAY_MS[alertType];
-        await enqueueEnrich(alert.id, alertTs, delay);
+        await enqueueEnrich(dedupKey, alertTs, delay);
       }
     }
   } catch (err) {
     logger.error("Alert send/store failed", {
       error: String(err),
-      alert_id: alert.id,
+      alert_id: dedupKey,
     });
   }
 }
@@ -794,6 +757,7 @@ async function main(): Promise<void> {
   });
 
   initGifState(config.dataDir);
+  await initCooldownState();
   bot = initBot();
   if (bot) {
     initDefaultAreas();
@@ -842,10 +806,11 @@ async function main(): Promise<void> {
   // Poll loop
   setInterval(async () => {
     try {
-      const alerts = await fetchAlerts();
+      const alerts = await fetchActiveAlerts();
       for (const alert of alerts) {
-        if (seenAlerts.has(alert.id)) continue;
-        seenAlerts.add(alert.id);
+        const key = alertDedupKey(alert);
+        if (seenAlerts.has(key)) continue;
+        seenAlerts.add(key);
         await processAlert(alert);
       }
     } catch (err) {

@@ -489,16 +489,16 @@ Modified `buildTracking()` in `pre-filter-node.ts` to re-surface channels that h
 
 ### Files Modified
 
-| File | Changes |
-|------|---------|
-| `packages/shared/src/schemas.ts` | `TelegramMessage.baseText`, `RunEnrichmentInput.sessionStartTs` |
-| `packages/shared/src/store.ts` | `saveSynthesizedInsights()`, `getSynthesizedInsights()` |
-| `packages/agent/src/graphs/enrichment/nodes/edit.ts` | Per-user baseText, sendMetaReply for non-resolved, saveSynthesizedInsights |
-| `packages/bot/src/bot.ts` | getSynthesizedInsights carry-forward, free groups allowed, per-user baseText |
-| `packages/agent/src/graphs/enrichment/nodes/synthesize.ts` | ETA pass-through (no absolute conversion) |
-| `packages/agent/src/graphs/enrichment/enrichment-graph.ts` | sessionStartTs in AgentState |
-| `packages/agent/src/runtime/worker.ts` | sessionStartTs passthrough |
-| `packages/agent/__tests__/edit-node.test.ts` | Updated for sendMetaReply firing on red_alert, added saveSynthesizedInsights mock |
+| File                                                       | Changes                                                                           |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `packages/shared/src/schemas.ts`                           | `TelegramMessage.baseText`, `RunEnrichmentInput.sessionStartTs`                   |
+| `packages/shared/src/store.ts`                             | `saveSynthesizedInsights()`, `getSynthesizedInsights()`                           |
+| `packages/agent/src/graphs/enrichment/nodes/edit.ts`       | Per-user baseText, sendMetaReply for non-resolved, saveSynthesizedInsights        |
+| `packages/bot/src/bot.ts`                                  | getSynthesizedInsights carry-forward, free groups allowed, per-user baseText      |
+| `packages/agent/src/graphs/enrichment/nodes/synthesize.ts` | ETA pass-through (no absolute conversion)                                         |
+| `packages/agent/src/graphs/enrichment/enrichment-graph.ts` | sessionStartTs in AgentState                                                      |
+| `packages/agent/src/runtime/worker.ts`                     | sessionStartTs passthrough                                                        |
+| `packages/agent/__tests__/edit-node.test.ts`               | Updated for sendMetaReply firing on red_alert, added saveSynthesizedInsights mock |
 
 ### ETA Design Decision
 
@@ -532,6 +532,42 @@ Origin-only meta reply now fires: `Откуда: Иран¹²³`.
 
 ---
 
+## Postmortem — April 7 2026 Attack (18:37) — 4 Bugs
+
+### Context
+
+Attack at 18:37 IDT. Bot was running v2.0.4, `npm run release:major` (v3.0.0 deploy) triggered mid-attack at 18:37:21 → PID changed from 17744 to 32148.
+
+### Bug #1: Duplicate early_warning on restart (cooldown lost)
+
+- **Root Cause:** `lastSent` cooldown timestamps were in-memory only. Process restart (PID 17744 → 32148 at 18:37:21) reset all cooldowns to zero. PID 32148 sent second early_warning at 18:37:29 (28s after first).
+- **Fix:** `lastSent` now persists to Redis via `saveCooldownState()` / `loadCooldownState()` in store.ts. `markSent()` fires `saveCooldownState()` (fire-and-forget). `initCooldownState()` loads on startup in main().
+- **Files:** `packages/shared/src/store.ts` (new: `saveCooldownState`, `loadCooldownState`), `packages/bot/src/bot.ts` (import new funcs, add `initCooldownState()`, persist in `markSent()`)
+
+### Bug #2: GramJS not processing edited messages
+
+- **Root Cause:** Only `NewMessage` event handler registered. @TrueIsrael edited a message at 18:36 with concrete data (2 rockets, one cluster munition, target Gush Dan) — completely missed.
+- **Fix:** Added `EditedMessage` event handler from `telegram/events/EditedMessage.js`. Reuses `handleNewMessage()` with `isEdit` flag for logging.
+- **Files:** `packages/gramjs/src/index.ts` (import `EditedMessage`, add handler, `isEdit` param)
+
+### Bug #3: ETA "~60 мин" hallucinated from noise
+
+- **Root Cause:** @moriahdoron posted "שוב ירי מאיראן למרכז בתוך פחות משעה" = "Again fire from Iran to center within less than an hour" — describes inter-attack interval, NOT missile ETA. Fallback model extracted `eta: {kind:"minutes", minutes:60}`.
+- **Fix:** Added explicit rule to extract prompt: "ETA must be about time-to-impact for THIS attack, NOT inter-attack intervals. 'within less than an hour' / 'בתוך פחות משעה' describing how soon another attack happened are NOT ETA."
+- **Files:** `packages/agent/src/graphs/enrichment/nodes/extract.ts` (prompt update)
+
+### Bug #4: ETA emoji renders as text symbol
+
+- **Root Cause:** `\u23F1` (U+23F1 STOPWATCH) renders as a text symbol on Telegram without variation selector `\uFE0F`.
+- **Fix:** Changed to `\u23F0` (U+23F0 ALARM CLOCK) which always renders as emoji.
+- **Files:** `packages/agent/src/utils/message.ts`, `packages/agent/src/graphs/enrichment/nodes/edit.ts`, `packages/agent/__tests__/graph.test.ts`
+
+### Tests
+
+- **258 tests** across 17 test files — 254 passed, 4 skipped (integration, need API key)
+
+---
+
 ## Resolved Phase Timing — v2.0.3
 
 ### Change: Offset-based resolved enrichment (2/10/20 min)
@@ -561,16 +597,17 @@ ai:
 
 ## Version History (Recent)
 
-| Version | Date       | Changes                                                         |
-| ------- | ---------- | --------------------------------------------------------------- |
-| v2.0.5  | 2026-04-07 | fix: duplicate red_alert cooldown, synthesis empty-retry, recursionLimit 10 |
-| v2.0.4  | 2026-04-07 | fix: Q&A pipeline rewrite — 5 data sources, 30s timeout, off_topic, emoji keys, no blockquote |
-| v2.0.3  | 2026-04-07 | fix: sendMetaReply fires on origin-only; resolved timing 2/10/20min offsets |
+| Version | Date       | Changes                                                                                              |
+| ------- | ---------- | ---------------------------------------------------------------------------------------------------- |
+| v2.0.6  | 2026-04-07 | fix: cooldown persists to Redis, GramJS EditedMessage, ETA noise guard, emoji ⏱→⏰                    |
+| v2.0.5  | 2026-04-07 | fix: duplicate red_alert cooldown, synthesis empty-retry, recursionLimit 10                          |
+| v2.0.4  | 2026-04-07 | fix: Q&A pipeline rewrite — 5 data sources, 30s timeout, off_topic, emoji keys, no blockquote        |
+| v2.0.3  | 2026-04-07 | fix: sendMetaReply fires on origin-only; resolved timing 2/10/20min offsets                          |
 | v2.0.2  | 2026-04-07 | fix: 5 bugs from April 7 attack — ETA pass-through, language, carry-forward, meta reply, free groups |
-| v1.27.6 | 2026-04-04 | fix: re-surface watermarked posts for retry extraction          |
-| v1.27.5 | 2026-04-03 | feat: add @stranacoil channel + noise filter rejection tracking |
-| v1.27.4 | 2026-04-02 | fix: 5 critical bugs from April 2 attack postmortem             |
-| v1.27.1 | 2026-04-02 | RPi verification baseline                                       |
+| v1.27.6 | 2026-04-04 | fix: re-surface watermarked posts for retry extraction                                               |
+| v1.27.5 | 2026-04-03 | feat: add @stranacoil channel + noise filter rejection tracking                                      |
+| v1.27.4 | 2026-04-02 | fix: 5 critical bugs from April 2 attack postmortem                                                  |
+| v1.27.1 | 2026-04-02 | RPi verification baseline                                                                            |
 
 ### RPi Current State (2026-04-04)
 
@@ -841,11 +878,11 @@ Phase 8 ✅ (Config + Release)
 
 After v2.0.0 is running on RPi, configure chats by sending `/start` in each:
 
-| Chat | Type | /start command | Then |
-|------|------|---------------|------|
-| `-1002720800303` | Group | `/start ru` | `/grant -1002720800303` (from admin) |
-| `1929063904` | Private | `/start ru` | `/grant 1929063904` (self, admin) |
-| `-1003872506387` | Group | `/start en` | `/grant -1003872506387` (from admin) |
+| Chat             | Type    | /start command | Then                                 |
+| ---------------- | ------- | -------------- | ------------------------------------ |
+| `-1002720800303` | Group   | `/start ru`    | `/grant -1002720800303` (from admin) |
+| `1929063904`     | Private | `/start ru`    | `/grant 1929063904` (self, admin)    |
+| `-1003872506387` | Group   | `/start en`    | `/grant -1003872506387` (from admin) |
 
 **Admin flow:**
 1. Add bot to each group chat
@@ -866,10 +903,10 @@ Response came **9 minutes later** with generic "no data" answer.
 
 ### LangSmith Trace (019d6826-361d-7188-8a5b-1e738f80e606)
 
-| Node | Start | End | Duration | Issue |
-|------|-------|-----|----------|-------|
-| `intent-classify` | 13:33:48.028 | 13:33:48.039 | 11ms | ✅ OK — classified `current_alert` |
-| `context-gather` | 13:33:48.046 | 13:33:48.057 | 11ms | ❌ Returned `"No active alert at the moment."` only |
+| Node              | Start        | End          | Duration     | Issue                                                    |
+| ----------------- | ------------ | ------------ | ------------ | -------------------------------------------------------- |
+| `intent-classify` | 13:33:48.028 | 13:33:48.039 | 11ms         | ✅ OK — classified `current_alert`                        |
+| `context-gather`  | 13:33:48.046 | 13:33:48.057 | 11ms         | ❌ Returned `"No active alert at the moment."` only       |
 | `answer-generate` | 13:33:48.062 | 13:42:43.673 | **8min 55s** | ❌ `withStructuredOutput()` hung → fallback after timeout |
 
 - `ChatOpenRouterStructuredOutput` (13:33:48 → 13:42:39): 8m52s → `TypeError: terminated` (connection abort)
@@ -889,19 +926,19 @@ Response came **9 minutes later** with generic "no data" answer.
 
 ### Fixes (v2.0.4)
 
-| Fix | File | Change |
-|-----|------|--------|
-| Context: 5 data sources | `context.ts` | Rewrote to fetch: active session + enrichment cache + current Oref API + Oref history + channel posts from Redis |
-| Context: status callbacks | `context.ts` | Sends "🔎 Checking alerts..." / "🔎 Searching history..." status messages via `statusCallback` |
-| Context: off_topic guard | `context.ts` + `intent.ts` | New `off_topic` intent — polite rejection for non-security questions |
-| Answer: 30s timeout | `answer.ts` | `AbortSignal.timeout(30_000)` on both structured output and fallback LLM calls |
-| Answer: [[channel]](url) citations | `answer.ts` | System prompt instructs LLM to use `[[channel_name]](url)` format |
-| Bot: typing indicator loop | `qa.ts` | Sends typing action every 4s while processing |
-| Bot: group chat support | `qa.ts` | Q&A works in groups when bot is @mentioned or replied to |
-| Inline: link preview disabled | `inline.ts` | `link_preview_options: { is_disabled: true }` in Q&A answers |
-| Enrichment: emoji keys | `message.ts` + `edit.ts` | Replaced `<b>Key:</b>` with emoji-prefixed keys (⏱🌍🚀🛡💥🏥) |
-| Enrichment: no blockquote | `message.ts` | Removed `<blockquote>` wrapping for all phases — plain text enrichment lines |
-| Intent: broader patterns | `intent.ts` | Added `history|yesterday|happened|вчера|прошл|истори|было|произош|אתמול|שבוע` to SECURITY_PATTERNS |
+| Fix                                | File                       | Change                                                                                                           |
+| ---------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Context: 5 data sources            | `context.ts`               | Rewrote to fetch: active session + enrichment cache + current Oref API + Oref history + channel posts from Redis |
+| Context: status callbacks          | `context.ts`               | Sends "🔎 Checking alerts..." / "🔎 Searching history..." status messages via `statusCallback`                     |
+| Context: off_topic guard           | `context.ts` + `intent.ts` | New `off_topic` intent — polite rejection for non-security questions                                             |
+| Answer: 30s timeout                | `answer.ts`                | `AbortSignal.timeout(30_000)` on both structured output and fallback LLM calls                                   |
+| Answer: [[channel]](url) citations | `answer.ts`                | System prompt instructs LLM to use `[[channel_name]](url)` format                                                |
+| Bot: typing indicator loop         | `qa.ts`                    | Sends typing action every 4s while processing                                                                    |
+| Bot: group chat support            | `qa.ts`                    | Q&A works in groups when bot is @mentioned or replied to                                                         |
+| Inline: link preview disabled      | `inline.ts`                | `link_preview_options: { is_disabled: true }` in Q&A answers                                                     |
+| Enrichment: emoji keys             | `message.ts` + `edit.ts`   | Replaced `<b>Key:</b>` with emoji-prefixed keys (⏱🌍🚀🛡💥🏥)                                                         |
+| Enrichment: no blockquote          | `message.ts`               | Removed `<blockquote>` wrapping for all phases — plain text enrichment lines                                     |
+| Intent: broader patterns           | `intent.ts`                | Added `history                                                                                                   | yesterday | happened | вчера | прошл | истори | было | произош | אתמול | שבוע` to SECURITY_PATTERNS |
 
 ### Tests
 
@@ -966,10 +1003,10 @@ Response came **9 minutes later** with generic "no data" answer.
 
 ### Files Modified
 
-| File | Change |
-|------|--------|
-| `packages/bot/src/bot.ts` | Remove `lastSent.early_warning = 0` from `markSent("red_alert")` |
-| `packages/agent/src/models.ts` | Add `recursionLimit: 10` to both primary and fallback `createAgent()` calls |
+| File                                                       | Change                                                                           |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `packages/bot/src/bot.ts`                                  | Remove `lastSent.early_warning = 0` from `markSent("red_alert")`                 |
+| `packages/agent/src/models.ts`                             | Add `recursionLimit: 10` to both primary and fallback `createAgent()` calls      |
 | `packages/agent/src/graphs/enrichment/nodes/synthesize.ts` | Retry with fallback model when primary returns empty fields but consensus exists |
 
 ### Tests

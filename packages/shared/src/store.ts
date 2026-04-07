@@ -455,3 +455,29 @@ export async function getUsersByArea(area: string): Promise<string[]> {
   const redis = getRedis();
   return redis.smembers(`${AREA_INDEX_PREFIX}${area}`);
 }
+
+// ── Alert cooldown state (survives process restart) ────
+
+const COOLDOWN_KEY = "bot:cooldown";
+const COOLDOWN_TTL_S = 10 * 60; // 10 min — covers worst-case cooldown window
+
+export type CooldownState = Record<AlertType, number>;
+
+/**
+ * Persist lastSent timestamps to Redis so cooldown state survives restarts.
+ */
+export async function saveCooldownState(state: CooldownState): Promise<void> {
+  const redis = getRedis();
+  await redis.setex(COOLDOWN_KEY, COOLDOWN_TTL_S, JSON.stringify(state));
+}
+
+/**
+ * Load cooldown timestamps from Redis.
+ * Returns all-zero state if nothing stored (first boot).
+ */
+export async function loadCooldownState(): Promise<CooldownState> {
+  const redis = getRedis();
+  const raw = await redis.get(COOLDOWN_KEY);
+  if (!raw) return { early_warning: 0, red_alert: 0, resolved: 0 };
+  return JSON.parse(raw) as CooldownState;
+}

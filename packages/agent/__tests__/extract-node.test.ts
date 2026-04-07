@@ -28,8 +28,6 @@ vi.mock("@easyoref/shared", async () => {
         areaLabels: {},
       },
       botToken: "",
-      orefApiUrl: "https://mock.oref.api/alerts",
-      orefHistoryUrl: "",
       logtailToken: "",
     },
     getRedis: vi.fn().mockReturnValue({ lpush: vi.fn(), expire: vi.fn() }),

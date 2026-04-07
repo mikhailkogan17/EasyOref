@@ -98,8 +98,6 @@ vi.mock("@easyoref/shared", async () => {
       },
       botToken: "",
       chatId: "",
-      orefApiUrl: "",
-      orefHistoryUrl: "",
       logtailToken: "",
     },
     getRedis: vi.fn().mockReturnValue({
