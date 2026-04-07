@@ -123,6 +123,7 @@ export function startEnrichWorker(): void {
         isCaption: session.isCaption,
         telegramMessages,
         currentText: session.baseText ?? session.currentText,
+        sessionStartTs: session.sessionStartTs,
       });
 
       // Advance watermark

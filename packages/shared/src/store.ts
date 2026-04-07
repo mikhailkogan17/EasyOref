@@ -22,6 +22,7 @@ import type {
   AlertType,
   ChannelPostType,
   EnrichmentType,
+  SynthesizedInsightType,
   UserConfigType,
   VotedInsightType,
 } from "./schemas.js";
@@ -34,6 +35,7 @@ type ActiveSession = ActiveSessionType;
 type Enrichment = EnrichmentType;
 type VotedInsight = VotedInsightType;
 type UserConfig = UserConfigType;
+type SynthesizedInsight = SynthesizedInsightType;
 
 //  version for migration handling
 export const SCHEMA_VERSION = "2.0.0";
@@ -243,6 +245,35 @@ export async function getVotedInsights(): Promise<VotedInsight[]> {
   const redis = getRedis();
   const raw = await redis.get(VOTED_INSIGHTS_KEY);
   return raw ? (JSON.parse(raw) as VotedInsight[]) : [];
+}
+
+// ── Synthesized insights (for carry-forward to resolved phase) ──
+
+const SYNTHESIZED_INSIGHTS_KEY = "session:synthesized_insights";
+
+/**
+ * Save the latest SynthesizedInsight[] so the resolved phase can
+ * pre-populate its message with enrichment from red_alert/early_warning.
+ */
+export async function saveSynthesizedInsights(
+  insights: SynthesizedInsight[],
+): Promise<void> {
+  const redis = getRedis();
+  await redis.setex(
+    SYNTHESIZED_INSIGHTS_KEY,
+    SESSION_TTL_S,
+    JSON.stringify(insights),
+  );
+}
+
+/**
+ * Load previously saved SynthesizedInsight[] for carry-forward.
+ * Returns empty array if nothing stored.
+ */
+export async function getSynthesizedInsights(): Promise<SynthesizedInsight[]> {
+  const redis = getRedis();
+  const raw = await redis.get(SYNTHESIZED_INSIGHTS_KEY);
+  return raw ? (JSON.parse(raw) as SynthesizedInsight[]) : [];
 }
 
 // ── Last update timestamp (tracks when last enrichment job ran) ──

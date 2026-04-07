@@ -107,9 +107,7 @@ describe("admin command handlers", () => {
     const ctx = makeCtx(111111, "222222");
     await bot.trigger("grant", ctx);
     expect(mockSetUserTier).toHaveBeenCalledWith("222222", "pro");
-    expect(ctx.reply).toHaveBeenCalledWith(
-      expect.stringContaining("Pro"),
-    );
+    expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining("Pro"));
   });
 
   it("/grant rejects non-admin", async () => {
@@ -120,9 +118,7 @@ describe("admin command handlers", () => {
     const ctx = makeCtx(999999, "222222");
     await bot.trigger("grant", ctx);
     expect(mockSetUserTier).not.toHaveBeenCalled();
-    expect(ctx.reply).toHaveBeenCalledWith(
-      expect.stringContaining("доступа"),
-    );
+    expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining("доступа"));
   });
 
   it("/grant replies not found when user missing", async () => {
@@ -133,9 +129,7 @@ describe("admin command handlers", () => {
 
     const ctx = makeCtx(111111, "999");
     await bot.trigger("grant", ctx);
-    expect(ctx.reply).toHaveBeenCalledWith(
-      expect.stringContaining("999"),
-    );
+    expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining("999"));
   });
 
   it("/revoke downgrades user to free (admin)", async () => {
@@ -147,9 +141,7 @@ describe("admin command handlers", () => {
     const ctx = makeCtx(111111, "222222");
     await bot.trigger("revoke", ctx);
     expect(mockSetUserTier).toHaveBeenCalledWith("222222", "free");
-    expect(ctx.reply).toHaveBeenCalledWith(
-      expect.stringContaining("Free"),
-    );
+    expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining("Free"));
   });
 
   it("/revoke rejects non-admin", async () => {
@@ -160,9 +152,7 @@ describe("admin command handlers", () => {
     const ctx = makeCtx(999999, "222222");
     await bot.trigger("revoke", ctx);
     expect(mockSetUserTier).not.toHaveBeenCalled();
-    expect(ctx.reply).toHaveBeenCalledWith(
-      expect.stringContaining("доступа"),
-    );
+    expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining("доступа"));
   });
 
   it("/users lists all users (admin)", async () => {
@@ -204,9 +194,7 @@ describe("admin command handlers", () => {
     const ctx = makeCtx(999999);
     await bot.trigger("users", ctx);
     expect(mockGetAllUsers).not.toHaveBeenCalled();
-    expect(ctx.reply).toHaveBeenCalledWith(
-      expect.stringContaining("доступа"),
-    );
+    expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining("доступа"));
   });
 
   it("/users replies when no users registered", async () => {

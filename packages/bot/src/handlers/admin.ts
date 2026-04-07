@@ -54,7 +54,9 @@ async function resolveTarget(
     const chat = await bot.api.getChat(username);
     return { chatId: String(chat.id), display: `${username} (${chat.id})` };
   } catch {
-    return { error: `Could not resolve ${username}. Bot must have interacted with this user/group.` };
+    return {
+      error: `Could not resolve ${username}. Bot must have interacted with this user/group.`,
+    };
   }
 }
 

@@ -398,6 +398,8 @@ export const TelegramMessage = z.object({
   messageId: z.number().int().min(1),
   isCaption: z.boolean(),
   language: z.string().min(2).max(5).optional(),
+  /** Per-user base text in their language (for enrichment editing). */
+  baseText: z.string().min(1).optional(),
 });
 export type TelegramMessageType = z.infer<typeof TelegramMessage>;
 
@@ -488,6 +490,8 @@ export const RunEnrichmentInput = z.object({
   isCaption: z.boolean(),
   currentText: z.string().min(1),
   telegramMessages: z.array(TelegramMessage).optional().default([]),
+  /** Original session start time (early_warning time). Used for ETA computation. */
+  sessionStartTs: z.number().int().min(0).optional(),
 });
 export type RunEnrichmentInputType = z.infer<typeof RunEnrichmentInput>;
 

@@ -85,7 +85,9 @@ export function registerSettingsHandler(bot: Bot): void {
     await saveUser({ ...user, language: lang, lastActiveAt: Date.now() });
     const s = getBotStrings(lang);
 
-    await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => {});
+    await ctx
+      .editMessageReplyMarkup({ reply_markup: undefined })
+      .catch(() => {});
     await ctx.reply(s.languageSaved, {
       reply_markup: mainMenuKeyboard(lang),
     });
@@ -105,7 +107,9 @@ export function registerSettingsHandler(bot: Bot): void {
       .resized()
       .oneTime();
 
-    await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => {});
+    await ctx
+      .editMessageReplyMarkup({ reply_markup: undefined })
+      .catch(() => {});
     setAwaitingLocation(chatId);
     await ctx.reply(s.askLocation, { reply_markup: locationKb });
   });

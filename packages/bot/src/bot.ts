@@ -28,9 +28,9 @@ import {
   config,
   getActiveSession,
   getAllUsers,
-  getEnrichment,
   getLanguagePack,
   getLastUpdateTs,
+  getSynthesizedInsights,
   initLangSmithTracing,
   initTranslations,
   PHASE_ENRICH_DELAY_MS,
@@ -566,23 +566,10 @@ async function processAlert(alert: OrefAlert): Promise<void> {
       for (const cm of cms) {
         replyToMap.set(cm.chatId, cm.messageId);
       }
-      const prevEnrichment = await getEnrichment();
-      const hasData =
-        prevEnrichment.origin ||
-        prevEnrichment.rocketCount ||
-        prevEnrichment.intercepted;
-      if (hasData) {
-        legacyInsights = Object.entries(prevEnrichment)
-          .filter(([, v]) => v !== undefined && v !== "")
-          .map(([key, value]) => {
-            const v = String(value);
-            return {
-              key,
-              value: { ru: v, en: v, he: v, ar: v },
-              confidence: 0.5,
-              sourceUrls: [] as string[],
-            };
-          });
+      // Load synthesized insights from previous enrichment runs for carry-forward
+      const prevSynthesized = await getSynthesizedInsights();
+      if (prevSynthesized.length > 0) {
+        legacyInsights = prevSynthesized;
       }
     }
   }
@@ -594,9 +581,6 @@ async function processAlert(alert: OrefAlert): Promise<void> {
     const telegramMessages: TelegramMessage[] = [];
     for (const user of matchedUsers) {
       const isPro = user.tier === "pro";
-
-      // Free users cannot receive alerts in group/channel chats (negative chatId)
-      if (!isPro && user.chatId.startsWith("-")) continue;
 
       const lang = (user.language ?? "ru") as Language;
       const userAreaLabel = userMatchedLabel(user, alert.data);
@@ -622,6 +606,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
           messageId: sent.messageId,
           isCaption: sent.isCaption,
           language: user.language,
+          baseText: formatMessage(alertType, userAreaLabel, lang),
         });
       }
     }

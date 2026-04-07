@@ -23,9 +23,7 @@ export function initDefaultAreas(): void {
 }
 
 function getDefaultAreas(): string[] {
-  return defaultAreas.length > 0
-    ? defaultAreas
-    : ["תל אביב - דרום העיר ויפו"];
+  return defaultAreas.length > 0 ? defaultAreas : ["תל אביב - דרום העיר ויפו"];
 }
 
 /** Persistent reply keyboard shown after registration */
@@ -122,7 +120,9 @@ export function registerStartHandler(bot: Bot): void {
     }
 
     // Remove inline keyboard from welcome message
-    await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => {});
+    await ctx
+      .editMessageReplyMarkup({ reply_markup: undefined })
+      .catch(() => {});
 
     // Ask for location
     const locationKb = new Keyboard()

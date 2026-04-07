@@ -462,10 +462,59 @@ Modified `buildTracking()` in `pre-filter-node.ts` to re-surface channels that h
 
 ---
 
+## Postmortem — April 7 2026 Attack (09:05)
+
+### 5 Bugs from v2.0.1
+
+**Bug #1: No metadata reply after early_warning enrichment**
+- **Root Cause:** `sendMetaReply` only fired for `alertType === "early_warning"`. But early_warning initial delay = 120s, red_alert arrives ~5min later → session upgrades to `red_alert` BEFORE enrichment runs → worker runs with `session.phase = "red_alert"` → `sendMetaReply` skips.
+- **Fix:** Changed guard from `alertType !== "early_warning"` to `alertType === "resolved"` return — meta reply now fires for ANY non-resolved phase.
+
+**Bug #2: Red alert message in English instead of Russian**
+- **Root Cause:** `session.baseText = formatMessage(alertType, areas, "en")` (English canonical). Edit-node used this single English text as base for ALL users via `buildEnrichedMessage(input.currentText, ...)`.
+- **Fix:** Added `baseText` field to `TelegramMessage` schema. bot.ts stores per-user `baseText = formatMessage(alertType, userAreaLabel, lang)`. Edit-node uses `t.baseText ?? input.currentText`.
+
+**Bug #3: ETA neuroslop (~09:17 instead of ~09:12, then changed to pass-through)**
+- **Root Cause:** Session `alertTs` updated to red_alert time (09:10). Sources say "7 min" from early_warning (09:05). LLM computed 09:10+7=09:17.
+- **Initial fix:** Added `sessionStartTs` to pass early_warning time. LLM used `earlyWarningTime` for ETA.
+- **Final fix (user request):** ETA should NOT be converted to absolute time at all. LLM now passes through the source format as-is — "~7 min" stays "~7 мин"/"~7 min"/"~7 דק'"/"~7 دقائق". If source has absolute time, that's respected too.
+
+**Bug #4: Resolved message has no metadata blockquote (carry-forward broken)**
+- **Root Cause:** `getEnrichment()` (v1 relic) never populated in v2 pipeline. Carry-forward in bot.ts used this empty function → `legacyInsights` always empty.
+- **Fix:** Added `saveSynthesizedInsights()`/`getSynthesizedInsights()` to store.ts. Edit-node saves synthesized insights after each run. bot.ts carry-forward loads from `getSynthesizedInsights()`.
+
+**Bug #5: Free group gets NO alerts**
+- **Root Cause:** `if (!isPro && user.chatId.startsWith("-")) continue;` in bot.ts skipped ALL free groups.
+- **Fix:** Removed the `continue` guard. Free groups now receive basic alerts (no enrichment metadata, ETA only).
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `packages/shared/src/schemas.ts` | `TelegramMessage.baseText`, `RunEnrichmentInput.sessionStartTs` |
+| `packages/shared/src/store.ts` | `saveSynthesizedInsights()`, `getSynthesizedInsights()` |
+| `packages/agent/src/graphs/enrichment/nodes/edit.ts` | Per-user baseText, sendMetaReply for non-resolved, saveSynthesizedInsights |
+| `packages/bot/src/bot.ts` | getSynthesizedInsights carry-forward, free groups allowed, per-user baseText |
+| `packages/agent/src/graphs/enrichment/nodes/synthesize.ts` | ETA pass-through (no absolute conversion) |
+| `packages/agent/src/graphs/enrichment/enrichment-graph.ts` | sessionStartTs in AgentState |
+| `packages/agent/src/runtime/worker.ts` | sessionStartTs passthrough |
+| `packages/agent/__tests__/edit-node.test.ts` | Updated for sendMetaReply firing on red_alert, added saveSynthesizedInsights mock |
+
+### ETA Design Decision
+
+ETA is now **pass-through from source**: if channel says "7 minutes" → output `~7 мин`/`~7 min`/`~7 דק'`/`~7 دقائق`. If source says "~09:12" → output `~09:12`. LLM does NOT convert between relative and absolute formats. This avoids the entire class of time arithmetic bugs.
+
+### Tests
+
+- **257 tests** across 17 test files — 253 passed, 4 skipped (integration, need API key)
+
+---
+
 ## Version History (Recent)
 
 | Version | Date       | Changes                                                         |
 | ------- | ---------- | --------------------------------------------------------------- |
+| v2.0.2  | 2026-04-07 | fix: 5 bugs from April 7 attack — ETA pass-through, language, carry-forward, meta reply, free groups |
 | v1.27.6 | 2026-04-04 | fix: re-surface watermarked posts for retry extraction          |
 | v1.27.5 | 2026-04-03 | feat: add @stranacoil channel + noise filter rejection tracking |
 | v1.27.4 | 2026-04-02 | fix: 5 critical bugs from April 2 attack postmortem             |

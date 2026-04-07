@@ -76,7 +76,7 @@ Each insight may have an "insightLocation" field with one of:
 
 Rules:
 - origin: list countries separated by " + ", translated to each target language
-- eta_absolute: absolute clock time (e.g. {ru: "~14:23", en: "~14:23", he: "~14:23", ar: "~14:23"}) when alertType is early_warning or red_alert AND consensus includes an "eta" kind. Convert minutes-from-now using alertTime as reference if needed. You MUST output eta_absolute whenever "eta" is present in consensus for those phases.
+- eta_absolute: ETA from consensus, passed through as-is in each language. If source says "~7 minutes" output {ru: "~7 мин", en: "~7 min", he: "~7 דק'", ar: "~7 دقائق"}. If source says "~09:12" output {ru: "~09:12", en: "~09:12", he: "~09:12", ar: "~09:12"}. NEVER compute or convert between relative and absolute — faithfully reproduce the format from the consensus source. You MUST output eta_absolute whenever "eta" is present in consensus for early_warning or red_alert phases.
 - is_cluster_munition: when consensus includes cluser_munition_used with value true, you MUST output this field with value EXACTLY {ru: "true", en: "true", he: "true", ar: "true"} (ASCII "true" in all languages). When consensus has cluser_munition_used false or absent, omit the field entirely. Never drop is_cluster_munition on a subsequent pass if consensus still has cluster munition.
 - rocket_count: concise string in each language, add " (?)" suffix if confidence < 0.75
 - hits:
@@ -94,7 +94,7 @@ CRITICAL — anti-neuroslop rules (NEVER violate):
 - NEVER output rocket_count of "0" in any language — if no rockets confirmed, OMIT the field
 - NEVER hallucinate city names, numbers, or details not in consensus
 - NEVER rewrite casualty semantics (injuries ≠ deaths)
-- NEVER substitute raw alertTime for eta_absolute without converting consensus "eta" value
+- NEVER convert eta between relative and absolute formats — faithfully reproduce the source format
 - NEVER output a field with no matching consensus kind
 - When in doubt, omit`,
 };

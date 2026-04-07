@@ -16,12 +16,14 @@ const {
   mockEditMessageCaption,
   mockGetActiveSession,
   mockSetActiveSession,
+  mockSaveSynthesizedInsights,
 } = vi.hoisted(() => ({
   mockSendMessage: vi.fn().mockResolvedValue({ message_id: 999 }),
   mockEditMessageText: vi.fn().mockResolvedValue(true),
   mockEditMessageCaption: vi.fn().mockResolvedValue(true),
   mockGetActiveSession: vi.fn(),
   mockSetActiveSession: vi.fn(),
+  mockSaveSynthesizedInsights: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock grammy Bot
@@ -45,6 +47,7 @@ vi.mock("@easyoref/shared", async () => {
     },
     getActiveSession: mockGetActiveSession,
     setActiveSession: mockSetActiveSession,
+    saveSynthesizedInsights: mockSaveSynthesizedInsights,
     getLanguagePack: (actual as any).getLanguagePack,
   };
 });
@@ -122,10 +125,10 @@ describe("sendMetaReply", () => {
     mockSetActiveSession.mockResolvedValue(undefined);
   });
 
-  it("does nothing when alertType is not early_warning", async () => {
+  it("does nothing when alertType is resolved", async () => {
     mockGetActiveSession.mockResolvedValue(makeSession());
     await sendMetaReply(
-      "red_alert",
+      "resolved",
       makeInsights([
         { key: "rocket_count", value: "10" },
         { key: "eta_absolute", value: "~14:30" },
@@ -133,6 +136,19 @@ describe("sendMetaReply", () => {
       [defaultTarget],
     );
     expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it("sends meta reply for red_alert phase (not just early_warning)", async () => {
+    mockGetActiveSession.mockResolvedValue(makeSession({ phase: "red_alert" }));
+    await sendMetaReply(
+      "red_alert",
+      makeInsights([
+        { key: "rocket_count", value: "10" },
+        { key: "eta_absolute", value: "~7 min" },
+      ]),
+      [defaultTarget],
+    );
+    expect(mockSendMessage).toHaveBeenCalledOnce();
   });
 
   it("sends when only eta_absolute is present (no rocket_count)", async () => {
@@ -447,13 +463,13 @@ describe("editNode", () => {
       synthesizedInsights: makeInsights([
         { key: "origin", value: "Иран" },
         { key: "rocket_count", value: "10" },
-        { key: "eta_absolute", value: "~14:30" },
+        { key: "eta_absolute", value: "~7 min" },
       ]),
 
       extractedInsights: [],
       filteredInsights: [],
       previousInsights: [],
-      telegramMessages: undefined,
+      telegramMessages: [defaultTarget],
     };
 
     await editNode(state as any);
@@ -485,14 +501,14 @@ describe("editNode", () => {
       extractedInsights: [],
       filteredInsights: [],
       previousInsights: [],
-      telegramMessages: undefined,
+      telegramMessages: [defaultTarget],
     };
 
     await editNode(state as any);
 
     // editMessageText SHOULD be called for red_alert
     expect(mockEditMessageText).toHaveBeenCalledOnce();
-    // sendMessage (meta reply) should NOT be called — not early_warning
-    expect(mockSendMessage).not.toHaveBeenCalled();
+    // sendMessage (meta reply) SHOULD also be called for red_alert
+    expect(mockSendMessage).toHaveBeenCalledOnce();
   });
 });

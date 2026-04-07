@@ -16,6 +16,7 @@ import {
   config,
   getActiveSession,
   getLanguagePack,
+  saveSynthesizedInsights,
   setActiveSession,
 } from "@easyoref/shared";
 import * as logger from "@easyoref/shared/logger";
@@ -37,6 +38,8 @@ export interface TelegramTargetMessage {
   isCaption: boolean;
   /** BCP-47 language tag for the target user. Used to pick the right localized value. */
   language?: string;
+  /** Per-user base text in their language (for enrichment editing). */
+  baseText?: string;
 }
 
 export interface EditMessageInput {
@@ -94,8 +97,11 @@ export const editTelegramMessage = async (
   }
 
   for (const t of targets) {
+    // Use per-user base text (in their language) if available,
+    // otherwise fall back to session's English canonical text
+    const base = t.baseText ?? input.currentText;
     const newText = buildEnrichedMessage(
-      input.currentText,
+      base,
       input.alertType,
       input.alertTs,
       insights,
@@ -152,7 +158,8 @@ export const sendMetaReply = async (
   synthesizedInsights: SynthesizedInsightType[],
   targets: TelegramTargetMessage[],
 ): Promise<void> => {
-  if (alertType !== "early_warning") return;
+  // Meta reply for any non-resolved phase (early_warning or red_alert after upgrade)
+  if (alertType === "resolved") return;
   if (!config.botToken) return;
 
   const get = (key: string) => synthesizedInsights.find((i) => i.key === key);
@@ -262,6 +269,11 @@ export const editNode = async (
     },
   ];
   await sendMetaReply(state.alertType, synthesized, targets);
+
+  // Persist synthesized insights for carry-forward to resolved phase
+  if (synthesized.length > 0) {
+    await saveSynthesizedInsights(synthesized);
+  }
 
   return {
     messages: [

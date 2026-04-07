@@ -65,6 +65,7 @@ export const AgentState = new StateSchema({
   messageId: z.number(),
   isCaption: z.boolean(),
   currentText: z.string(),
+  sessionStartTs: z.number().optional(),
   tracking: ChannelTracking.optional(),
   channelToExtract: NewsChannelWithUpdates.optional(),
   extractedInsights: new ReducedValue(z.array(Insight), {
@@ -202,6 +203,7 @@ export const runEnrichment = async (input: unknown): Promise<void> => {
       isCaption: validInput.isCaption,
       telegramMessages: validInput.telegramMessages,
       currentText: validInput.currentText,
+      sessionStartTs: validInput.sessionStartTs,
       previousInsights,
     });
 
