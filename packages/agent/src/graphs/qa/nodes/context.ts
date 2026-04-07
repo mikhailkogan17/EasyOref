@@ -1,5 +1,5 @@
 import {
-  config,
+  config as appConfig,
   fetchActiveAlerts,
   getActiveSession,
   getSessionPosts,
@@ -162,9 +162,9 @@ export async function contextNode(
   }
 
   // 4. Configured zones (for use with query_alert_history tool in answer node)
-  if (config.cityIds.length > 0) {
+  if (appConfig.cityIds.length > 0) {
     const zoneLines = ["  0: all configured zones (aggregated)"];
-    for (const id of config.cityIds) {
+    for (const id of appConfig.cityIds) {
       const hebrewNames = resolveCityIds([id]);
       const nameEn = hebrewNames[0]
         ? translateAreas(hebrewNames[0], "en")
