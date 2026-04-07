@@ -110,6 +110,13 @@ export const PHASE_INITIAL_DELAY_MS: Record<AlertType, number> = {
   resolved: config.agent.phaseInitialDelayMs.resolved,
 };
 
+/**
+ * Absolute offsets (ms from phaseStartTs) for resolved enrichment runs.
+ * Resolved runs fire at phaseStartTs + offset[n], not a fixed interval.
+ */
+export const RESOLVED_RUN_OFFSETS_MS: number[] =
+  config.agent.resolvedRunOffsetsMs;
+
 // ──Alert Meta (per-alert) ─────────────────────────────
 
 export async function saveAlertMeta(meta: AlertMeta): Promise<void> {

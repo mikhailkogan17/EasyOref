@@ -16,6 +16,7 @@ import {
   getActiveSession,
   isPhaseExpired,
   PHASE_ENRICH_DELAY_MS,
+  RESOLVED_RUN_OFFSETS_MS,
   setLastUpdateTs,
   type TelegramMessageType as TelegramMessage,
 } from "@easyoref/shared";
@@ -85,7 +86,11 @@ export function startEnrichWorker(): void {
       const runNum = (sessionRunCount.get(session.sessionId) ?? 0) + 1;
       sessionRunCount.set(session.sessionId, runNum);
 
-      const maxRuns = config.agent.maxEnrichRuns;
+      // Resolved uses offsets array length as max runs; other phases use global config
+      const maxRuns =
+        session.phase === "resolved"
+          ? RESOLVED_RUN_OFFSETS_MS.length
+          : config.agent.maxEnrichRuns;
 
       if (runNum > maxRuns) {
         logger.info("Enrich worker: max runs reached — ending session", {
@@ -150,7 +155,20 @@ export function startEnrichWorker(): void {
 
       // Only re-enqueue if under run limit
       if (runNum < maxRuns) {
-        const delay = PHASE_ENRICH_DELAY_MS[after.phase];
+        let delay: number;
+        if (after.phase === "resolved") {
+          // Offset-based scheduling: fire at absolute offset from phaseStartTs
+          // e.g. offsets = [2min, 10min, 20min] → run N+1 fires at phaseStartTs + offsets[N]
+          const nextOffset = RESOLVED_RUN_OFFSETS_MS[runNum]; // runNum=1 after run 1
+          if (nextOffset !== undefined) {
+            const elapsed = Date.now() - after.phaseStartTs;
+            delay = Math.max(1000, nextOffset - elapsed);
+          } else {
+            delay = PHASE_ENRICH_DELAY_MS[after.phase];
+          }
+        } else {
+          delay = PHASE_ENRICH_DELAY_MS[after.phase];
+        }
         await enqueueEnrich(after.latestAlertId, after.latestAlertTs, delay);
       } else {
         logger.info("Enrich worker: final run completed — no re-enqueue", {

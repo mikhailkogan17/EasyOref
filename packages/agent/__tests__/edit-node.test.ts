@@ -175,14 +175,16 @@ describe("sendMetaReply", () => {
     expect(text).toContain("Ракет: 10");
   });
 
-  it("does nothing when neither rocket_count nor eta_absolute is present (only origin)", async () => {
+  it("sends meta reply when only origin is present (no rocket_count or eta_absolute)", async () => {
     mockGetActiveSession.mockResolvedValue(makeSession());
     await sendMetaReply(
       "early_warning",
       makeInsights([{ key: "origin", value: "Иран" }]),
       [defaultTarget],
     );
-    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockSendMessage).toHaveBeenCalledOnce();
+    const call = mockSendMessage.mock.calls[0];
+    expect(call[1]).toContain("Иран");
   });
 
   it("does nothing when session is null", async () => {

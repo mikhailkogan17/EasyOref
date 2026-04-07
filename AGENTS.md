@@ -510,10 +510,60 @@ ETA is now **pass-through from source**: if channel says "7 minutes" → output 
 
 ---
 
+## Postmortem — April 7 2026 Attack (13:00) — No Metadata
+
+### Root Cause — sendMetaReply Origin Guard Too Restrictive
+
+**Context:** Attack at 13:00 IDT. Bot was running v2.0.1. OpenRouter primary model (gemini-flash) failed with "Insufficient credits" on all extract-channel calls → fallback model (`gpt-oss-120b:free`) used. Fallback extracted only `origin: Iran` (5 sources). No `rocket_count`, no `eta_absolute`.
+
+**Why no metadata appeared:**
+1. `editTelegramMessage` is **gated on `alertType !== "early_warning"`** — correctly by design. Since enrichment ran while session was still in early_warning phase, inline edit was skipped.
+2. `sendMetaReply` guard checked `hasRocket || hasEta`. Neither was present — only `origin`. Guard returned early.
+3. Result: zero Telegram actions despite successful extraction of `origin: Iran`.
+
+**Fix (v2.0.3):** Added `hasOrigin` to `sendMetaReply` guard:
+```typescript
+const hasOrigin = !!get("origin")?.value.en;
+if (!hasRocket && !hasEta && !hasOrigin) return;
+```
+Origin-only meta reply now fires: `Откуда: Иран¹²³`.
+
+**Note:** This was also a v2.0.2 regression risk — the same logic existed. Now fixed.
+
+---
+
+## Resolved Phase Timing — v2.0.3
+
+### Change: Offset-based resolved enrichment (2/10/20 min)
+
+**Old behavior:** 3 enrichment runs for resolved, with fixed 150s interval between each. Timing was approximate and dependent on run duration.
+
+**New behavior:** 3 runs at **absolute offsets from when resolved phase started** (`phaseStartTs`):
+- Run 1: `phaseStartTs + 2 min` (120s)
+- Run 2: `phaseStartTs + 10 min` (600s)
+- Run 3: `phaseStartTs + 20 min` (1200s)
+
+Worker computes `delay = max(1000ms, offset[runNum] - elapsed)` — ensures runs fire at exactly 2/10/20 min regardless of how long each run takes.
+
+**Config (optional override):**
+```yaml
+ai:
+  resolved_run_offsets_ms: [120000, 600000, 1200000]  # default
+```
+
+**Implementation:**
+- `config.ts`: `resolved_run_offsets_ms` → `config.agent.resolvedRunOffsetsMs`
+- `store.ts`: `RESOLVED_RUN_OFFSETS_MS` export
+- `bot.ts`: initial resolved delay = `RESOLVED_RUN_OFFSETS_MS[0]` (was `PHASE_ENRICH_DELAY_MS.resolved`)
+- `worker.ts`: resolved re-enqueue uses offset-based delay; `maxRuns` for resolved = `RESOLVED_RUN_OFFSETS_MS.length`
+
+---
+
 ## Version History (Recent)
 
 | Version | Date       | Changes                                                         |
 | ------- | ---------- | --------------------------------------------------------------- |
+| v2.0.3  | 2026-04-07 | fix: sendMetaReply fires on origin-only; resolved timing 2/10/20min offsets |
 | v2.0.2  | 2026-04-07 | fix: 5 bugs from April 7 attack — ETA pass-through, language, carry-forward, meta reply, free groups |
 | v1.27.6 | 2026-04-04 | fix: re-surface watermarked posts for retry extraction          |
 | v1.27.5 | 2026-04-03 | feat: add @stranacoil channel + noise filter rejection tracking |

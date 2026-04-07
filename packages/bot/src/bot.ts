@@ -35,6 +35,7 @@ import {
   initTranslations,
   PHASE_ENRICH_DELAY_MS,
   PHASE_INITIAL_DELAY_MS,
+  RESOLVED_RUN_OFFSETS_MS,
   saveAlertMeta,
   setActiveSession,
   translateAreas,
@@ -647,7 +648,7 @@ async function processAlert(alert: OrefAlert): Promise<void> {
             telegramMessages,
           };
           await setActiveSession(updated);
-          const delay = PHASE_ENRICH_DELAY_MS.resolved;
+          const delay = RESOLVED_RUN_OFFSETS_MS[0];
           await enqueueEnrich(alert.id, alertTs, delay);
           logger.info("Session: entered resolved phase", {
             sessionId: existingSession.sessionId,

@@ -164,10 +164,11 @@ export const sendMetaReply = async (
 
   const get = (key: string) => synthesizedInsights.find((i) => i.key === key);
 
-  // Global guard: need rocket_count or eta_absolute in English (canonical)
+  // Global guard: need rocket_count, eta_absolute, OR origin in English (canonical)
   const hasRocket = !!get("rocket_count")?.value.en;
   const hasEta = !!get("eta_absolute")?.value.en;
-  if (!hasRocket && !hasEta) return;
+  const hasOrigin = !!get("origin")?.value.en;
+  if (!hasRocket && !hasEta && !hasOrigin) return;
 
   const sess = await getActiveSession();
   if (!sess) return;

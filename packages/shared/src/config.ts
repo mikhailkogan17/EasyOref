@@ -87,6 +87,11 @@ interface ConfigYamlAi {
   phase_enrich_delay_ms?: PhaseTimingYaml;
   /** Per-phase max duration before auto-expire (ms) */
   phase_timeout_ms?: PhaseTimingYaml;
+  /**
+   * Absolute time offsets (ms from phaseStartTs) for resolved enrichment runs.
+   * Default: [2min, 10min, 20min] = [120000, 600000, 1200000]
+   */
+  resolved_run_offsets_ms?: number[];
   mtproto?: {
     api_id?: number;
     api_hash?: string;
@@ -287,6 +292,12 @@ export const config = {
         ai?.qa_model ?? ai?.openrouter_filter_model ?? "openai/gpt-oss-120b",
       /** Run canary (synthetic test alert) on startup */
       canary: ai?.canary ?? false,
+      /**
+       * Absolute time offsets (ms from phaseStartTs) for resolved enrichment runs.
+       * Run 1 at +2min, Run 2 at +10min, Run 3 at +20min.
+       */
+      resolvedRunOffsetsMs:
+        ai?.resolved_run_offsets_ms ?? [120_000, 600_000, 1_200_000],
     };
   })(),
 };
