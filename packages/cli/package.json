@@ -1,6 +1,6 @@
 {
   "name": "@easyoref/cli",
-  "version": "2.0.10",
+  "version": "2.0.11",
   "description": "Interactive setup wizard for EasyOref",
   "type": "module",
   "files": [
