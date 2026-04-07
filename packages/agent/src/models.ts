@@ -79,7 +79,7 @@ export async function invokeWithFallback(opts: {
   const { agentOpts, fallbackModel, input, label } = opts;
 
   try {
-    const agent = createAgent(agentOpts as any);
+    const agent = createAgent({ ...agentOpts, recursionLimit: 10 } as any);
     return await agent.invoke(input as any);
   } catch (err) {
     logger.warn(`${label}: primary model failed, trying fallback`, {
@@ -92,6 +92,7 @@ export async function invokeWithFallback(opts: {
       const fallbackAgent = createAgent({
         ...agentOpts,
         model: fallbackModel,
+        recursionLimit: 10,
       } as any);
       return await fallbackAgent.invoke(input as any);
     } catch (fallbackErr) {

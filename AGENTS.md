@@ -563,6 +563,8 @@ ai:
 
 | Version | Date       | Changes                                                         |
 | ------- | ---------- | --------------------------------------------------------------- |
+| v2.0.5  | 2026-04-07 | fix: duplicate red_alert cooldown, synthesis empty-retry, recursionLimit 10 |
+| v2.0.4  | 2026-04-07 | fix: Q&A pipeline rewrite — 5 data sources, 30s timeout, off_topic, emoji keys, no blockquote |
 | v2.0.3  | 2026-04-07 | fix: sendMetaReply fires on origin-only; resolved timing 2/10/20min offsets |
 | v2.0.2  | 2026-04-07 | fix: 5 bugs from April 7 attack — ETA pass-through, language, carry-forward, meta reply, free groups |
 | v1.27.6 | 2026-04-04 | fix: re-surface watermarked posts for retry extraction          |
@@ -900,6 +902,75 @@ Response came **9 minutes later** with generic "no data" answer.
 | Enrichment: emoji keys | `message.ts` + `edit.ts` | Replaced `<b>Key:</b>` with emoji-prefixed keys (⏱🌍🚀🛡💥🏥) |
 | Enrichment: no blockquote | `message.ts` | Removed `<blockquote>` wrapping for all phases — plain text enrichment lines |
 | Intent: broader patterns | `intent.ts` | Added `history|yesterday|happened|вчера|прошл|истори|было|произош|אתמול|שבוע` to SECURITY_PATTERNS |
+
+### Tests
+
+- **258 tests** across 17 test files — 254 passed, 4 skipped (integration, need API key)
+
+---
+
+## Postmortem — April 7 2026 Attacks (13:00 + 18:16) — Duplicate Alerts + No Enrichment
+
+### Problem
+
+1. **Attack 13:00-13:17**: Enrichment synthesized `origin: Iran` but no metadata was sent to users (sendMetaReply origin guard not deployed yet — v2.0.3 fix was on RPi only after v2.0.4 deployed at ~13:34)
+2. **Attack 18:16-18:28**: No enrichment metadata at all. Duplicate red_alert messages sent at 18:18 and 18:19 (90s apart, cooldown not blocking)
+
+### Root Causes (3 bugs)
+
+**Bug #1: Duplicate red_alert — cooldown too short after first red_alert**
+- `markSent("red_alert")` resets `lastSent.early_warning = 0`
+- Next red_alert check: `lastSent.early_warning > 0 ? 3min : 90s` → evaluates to 90s (early_warning was reset)
+- Second red_alert at 18:19:44 (exactly 90s after first at 18:18:14) passes 90s cooldown
+- Session logs: `upgraded phase from: 'red_alert' to: 'red_alert'` — no-op upgrade
+- **Fix**: Don't reset `lastSent.early_warning` on red_alert. Early warning timestamp persists until `resolved` resets everything. This preserves the 3-minute cooldown for same-wave red_alerts.
+
+**Bug #2: GraphRecursionError on ALL extract-channel primary calls**
+- `gemini-3.1-flash-lite-preview` (extractModel) enters infinite tool-calling loops with `withStructuredOutput`
+- `createAgent()` uses default `recursionLimit: 25` → all channels hit limit → slow execution (~40s per channel) → fallback triggered
+- Only @divuhim1234 produced insights via fallback model
+- **Fix**: Set `recursionLimit: 10` on all `createAgent()` calls in `invokeWithFallback()`. Reduces wasted time from ~40s to ~15s per channel before fallback.
+
+**Bug #3: Synthesis returns 0 keys despite consensus having `country_origins`**
+- `synthesize-node: synthesis done { consensusKinds: ['country_origins'], synthesizedKeys: [] }`
+- No "rejecting hallucinated field" log → LLM returned `{fields: []}` (empty)
+- Primary model (`gpt-oss-120b`) succeeded without error but produced no output
+- `invokeWithFallback()` only retries on exceptions, not on empty results
+- **Fix**: If primary returns empty fields but consensus exists, retry with fallback model.
+
+### RPi Logs Evidence
+
+**Attack 1 (13:00)**:
+```
+13:00:39 early_warning → sent
+13:02:40 Enrich run #1: all models "Insufficient credits" → fallback: synthesizedKeys: ['origin']
+13:03:35 No sendMetaReply (old code — origin guard not deployed)
+13:06:40 red_alert → sent, session upgraded early_warning → red_alert
+13:07:06 max runs reached — ended. No metadata sent.
+13:17:12 resolved — "Resolved alert without active session — no enrichment"
+13:34:12 v2.0.4 deployed (new PID)
+```
+
+**Attack 2 (18:16)**:
+```
+18:16:00 early_warning → sent (3 chats)
+18:18:01 Enrich run #1 starts
+18:18:14 red_alert → sent (3 chats), session upgraded early_warning → red_alert
+18:18:41 extract: ALL channels GraphRecursionError → fallback
+18:19:12 @divuhim1234 → 1 insight (country_origins)
+18:19:44 red_alert → sent AGAIN (cooldown 90s passed), session "upgraded" red_alert → red_alert
+18:21:42 synthesize: consensusKinds: ['country_origins'], synthesizedKeys: [] ← EMPTY
+18:24:56 Run #2: same result, edit skipped
+18:28:14 resolved → sent
+```
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `packages/bot/src/bot.ts` | Remove `lastSent.early_warning = 0` from `markSent("red_alert")` |
+| `packages/agent/src/models.ts` | Add `recursionLimit: 10` to both primary and fallback `createAgent()` calls |
+| `packages/agent/src/graphs/enrichment/nodes/synthesize.ts` | Retry with fallback model when primary returns empty fields but consensus exists |
 
 ### Tests
 

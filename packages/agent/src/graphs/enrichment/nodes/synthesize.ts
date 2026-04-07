@@ -152,13 +152,36 @@ export async function synthesizeNode(
     ),
   ];
 
-  const result = await invokeWithFallback({
+  let result = await invokeWithFallback({
     agentOpts: synthesizeAgentOpts,
     fallbackModel: preFilterFallback,
     input: { messages },
     label: "synthesize-node",
   });
-  const output = result.structuredResponse;
+  let output = result.structuredResponse;
+
+  // Retry with fallback model if primary returned empty fields but consensus exists
+  if (
+    (!output?.fields || output.fields.length === 0) &&
+    Object.keys(votedResult.consensus).length > 0
+  ) {
+    logger.warn(
+      "synthesize-node: primary returned empty fields — retrying with fallback",
+      { consensusKinds: Object.keys(votedResult.consensus) },
+    );
+    try {
+      result = await invokeWithFallback({
+        agentOpts: { ...synthesizeAgentOpts, model: preFilterFallback },
+        fallbackModel: preFilterFallback,
+        input: { messages },
+        label: "synthesize-node-retry",
+      });
+      output = result.structuredResponse;
+    } catch {
+      // Retry failed — proceed with empty output
+    }
+  }
+
   messages.push(new AIMessage(JSON.stringify(output ?? {})));
 
   // Build SynthesizedInsight[] from output fields + consensus metadata

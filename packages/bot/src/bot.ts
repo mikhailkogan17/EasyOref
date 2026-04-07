@@ -164,9 +164,8 @@ function markSent(type: AlertType): void {
     lastSent.early_warning = 0;
     lastSent.red_alert = 0;
   }
-  // After red_alert → allow new early_warning (next wave) and resolved
+  // After red_alert → allow resolved (same wave continues; early_warning cooldown preserved)
   if (type === "red_alert") {
-    lastSent.early_warning = 0;
     lastSent.resolved = 0;
   }
   // After early_warning → allow resolved
