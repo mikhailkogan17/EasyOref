@@ -175,14 +175,17 @@ export function buildEnrichedMessage(
   const rocketInsight = get("rocket_count");
   const rocketVal = getVal("rocket_count");
   if (rocketVal && !isNeuroslop(rocketVal)) {
-    const clusterVal =
-      get("is_cluster_munition")?.value.en === "true"
-        ? lp.metaClusterMunition
-        : "";
     const cites = formatCitations(rocketInsight!.sourceUrls);
-    enrichLines.push(
-      `\u{1F680} ${lp.metaRockets}: ${rocketVal}${clusterVal}${cites}`,
-    );
+    enrichLines.push(`\u{1F680} ${lp.metaRockets}: ${rocketVal}${cites}`);
+  }
+
+  // ── Cluster munition (separate line) ──
+  const clusterInsight = get("is_cluster_munition");
+  if (clusterInsight) {
+    const isCluster = clusterInsight.value.en === "true";
+    const label = isCluster ? lp.metaClusterYes : lp.metaClusterNo;
+    const cites = formatCitations(clusterInsight.sourceUrls);
+    enrichLines.push(`\u{1F4A3} ${lp.metaClusterMunition}: ${label}${cites}`);
   }
 
   // ── Intercepted (not early_warning) ──

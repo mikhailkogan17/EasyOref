@@ -45,7 +45,9 @@ export interface I18nLabels {
   monitoring: string;
   metaRockets: string; // label before rocket count, e.g. "Ракет"
   metaArrival: string; // label before ETA, e.g. "Прилёт"
-  metaClusterMunition: string; // suffix for cluster munitions, e.g. ", кассетные"
+  metaClusterMunition: string; // label for cluster munitions, e.g. "Кассетные"
+  metaClusterYes: string; // "да" / "yes" / "כן" / "نعم"
+  metaClusterNo: string; // "нет" / "no" / "לא" / "لا"
   metaOrigin: string; // "Откуда" / "Origin" / "מקור" / "المصدر"
   metaIntercepted: string; // "Перехваты" / "Intercepted" / "יירוטים" / "اعتراضات"
   metaHits: string; // "Попадания" / "Hits" / "פגיעות" / "إصابات"
@@ -87,7 +89,9 @@ const ruPack: LanguagePack = {
       '<tg-emoji emoji-id="5258052328455424397">⏳</tg-emoji> Сообщение обновляется...',
     metaRockets: "Ракет",
     metaArrival: "Прилёт",
-    metaClusterMunition: ", кассетные",
+    metaClusterMunition: "Кассетные",
+    metaClusterYes: "да",
+    metaClusterNo: "нет",
     metaOrigin: "Откуда",
     metaIntercepted: "Перехваты",
     metaHits: "Попадания",
@@ -121,7 +125,9 @@ const enPack: LanguagePack = {
       '<tg-emoji emoji-id="5258052328455424397">⏳</tg-emoji> Message updating...',
     metaRockets: "Rockets",
     metaArrival: "Arrival",
-    metaClusterMunition: ", cluster",
+    metaClusterMunition: "Cluster",
+    metaClusterYes: "yes",
+    metaClusterNo: "no",
     metaOrigin: "Origin",
     metaIntercepted: "Intercepted",
     metaHits: "Hits",
@@ -156,6 +162,8 @@ const hePack: LanguagePack = {
     metaRockets: "טילים",
     metaArrival: "פגיעה משוערת",
     metaClusterMunition: "מצרר",
+    metaClusterYes: "כן",
+    metaClusterNo: "לא",
     metaOrigin: "מקור",
     metaIntercepted: "יירוטים",
     metaHits: "פגיעות",
@@ -190,6 +198,8 @@ const arPack: LanguagePack = {
     metaRockets: "صواريخ",
     metaArrival: "الوصول المتوقع",
     metaClusterMunition: "عنقودي",
+    metaClusterYes: "نعم",
+    metaClusterNo: "لا",
     metaOrigin: "المصدر",
     metaIntercepted: "اعتراضات",
     metaHits: "إصابات",

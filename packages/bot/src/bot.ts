@@ -134,7 +134,7 @@ async function refreshUserCount(): Promise<void> {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const COOLDOWN_EARLY_MS = 3 * 60 * 1000; // 3 min (Oref sends multiple alert IDs per wave)
-const COOLDOWN_RED_ALERT_MS = 90 * 1000; // 1.5 min (no prior early warning)
+const COOLDOWN_RED_ALERT_MS = 3 * 60 * 1000; // 3 min (same as after-early; Oref sends same wave via Alerts.json + AlertsHistory with different IDs)
 const COOLDOWN_RED_ALERT_AFTER_EARLY_MS = 3 * 60 * 1000; // 3 min (early warning already sent)
 const COOLDOWN_RESOLVED_MS = 5 * 60 * 1000; // 5 min
 
@@ -351,7 +351,7 @@ function formatMessage(
   if (desc) lines.push(desc);
 
   // District line — always plain text, no blockquote
-  lines.push(`${labels.area}: ${localAreas}`);
+  lines.push(`\u{1F4CD} ${labels.area}: ${localAreas}`);
 
   return lines.join("\n");
 }
@@ -539,8 +539,7 @@ async function processAlert(alert: PikudAlert): Promise<void> {
 
   try {
     // ── Send to each matched user in their language ──
-    // Only pro users are tracked in telegramMessages (for enrichment editing).
-    // Free users receive a plain message in private chats only.
+    // Pro users get full enrichment editing. Free users get origin-only meta reply.
     const telegramMessages: TelegramMessage[] = [];
     for (const user of matchedUsers) {
       const isPro = user.tier === "pro";
@@ -562,20 +561,21 @@ async function processAlert(alert: PikudAlert): Promise<void> {
 
       const replyTo = replyToMap.get(user.chatId);
       const sent = await sendTelegram(user.chatId, alertType, message, replyTo);
-      if (sent && isPro) {
-        // Only pro users tracked — enrichment agent only edits their messages
+      if (sent) {
         telegramMessages.push({
           chatId: user.chatId,
           messageId: sent.messageId,
           isCaption: sent.isCaption,
           language: user.language,
           baseText: formatMessage(alertType, userAreaLabel, lang),
+          tier: isPro ? "pro" : "free",
         });
       }
     }
 
-    if (telegramMessages.length === 0) return;
-    const primary = telegramMessages[0]!;
+    const proMessages = telegramMessages.filter((t) => t.tier === "pro");
+    if (proMessages.length === 0 && telegramMessages.length === 0) return;
+    const primary = proMessages[0] ?? telegramMessages[0]!;
 
     // ── Session-based enrichment lifecycle ──
     if (config.agent.enabled) {

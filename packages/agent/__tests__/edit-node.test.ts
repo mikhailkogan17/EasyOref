@@ -265,7 +265,7 @@ describe("sendMetaReply", () => {
     expect(text).toContain("Ракет: 5");
   });
 
-  it("appends cluster munition suffix when is_cluster_munition=true", async () => {
+  it("renders cluster munition as separate line with да when is_cluster_munition=true", async () => {
     mockGetActiveSession.mockResolvedValue(makeSession());
     await sendMetaReply(
       "early_warning",
@@ -277,10 +277,27 @@ describe("sendMetaReply", () => {
       [defaultTarget],
     );
     const text = mockSendMessage.mock.calls[0][1] as string;
-    expect(text).toContain(", кассетные");
+    expect(text).toContain("Кассетные: да");
+    // Should NOT be appended to rocket count line
+    expect(text).not.toContain("Ракет: 20, кассетные");
   });
 
-  it("does NOT append cluster munition suffix when is_cluster_munition is absent", async () => {
+  it("renders cluster munition as separate line with нет when is_cluster_munition=false", async () => {
+    mockGetActiveSession.mockResolvedValue(makeSession());
+    await sendMetaReply(
+      "early_warning",
+      makeInsights([
+        { key: "rocket_count", value: "20" },
+        { key: "eta_absolute", value: "~14:45" },
+        { key: "is_cluster_munition", value: "false" },
+      ]),
+      [defaultTarget],
+    );
+    const text = mockSendMessage.mock.calls[0][1] as string;
+    expect(text).toContain("Кассетные: нет");
+  });
+
+  it("does NOT render cluster munition line when is_cluster_munition is absent", async () => {
     mockGetActiveSession.mockResolvedValue(makeSession());
     await sendMetaReply(
       "early_warning",
@@ -291,7 +308,7 @@ describe("sendMetaReply", () => {
       [defaultTarget],
     );
     const text = mockSendMessage.mock.calls[0][1] as string;
-    expect(text).not.toContain("кассетные");
+    expect(text).not.toContain("Кассетные");
   });
 
   it("marks session.metaMessageSent=true after sending", async () => {
@@ -347,6 +364,68 @@ describe("sendMetaReply", () => {
     const text = mockSendMessage.mock.calls[0][1] as string;
     expect(text).toContain("טילים"); // Hebrew "rockets"
     expect(text).toContain("פגיעה משוערת"); // Hebrew "expected impact"
+  });
+
+  it("sends origin-only to free-tier targets, full metadata to pro targets", async () => {
+    mockGetActiveSession.mockResolvedValue(makeSession());
+    const freeTarget: TelegramTargetMessage = {
+      chatId: "-100free",
+      messageId: 50,
+      isCaption: false,
+      tier: "free",
+    };
+    const proTarget: TelegramTargetMessage = {
+      chatId: "-100pro",
+      messageId: 60,
+      isCaption: false,
+    };
+    await sendMetaReply(
+      "early_warning",
+      makeInsights([
+        { key: "rocket_count", value: "3" },
+        { key: "origin", value: "Ливан" },
+        { key: "eta_absolute", value: "~14:30" },
+      ]),
+      [freeTarget, proTarget],
+    );
+    expect(mockSendMessage).toHaveBeenCalledTimes(2);
+
+    // Free target: origin only, no rockets/ETA
+    const freeText = mockSendMessage.mock.calls[0][1] as string;
+    expect(freeText).toContain("Ливан");
+    expect(freeText).not.toContain("Ракет");
+    expect(freeText).not.toContain("Прилёт");
+
+    // Pro target: full metadata
+    const proText = mockSendMessage.mock.calls[1][1] as string;
+    expect(proText).toContain("Ракет (Ливан): 3");
+    expect(proText).toContain("Прилёт: ~14:30");
+  });
+
+  it("skips free-tier target when no origin data available", async () => {
+    mockGetActiveSession.mockResolvedValue(makeSession());
+    const freeTarget: TelegramTargetMessage = {
+      chatId: "-100free",
+      messageId: 50,
+      isCaption: false,
+      tier: "free",
+    };
+    const proTarget: TelegramTargetMessage = {
+      chatId: "-100pro",
+      messageId: 60,
+      isCaption: false,
+    };
+    await sendMetaReply(
+      "early_warning",
+      makeInsights([
+        { key: "rocket_count", value: "3" },
+        { key: "eta_absolute", value: "~14:30" },
+      ]),
+      [freeTarget, proTarget],
+    );
+    // Only pro target should get a message
+    expect(mockSendMessage).toHaveBeenCalledTimes(1);
+    expect(mockSendMessage.mock.calls[0][0]).toBe("-100pro");
   });
 });
 

@@ -400,6 +400,8 @@ export const TelegramMessage = z.object({
   language: z.string().min(2).max(5).optional(),
   /** Per-user base text in their language (for enrichment editing). */
   baseText: z.string().min(1).optional(),
+  /** User tier — free users only get origin in meta reply, no inline edits. */
+  tier: z.enum(["free", "pro"]).optional(),
 });
 export type TelegramMessageType = z.infer<typeof TelegramMessage>;
 

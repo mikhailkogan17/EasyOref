@@ -40,6 +40,8 @@ export interface TelegramTargetMessage {
   language?: string;
   /** Per-user base text in their language (for enrichment editing). */
   baseText?: string;
+  /** User tier — free users only get origin in meta reply, no inline edits. */
+  tier?: "free" | "pro";
 }
 
 export interface EditMessageInput {
@@ -85,6 +87,9 @@ export const editTelegramMessage = async (
     },
   ];
 
+  // Only edit pro users' messages inline (free users get origin-only meta reply)
+  const proTargets = targets.filter((t) => t.tier !== "free");
+
   // Skip if nothing useful to show yet
   const hasContent = insights.some((i) =>
     ["origin", "intercepted", "hits", "rocket_count"].includes(i.key),
@@ -96,7 +101,7 @@ export const editTelegramMessage = async (
     return;
   }
 
-  for (const t of targets) {
+  for (const t of proTargets) {
     // Use per-user base text (in their language) if available,
     // otherwise fall back to session's English canonical text
     const base = t.baseText ?? input.currentText;
@@ -175,12 +180,14 @@ export const sendMetaReply = async (
   if (sess.metaMessageSent) return;
 
   const isClusterMunition = get("is_cluster_munition")?.value.en === "true";
+  const hasClusterData = !!get("is_cluster_munition");
 
   const tgBot = new Bot(config.botToken);
 
   for (const t of targets) {
     const lang = (t.language ?? "ru") as Language;
     const labels = getLanguagePack(lang).labels;
+    const isFree = t.tier === "free";
 
     const rocketCount = get("rocket_count")?.value[lang];
     const etaAbsolute = get("eta_absolute")?.value[lang];
@@ -189,26 +196,45 @@ export const sendMetaReply = async (
     // Build text lines for this target's language
     const lines: string[] = [];
 
-    if (rocketCount) {
-      const originPart = origin ? ` (${origin})` : "";
-      const clusterMunitionPart = isClusterMunition
-        ? labels.metaClusterMunition
-        : "";
-      const rocketInsight = get("rocket_count")!;
-      const cites = formatCitations(rocketInsight.sourceUrls);
-      lines.push(
-        `\u{1F680} ${labels.metaRockets}${originPart}: ${rocketCount}${clusterMunitionPart}${cites}`,
-      );
-    } else if (origin) {
-      const originInsight = get("origin")!;
-      const cites = formatCitations(originInsight.sourceUrls);
-      lines.push(`\u{1F30D} ${labels.metaOrigin}: ${origin}${cites}`);
-    }
+    if (isFree) {
+      // Free users only get origin line
+      if (origin) {
+        const originInsight = get("origin")!;
+        const cites = formatCitations(originInsight.sourceUrls);
+        lines.push(`\u{1F30D} ${labels.metaOrigin}: ${origin}${cites}`);
+      }
+    } else {
+      // Pro users get full metadata
+      if (rocketCount) {
+        const originPart = origin ? ` (${origin})` : "";
+        const rocketInsight = get("rocket_count")!;
+        const cites = formatCitations(rocketInsight.sourceUrls);
+        lines.push(
+          `\u{1F680} ${labels.metaRockets}${originPart}: ${rocketCount}${cites}`,
+        );
+      } else if (origin) {
+        const originInsight = get("origin")!;
+        const cites = formatCitations(originInsight.sourceUrls);
+        lines.push(`\u{1F30D} ${labels.metaOrigin}: ${origin}${cites}`);
+      }
 
-    if (etaAbsolute) {
-      const etaInsight = get("eta_absolute")!;
-      const cites = formatCitations(etaInsight.sourceUrls);
-      lines.push(`\u23F0 ${labels.metaArrival}: ${etaAbsolute}${cites}`);
+      // Cluster munition as separate line
+      if (hasClusterData) {
+        const clusterLabel = isClusterMunition
+          ? labels.metaClusterYes
+          : labels.metaClusterNo;
+        const clusterInsight = get("is_cluster_munition")!;
+        const cites = formatCitations(clusterInsight.sourceUrls);
+        lines.push(
+          `\u{1F4A3} ${labels.metaClusterMunition}: ${clusterLabel}${cites}`,
+        );
+      }
+
+      if (etaAbsolute) {
+        const etaInsight = get("eta_absolute")!;
+        const cites = formatCitations(etaInsight.sourceUrls);
+        lines.push(`\u23F0 ${labels.metaArrival}: ${etaAbsolute}${cites}`);
+      }
     }
 
     if (lines.length === 0) continue;

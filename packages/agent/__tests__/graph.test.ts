@@ -217,7 +217,7 @@ describe("buildEnrichedMessage", () => {
     expect(result).toContain("\u{1F680} Ракет: ~10–15");
   });
 
-  it("inserts rocket count with cluster munition", () => {
+  it("inserts cluster munition as separate line with да/нет", () => {
     const insights = makeInsights([
       { key: "rocket_count", value: "~10" },
       { key: "is_cluster_munition", value: "true" },
@@ -228,7 +228,23 @@ describe("buildEnrichedMessage", () => {
       alertTs,
       insights,
     );
-    expect(result).toContain("кассетные");
+    expect(result).toContain("Кассетные: да");
+    // cluster should NOT be appended to rocket line
+    expect(result).not.toContain("~10, кассетные");
+  });
+
+  it("inserts cluster munition нет line when is_cluster_munition=false", () => {
+    const insights = makeInsights([
+      { key: "rocket_count", value: "~10" },
+      { key: "is_cluster_munition", value: "false" },
+    ]);
+    const result = buildEnrichedMessage(
+      baseText,
+      "red_alert",
+      alertTs,
+      insights,
+    );
+    expect(result).toContain("Кассетные: нет");
   });
 
   it("inserts intercepted for red_alert but NOT for early_warning", () => {
