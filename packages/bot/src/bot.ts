@@ -345,11 +345,11 @@ function formatMessage(
   const title = config.titleOverride[cfgKey] ?? defaults.title;
   const desc = config.descriptionOverride[cfgKey] ?? defaults.description;
 
-  const lines: string[] = [`<b>${emoji} ${title}</b> (${time})`, ""];
+  const lines: string[] = [`<b>${emoji} ${title}</b> (${time})`];
   if (desc) lines.push(desc);
 
-  // District line — always plain text, no blockquote
-  lines.push(`\u{1F4CD} ${labels.area}: ${localAreas}`);
+  // District line — blank line before, always plain text
+  lines.push("", `\u{1F4CD} ${labels.area}: ${localAreas}`);
 
   return lines.join("\n");
 }
