@@ -14,7 +14,6 @@
  */
 
 import {
-  buildEnrichedMessage,
   enqueueEnrich,
   runCanary,
   startEnrichWorker,
@@ -32,7 +31,6 @@ import {
   getAllUsers,
   getLanguagePack,
   getLastUpdateTs,
-  getSynthesizedInsights,
   initLangSmithTracing,
   initTranslations,
   loadCooldownState,
@@ -505,14 +503,8 @@ async function processAlert(alert: PikudAlert): Promise<void> {
   const baseMessage = formatMessage(alertType, areas, "en");
   const alertTs = Date.now();
 
-  // ── Reply chain + carry-forward enrichment (per-session) ──
+  // ── Reply chain (per-session) ──
   const replyToMap = new Map<string, number>();
-  let legacyInsights: Array<{
-    key: string;
-    value: { ru: string; en: string; he: string; ar: string };
-    confidence: number;
-    sourceUrls: string[];
-  }> = [];
   if (config.agent.enabled) {
     const existingForReply = await getActiveSession();
     const shouldReply =
@@ -529,35 +521,18 @@ async function processAlert(alert: PikudAlert): Promise<void> {
       for (const cm of cms) {
         replyToMap.set(cm.chatId, cm.messageId);
       }
-      // Load synthesized insights from previous enrichment runs for carry-forward
-      const prevSynthesized = await getSynthesizedInsights();
-      if (prevSynthesized.length > 0) {
-        legacyInsights = prevSynthesized;
-      }
     }
   }
 
   try {
     // ── Send to each matched user in their language ──
-    // Pro users get full enrichment editing. Free users get origin-only meta reply.
     const telegramMessages: TelegramMessage[] = [];
     for (const user of matchedUsers) {
       const isPro = user.tier === "pro";
 
       const lang = (user.language ?? "ru") as Language;
       const userAreaLabel = userMatchedLabel(user, alert.cities);
-      let message = formatMessage(alertType, userAreaLabel, lang);
-
-      // Only pro users get carry-forward enrichment pre-populated
-      if (isPro && legacyInsights.length > 0) {
-        message = buildEnrichedMessage(
-          message,
-          alertType,
-          alertTs,
-          legacyInsights,
-          lang,
-        );
-      }
+      const message = formatMessage(alertType, userAreaLabel, lang);
 
       const replyTo = replyToMap.get(user.chatId);
       const sent = await sendTelegram(user.chatId, alertType, message, replyTo);

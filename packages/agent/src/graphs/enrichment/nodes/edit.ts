@@ -1,9 +1,11 @@
 /**
- * Edit Node — build enriched message text and send Telegram edit.
+ * Edit Node — send/update two enrichment reply messages.
  *
- * Receives state.synthesizedInsights (built by synthesize-node) and
- * state.currentText, renders the enriched message, and edits the
- * Telegram message via Bot API.
+ * Message 1 (Launch Info): ETA, origin, rockets, cluster — all users.
+ * Message 2 (Analysis):    intercepted, hits, casualties — pro only.
+ *
+ * Both messages are created on first insight and edited on subsequent runs.
+ * Oref alert messages are NEVER edited.
  */
 
 import type {
@@ -22,10 +24,7 @@ import {
 import * as logger from "@easyoref/shared/logger";
 import { Bot } from "grammy";
 import { AIMessage } from "langchain";
-import {
-  buildEnrichedMessage,
-  formatCitations,
-} from "../../../utils/message.js";
+import { formatCitations } from "../../../utils/message.js";
 import type { AgentStateType } from "../enrichment-graph.js";
 
 export const CANARY_ALERT_PREFIX = "canary-";
@@ -36,11 +35,8 @@ export interface TelegramTargetMessage {
   chatId: string;
   messageId: number;
   isCaption: boolean;
-  /** BCP-47 language tag for the target user. Used to pick the right localized value. */
   language?: string;
-  /** Per-user base text in their language (for enrichment editing). */
   baseText?: string;
-  /** User tier — free users only get origin in meta reply, no inline edits. */
   tier?: "free" | "pro";
 }
 
@@ -57,210 +53,234 @@ export interface EditMessageInput {
   synthesizedInsights: SynthesizedInsightType[];
 }
 
-// ── Telegram edit ──────────────────────────────────────
+// ── Insight categories ─────────────────────────────────
 
-/**
- * Edit the Telegram message with enriched data.
- * Uses state.synthesizedInsights (built by synthesize-node).
- */
-export const editTelegramMessage = async (
-  input: EditMessageInput,
-): Promise<void> => {
-  // Skip Telegram API for canary (synthetic test) alerts
-  if (input.alertId.startsWith(CANARY_ALERT_PREFIX)) {
-    logger.info("edit-node: canary alert — skipping Telegram edit", {
-      alertId: input.alertId,
-    });
-    return;
+/** Launch info keys — Message 1 (free for all) */
+const LAUNCH_KEYS = new Set([
+  "eta_absolute",
+  "origin",
+  "rocket_count",
+  "is_cluster_munition",
+]);
+
+/** Post-attack analysis keys — Message 2 (pro only) */
+const ANALYSIS_KEYS = new Set([
+  "intercepted",
+  "hits",
+  "casualties",
+  "no_casualties",
+]);
+
+// ── Helpers ────────────────────────────────────────────
+
+function buildLaunchLines(
+  insights: SynthesizedInsightType[],
+  lang: Language,
+): string[] {
+  const labels = getLanguagePack(lang).labels;
+  const get = (key: string) => insights.find((i) => i.key === key);
+  const lines: string[] = [];
+
+  const etaVal = get("eta_absolute")?.value[lang];
+  if (etaVal) {
+    const cites = formatCitations(get("eta_absolute")!.sourceUrls);
+    lines.push(`\u23F0 ${labels.metaArrival}: ${etaVal}${cites}`);
   }
 
-  if (!config.botToken) return;
-
-  const tgBot = new Bot(config.botToken);
-  const insights = input.synthesizedInsights ?? [];
-
-  const targets: TelegramTargetMessage[] = input.telegramMessages ?? [
-    {
-      chatId: input.chatId,
-      messageId: input.messageId,
-      isCaption: input.isCaption,
-    },
-  ];
-
-  // Only edit pro users' messages inline (free users get origin-only meta reply)
-  const proTargets = targets.filter((t) => t.tier !== "free");
-
-  // Skip if nothing useful to show yet
-  const hasContent = insights.some((i) =>
-    ["origin", "intercepted", "hits", "rocket_count"].includes(i.key),
-  );
-  if (!hasContent) {
-    logger.info("edit-node: skipping edit — no actionable content", {
-      insightKeys: insights.map((i) => i.key),
-    });
-    return;
-  }
-
-  for (const t of proTargets) {
-    // Use per-user base text (in their language) if available,
-    // otherwise fall back to session's English canonical text
-    const base = t.baseText ?? input.currentText;
-    const newText = buildEnrichedMessage(
-      base,
-      input.alertType,
-      input.alertTs,
-      insights,
-      t.language as Language | undefined,
+  const origin = get("origin")?.value[lang];
+  const rocketCount = get("rocket_count")?.value[lang];
+  if (rocketCount) {
+    const originPart = origin ? ` (${origin})` : "";
+    const cites = formatCitations(get("rocket_count")!.sourceUrls);
+    lines.push(
+      `\u{1F680} ${labels.metaRockets}${originPart}: ${rocketCount}${cites}`,
     );
-
-    try {
-      if (t.isCaption) {
-        await tgBot.api.editMessageCaption(t.chatId, t.messageId, {
-          caption: newText,
-          parse_mode: "HTML",
-        });
-      } else {
-        await tgBot.api.editMessageText(t.chatId, t.messageId, newText, {
-          parse_mode: "HTML",
-          link_preview_options: { is_disabled: true },
-        });
-      }
-    } catch (err) {
-      const errStr = String(err);
-      if (!errStr.includes("message is not modified")) {
-        throw err;
-      }
-    }
+  } else if (origin) {
+    const cites = formatCitations(get("origin")!.sourceUrls);
+    lines.push(`\u{1F30D} ${labels.metaOrigin}: ${origin}${cites}`);
   }
 
-  // Keep session.currentText in sync using English as canonical text for monitoring
-  const canonicalText = buildEnrichedMessage(
-    input.currentText,
-    input.alertType,
-    input.alertTs,
-    insights,
-    "en",
-  );
-  const sess = await getActiveSession();
-  if (sess) {
-    sess.currentText = canonicalText;
-    await setActiveSession(sess);
+  const clusterInsight = get("is_cluster_munition");
+  if (clusterInsight) {
+    const isCluster = clusterInsight.value.en === "true";
+    const label = isCluster ? labels.metaClusterYes : labels.metaClusterNo;
+    const cites = formatCitations(clusterInsight.sourceUrls);
+    lines.push(`\u{1F4A3} ${labels.metaClusterMunition}: ${label}${cites}`);
   }
-};
 
-// ── Silent meta reply ──────────────────────────────────
+  return lines;
+}
+
+function buildAnalysisLines(
+  insights: SynthesizedInsightType[],
+  lang: Language,
+): string[] {
+  const labels = getLanguagePack(lang).labels;
+  const get = (key: string) => insights.find((i) => i.key === key);
+  const lines: string[] = [];
+
+  const intercepted = get("intercepted")?.value[lang];
+  if (intercepted) {
+    const cites = formatCitations(get("intercepted")!.sourceUrls);
+    lines.push(`\u{1F6E1} ${labels.metaIntercepted}: ${intercepted}${cites}`);
+  }
+
+  const hits = get("hits")?.value[lang];
+  if (hits) {
+    const cites = formatCitations(get("hits")!.sourceUrls);
+    lines.push(`\u{1F4A5} ${labels.metaHits}: ${hits}${cites}`);
+  }
+
+  const casualties = get("casualties")?.value[lang];
+  const noCasualties = get("no_casualties")?.value[lang];
+  if (casualties) {
+    const cites = formatCitations(get("casualties")!.sourceUrls);
+    lines.push(`\u{1F3E5} ${labels.metaCasualties}: ${casualties}${cites}`);
+  } else if (noCasualties) {
+    const val =
+      noCasualties === "none"
+        ? labels.metaNoVictimsNone
+        : labels.metaNoVictimsUnreported;
+    const cites = formatCitations(get("no_casualties")!.sourceUrls);
+    lines.push(`\u{1F3E5} ${labels.metaCasualties}: ${val}${cites}`);
+  }
+
+  return lines;
+}
+
+// ── Send or Update enrichment message ──────────────────
 
 /**
- * Send a single silent reply with key intel after early_warning.
- * Sent strictly once per session thread (guarded by session.metaMessageSent).
- * Only fires when:
- *  - alertType === "early_warning"
- *  - synthesizedInsights has at least rocket_count OR eta_absolute
- *  - session.metaMessageSent !== true
+ * Send a new reply or edit an existing enrichment message.
+ * Returns sent message ID (new or existing).
  */
-export const sendMetaReply = async (
-  alertType: AlertType,
+async function sendOrEdit(
+  bot: InstanceType<typeof Bot>,
+  chatId: string,
+  replyToMessageId: number,
+  existingMessageId: number | undefined,
+  text: string,
+): Promise<number> {
+  if (existingMessageId) {
+    try {
+      await bot.api.editMessageText(chatId, existingMessageId, text, {
+        parse_mode: "HTML",
+        link_preview_options: { is_disabled: true },
+      });
+    } catch (err) {
+      if (!String(err).includes("message is not modified")) throw err;
+    }
+    return existingMessageId;
+  }
+
+  const msg = await bot.api.sendMessage(chatId, text, {
+    reply_parameters: {
+      message_id: replyToMessageId,
+      allow_sending_without_reply: true,
+    },
+    disable_notification: true,
+    parse_mode: "HTML",
+    link_preview_options: { is_disabled: true },
+  });
+  return msg.message_id;
+}
+
+// ── Main enrichment message functions ──────────────────
+
+/**
+ * Send/update launch info message (Message 1).
+ * Contains: ETA, origin, rockets, cluster.
+ * Sent to ALL targets (free + pro).
+ */
+export const sendOrUpdateLaunchInfo = async (
   synthesizedInsights: SynthesizedInsightType[],
   targets: TelegramTargetMessage[],
 ): Promise<void> => {
-  // Meta reply for any non-resolved phase (early_warning or red_alert after upgrade)
-  if (alertType === "resolved") return;
   if (!config.botToken) return;
 
-  const get = (key: string) => synthesizedInsights.find((i) => i.key === key);
-
-  // Global guard: need rocket_count, eta_absolute, OR origin in English (canonical)
-  const hasRocket = !!get("rocket_count")?.value.en;
-  const hasEta = !!get("eta_absolute")?.value.en;
-  const hasOrigin = !!get("origin")?.value.en;
-  if (!hasRocket && !hasEta && !hasOrigin) return;
+  const launchInsights = synthesizedInsights.filter((i) =>
+    LAUNCH_KEYS.has(i.key),
+  );
+  if (launchInsights.length === 0) return;
 
   const sess = await getActiveSession();
   if (!sess) return;
-  if (sess.metaMessageSent) return;
-
-  const isClusterMunition = get("is_cluster_munition")?.value.en === "true";
-  const hasClusterData = !!get("is_cluster_munition");
 
   const tgBot = new Bot(config.botToken);
+  const ids: Record<string, number> = sess.launchMessageIds ?? {};
 
   for (const t of targets) {
     const lang = (t.language ?? "ru") as Language;
-    const labels = getLanguagePack(lang).labels;
-    const isFree = t.tier === "free";
-
-    const rocketCount = get("rocket_count")?.value[lang];
-    const etaAbsolute = get("eta_absolute")?.value[lang];
-    const origin = get("origin")?.value[lang];
-
-    // Build text lines for this target's language
-    const lines: string[] = [];
-
-    if (isFree) {
-      // Free users only get origin line
-      if (origin) {
-        const originInsight = get("origin")!;
-        const cites = formatCitations(originInsight.sourceUrls);
-        lines.push(`\u{1F30D} ${labels.metaOrigin}: ${origin}${cites}`);
-      }
-    } else {
-      // Pro users get full metadata
-      if (rocketCount) {
-        const originPart = origin ? ` (${origin})` : "";
-        const rocketInsight = get("rocket_count")!;
-        const cites = formatCitations(rocketInsight.sourceUrls);
-        lines.push(
-          `\u{1F680} ${labels.metaRockets}${originPart}: ${rocketCount}${cites}`,
-        );
-      } else if (origin) {
-        const originInsight = get("origin")!;
-        const cites = formatCitations(originInsight.sourceUrls);
-        lines.push(`\u{1F30D} ${labels.metaOrigin}: ${origin}${cites}`);
-      }
-
-      // Cluster munition as separate line
-      if (hasClusterData) {
-        const clusterLabel = isClusterMunition
-          ? labels.metaClusterYes
-          : labels.metaClusterNo;
-        const clusterInsight = get("is_cluster_munition")!;
-        const cites = formatCitations(clusterInsight.sourceUrls);
-        lines.push(
-          `\u{1F4A3} ${labels.metaClusterMunition}: ${clusterLabel}${cites}`,
-        );
-      }
-
-      if (etaAbsolute) {
-        const etaInsight = get("eta_absolute")!;
-        const cites = formatCitations(etaInsight.sourceUrls);
-        lines.push(`\u23F0 ${labels.metaArrival}: ${etaAbsolute}${cites}`);
-      }
-    }
-
+    const lines = buildLaunchLines(launchInsights, lang);
     if (lines.length === 0) continue;
-    const text = lines.join("\n");
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const sendOpts: any = {
-        reply_to_message_id: t.messageId,
-        allow_sending_without_reply: true,
-        disable_notification: true,
-        parse_mode: "HTML",
-        link_preview_options: { is_disabled: true },
-      };
-      await tgBot.api.sendMessage(t.chatId, text, sendOpts);
+      ids[t.chatId] = await sendOrEdit(
+        tgBot,
+        t.chatId,
+        t.messageId,
+        ids[t.chatId],
+        lines.join("\n"),
+      );
     } catch (err) {
-      // Best-effort: only rethrow unexpected errors
-      const errStr = String(err);
-      if (!errStr.includes("message to be replied not found")) {
-        throw err;
-      }
+      logger.warn("edit-node: launch message failed", {
+        chatId: t.chatId,
+        err: String(err),
+      });
     }
   }
 
-  // Mark sent — persist to session
-  sess.metaMessageSent = true;
+  sess.launchMessageIds = ids;
+  await setActiveSession(sess);
+};
+
+/**
+ * Send/update post-attack analysis message (Message 2).
+ * Contains: intercepted, hits, casualties.
+ * Sent only to PRO targets.
+ */
+export const sendOrUpdateAnalysis = async (
+  synthesizedInsights: SynthesizedInsightType[],
+  targets: TelegramTargetMessage[],
+): Promise<void> => {
+  if (!config.botToken) return;
+
+  const analysisInsights = synthesizedInsights.filter((i) =>
+    ANALYSIS_KEYS.has(i.key),
+  );
+  if (analysisInsights.length === 0) return;
+
+  const proTargets = targets.filter((t) => t.tier !== "free");
+  if (proTargets.length === 0) return;
+
+  const sess = await getActiveSession();
+  if (!sess) return;
+
+  const tgBot = new Bot(config.botToken);
+  const ids: Record<string, number> = sess.analysisMessageIds ?? {};
+
+  for (const t of proTargets) {
+    const lang = (t.language ?? "ru") as Language;
+    const lines = buildAnalysisLines(analysisInsights, lang);
+    if (lines.length === 0) continue;
+
+    try {
+      ids[t.chatId] = await sendOrEdit(
+        tgBot,
+        t.chatId,
+        t.messageId,
+        ids[t.chatId],
+        lines.join("\n"),
+      );
+    } catch (err) {
+      logger.warn("edit-node: analysis message failed", {
+        chatId: t.chatId,
+        err: String(err),
+      });
+    }
+  }
+
+  sess.analysisMessageIds = ids;
   await setActiveSession(sess);
 };
 
@@ -271,21 +291,22 @@ export const editNode = async (
 ): Promise<Partial<AgentStateType>> => {
   const synthesized = state.synthesizedInsights ?? [];
 
-  // Per spec: early_warning messages are NOT edited with enrichment inline.
-  // Only the meta reply (sendMetaReply) provides metadata for early_warning.
-  if (state.alertType !== "early_warning") {
-    await editTelegramMessage({
+  // Skip Telegram API for canary alerts
+  if (state.alertId.startsWith(CANARY_ALERT_PREFIX)) {
+    logger.info("edit-node: canary alert — skipping Telegram", {
       alertId: state.alertId,
-      alertTs: state.alertTs,
-      alertType: state.alertType,
-      chatId: state.chatId,
-      messageId: state.messageId,
-      isCaption: state.isCaption,
-      telegramMessages: state.telegramMessages,
-      currentText: state.currentText,
-      votedResult: state.votedResult,
-      synthesizedInsights: synthesized,
     });
+    return {
+      messages: [
+        new AIMessage(
+          JSON.stringify({
+            node: "edit",
+            synthesizedKeys: synthesized.map((i) => i.key),
+            targets: 0,
+          }),
+        ),
+      ],
+    };
   }
 
   const targets = state.telegramMessages ?? [
@@ -295,7 +316,12 @@ export const editNode = async (
       isCaption: state.isCaption,
     },
   ];
-  await sendMetaReply(state.alertType, synthesized, targets);
+
+  // Message 1: launch info (ETA, origin, rockets, cluster) — all users
+  await sendOrUpdateLaunchInfo(synthesized, targets);
+
+  // Message 2: post-attack analysis (interceptions, hits, casualties) — pro only
+  await sendOrUpdateAnalysis(synthesized, targets);
 
   // Persist synthesized insights for carry-forward to resolved phase
   if (synthesized.length > 0) {
@@ -308,8 +334,7 @@ export const editNode = async (
         JSON.stringify({
           node: "edit",
           synthesizedKeys: synthesized.map((i) => i.key),
-          targets: (state.telegramMessages ?? [{ chatId: state.chatId }])
-            .length,
+          targets: targets.length,
         }),
       ),
     ],

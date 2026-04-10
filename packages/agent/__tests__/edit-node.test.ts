@@ -1,7 +1,7 @@
 /**
- * Unit tests for edit-node helpers.
+ * Unit tests for edit-node — two enrichment messages (launch info + analysis).
  *
- * Covers: sendMetaReply — silent metadata reply logic.
+ * Covers: sendOrUpdateLaunchInfo, sendOrUpdateAnalysis, editNode.
  * All Telegram API calls are mocked. No network, no LLM.
  */
 
@@ -13,14 +13,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   mockSendMessage,
   mockEditMessageText,
-  mockEditMessageCaption,
   mockGetActiveSession,
   mockSetActiveSession,
   mockSaveSynthesizedInsights,
 } = vi.hoisted(() => ({
   mockSendMessage: vi.fn().mockResolvedValue({ message_id: 999 }),
   mockEditMessageText: vi.fn().mockResolvedValue(true),
-  mockEditMessageCaption: vi.fn().mockResolvedValue(true),
   mockGetActiveSession: vi.fn(),
   mockSetActiveSession: vi.fn(),
   mockSaveSynthesizedInsights: vi.fn().mockResolvedValue(undefined),
@@ -32,7 +30,6 @@ vi.mock("grammy", () => ({
     api: {
       sendMessage: mockSendMessage,
       editMessageText: mockEditMessageText,
-      editMessageCaption: mockEditMessageCaption,
     },
   })),
 }));
@@ -61,14 +58,11 @@ vi.mock("@easyoref/shared/logger", () => ({
 
 // ── Imports (after mocks) ──────────────────────────────────
 
-import type {
-  EditMessageInput,
-  TelegramTargetMessage,
-} from "../src/graphs/enrichment/nodes/edit.js";
+import type { TelegramTargetMessage } from "../src/graphs/enrichment/nodes/edit.js";
 import {
   editNode,
-  editTelegramMessage,
-  sendMetaReply,
+  sendOrUpdateAnalysis,
+  sendOrUpdateLaunchInfo,
 } from "../src/graphs/enrichment/nodes/edit.js";
 
 // ── Helpers ────────────────────────────────────────────────
@@ -104,7 +98,6 @@ function makeSession(overrides: Record<string, unknown> = {}) {
     currentText: "text",
     baseText: "text",
     alertAreas: ["תל אביב"],
-    metaMessageSent: false,
     ...overrides,
   };
 }
@@ -116,109 +109,18 @@ const defaultTarget: TelegramTargetMessage = {
 };
 
 // ─────────────────────────────────────────────────────────
-// sendMetaReply
+// sendOrUpdateLaunchInfo
 // ─────────────────────────────────────────────────────────
 
-describe("sendMetaReply", () => {
+describe("sendOrUpdateLaunchInfo", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSetActiveSession.mockResolvedValue(undefined);
   });
 
-  it("does nothing when alertType is resolved", async () => {
+  it("sends launch info with ETA and rockets (ru)", async () => {
     mockGetActiveSession.mockResolvedValue(makeSession());
-    await sendMetaReply(
-      "resolved",
-      makeInsights([
-        { key: "rocket_count", value: "10" },
-        { key: "eta_absolute", value: "~14:30" },
-      ]),
-      [defaultTarget],
-    );
-    expect(mockSendMessage).not.toHaveBeenCalled();
-  });
-
-  it("sends meta reply for red_alert phase (not just early_warning)", async () => {
-    mockGetActiveSession.mockResolvedValue(makeSession({ phase: "red_alert" }));
-    await sendMetaReply(
-      "red_alert",
-      makeInsights([
-        { key: "rocket_count", value: "10" },
-        { key: "eta_absolute", value: "~7 min" },
-      ]),
-      [defaultTarget],
-    );
-    expect(mockSendMessage).toHaveBeenCalledOnce();
-  });
-
-  it("sends when only eta_absolute is present (no rocket_count)", async () => {
-    mockGetActiveSession.mockResolvedValue(makeSession());
-    await sendMetaReply(
-      "early_warning",
-      makeInsights([{ key: "eta_absolute", value: "~14:30" }]),
-      [defaultTarget],
-    );
-    expect(mockSendMessage).toHaveBeenCalledOnce();
-    const text = mockSendMessage.mock.calls[0][1] as string;
-    expect(text).toContain("Прилёт: ~14:30");
-  });
-
-  it("sends when only rocket_count is present (no eta_absolute)", async () => {
-    mockGetActiveSession.mockResolvedValue(makeSession());
-    await sendMetaReply(
-      "early_warning",
-      makeInsights([{ key: "rocket_count", value: "10" }]),
-      [defaultTarget],
-    );
-    expect(mockSendMessage).toHaveBeenCalledOnce();
-    const text = mockSendMessage.mock.calls[0][1] as string;
-    expect(text).toContain("Ракет: 10");
-  });
-
-  it("sends meta reply when only origin is present (no rocket_count or eta_absolute)", async () => {
-    mockGetActiveSession.mockResolvedValue(makeSession());
-    await sendMetaReply(
-      "early_warning",
-      makeInsights([{ key: "origin", value: "Иран" }]),
-      [defaultTarget],
-    );
-    expect(mockSendMessage).toHaveBeenCalledOnce();
-    const call = mockSendMessage.mock.calls[0];
-    expect(call[1]).toContain("Иран");
-  });
-
-  it("does nothing when session is null", async () => {
-    mockGetActiveSession.mockResolvedValue(null);
-    await sendMetaReply(
-      "early_warning",
-      makeInsights([
-        { key: "rocket_count", value: "10" },
-        { key: "eta_absolute", value: "~14:30" },
-      ]),
-      [defaultTarget],
-    );
-    expect(mockSendMessage).not.toHaveBeenCalled();
-  });
-
-  it("does nothing when metaMessageSent is already true", async () => {
-    mockGetActiveSession.mockResolvedValue(
-      makeSession({ metaMessageSent: true }),
-    );
-    await sendMetaReply(
-      "early_warning",
-      makeInsights([
-        { key: "rocket_count", value: "10" },
-        { key: "eta_absolute", value: "~14:30" },
-      ]),
-      [defaultTarget],
-    );
-    expect(mockSendMessage).not.toHaveBeenCalled();
-  });
-
-  it("sends silent reply with rocket count and ETA (ru)", async () => {
-    mockGetActiveSession.mockResolvedValue(makeSession());
-    await sendMetaReply(
-      "early_warning",
+    await sendOrUpdateLaunchInfo(
       makeInsights([
         { key: "rocket_count", value: "12" },
         { key: "eta_absolute", value: "~14:23" },
@@ -231,17 +133,36 @@ describe("sendMetaReply", () => {
     expect(text).toContain("Ракет: 12");
     expect(text).toContain("Прилёт: ~14:23");
     expect(opts.disable_notification).toBe(true);
-    expect(opts.reply_to_message_id).toBe(defaultTarget.messageId);
+    expect(opts.reply_parameters.message_id).toBe(defaultTarget.messageId);
     expect(opts.parse_mode).toBe("HTML");
   });
 
-  it("includes origin in parentheses when present", async () => {
+  it("sends when only eta_absolute is present", async () => {
     mockGetActiveSession.mockResolvedValue(makeSession());
-    await sendMetaReply(
-      "early_warning",
+    await sendOrUpdateLaunchInfo(
+      makeInsights([{ key: "eta_absolute", value: "~14:30" }]),
+      [defaultTarget],
+    );
+    expect(mockSendMessage).toHaveBeenCalledOnce();
+    const text = mockSendMessage.mock.calls[0][1] as string;
+    expect(text).toContain("Прилёт: ~14:30");
+  });
+
+  it("sends when only origin is present", async () => {
+    mockGetActiveSession.mockResolvedValue(makeSession());
+    await sendOrUpdateLaunchInfo(
+      makeInsights([{ key: "origin", value: "Ливан" }]),
+      [defaultTarget],
+    );
+    expect(mockSendMessage).toHaveBeenCalledOnce();
+    expect(mockSendMessage.mock.calls[0][1]).toContain("Ливан");
+  });
+
+  it("includes origin in parentheses when rocket_count also present", async () => {
+    mockGetActiveSession.mockResolvedValue(makeSession());
+    await sendOrUpdateLaunchInfo(
       makeInsights([
         { key: "rocket_count", value: "5" },
-        { key: "eta_absolute", value: "~14:30" },
         { key: "origin", value: "Иран" },
       ]),
       [defaultTarget],
@@ -250,246 +171,202 @@ describe("sendMetaReply", () => {
     expect(text).toContain("Ракет (Иран): 5");
   });
 
-  it("omits origin parentheses when origin is absent", async () => {
+  it("renders cluster munition as separate line with да/нет", async () => {
     mockGetActiveSession.mockResolvedValue(makeSession());
-    await sendMetaReply(
-      "early_warning",
-      makeInsights([
-        { key: "rocket_count", value: "5" },
-        { key: "eta_absolute", value: "~14:30" },
-      ]),
-      [defaultTarget],
-    );
-    const text = mockSendMessage.mock.calls[0][1] as string;
-    expect(text).not.toContain("(");
-    expect(text).toContain("Ракет: 5");
-  });
-
-  it("renders cluster munition as separate line with да when is_cluster_munition=true", async () => {
-    mockGetActiveSession.mockResolvedValue(makeSession());
-    await sendMetaReply(
-      "early_warning",
+    await sendOrUpdateLaunchInfo(
       makeInsights([
         { key: "rocket_count", value: "20" },
-        { key: "eta_absolute", value: "~14:45" },
         { key: "is_cluster_munition", value: "true" },
       ]),
       [defaultTarget],
     );
     const text = mockSendMessage.mock.calls[0][1] as string;
     expect(text).toContain("Кассетные: да");
-    // Should NOT be appended to rocket count line
     expect(text).not.toContain("Ракет: 20, кассетные");
   });
 
-  it("renders cluster munition as separate line with нет when is_cluster_munition=false", async () => {
+  it("does nothing when no launch insights", async () => {
     mockGetActiveSession.mockResolvedValue(makeSession());
-    await sendMetaReply(
-      "early_warning",
-      makeInsights([
-        { key: "rocket_count", value: "20" },
-        { key: "eta_absolute", value: "~14:45" },
-        { key: "is_cluster_munition", value: "false" },
-      ]),
+    await sendOrUpdateLaunchInfo(
+      makeInsights([{ key: "intercepted", value: "8" }]),
       [defaultTarget],
     );
-    const text = mockSendMessage.mock.calls[0][1] as string;
-    expect(text).toContain("Кассетные: нет");
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
-  it("does NOT render cluster munition line when is_cluster_munition is absent", async () => {
-    mockGetActiveSession.mockResolvedValue(makeSession());
-    await sendMetaReply(
-      "early_warning",
-      makeInsights([
-        { key: "rocket_count", value: "20" },
-        { key: "eta_absolute", value: "~14:45" },
-      ]),
+  it("does nothing when session is null", async () => {
+    mockGetActiveSession.mockResolvedValue(null);
+    await sendOrUpdateLaunchInfo(
+      makeInsights([{ key: "rocket_count", value: "10" }]),
       [defaultTarget],
     );
-    const text = mockSendMessage.mock.calls[0][1] as string;
-    expect(text).not.toContain("Кассетные");
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
-  it("marks session.metaMessageSent=true after sending", async () => {
+  it("sends to ALL targets including free tier", async () => {
+    mockGetActiveSession.mockResolvedValue(makeSession());
+    const freeTarget: TelegramTargetMessage = {
+      chatId: "-100free",
+      messageId: 50,
+      isCaption: false,
+      tier: "free",
+    };
+    const proTarget: TelegramTargetMessage = {
+      chatId: "-100pro",
+      messageId: 60,
+      isCaption: false,
+    };
+    await sendOrUpdateLaunchInfo(
+      makeInsights([
+        { key: "rocket_count", value: "3" },
+        { key: "origin", value: "Ливан" },
+      ]),
+      [freeTarget, proTarget],
+    );
+    expect(mockSendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("edits existing launch message on subsequent runs", async () => {
+    mockGetActiveSession.mockResolvedValue(
+      makeSession({ launchMessageIds: { "-1001234567890": 500 } }),
+    );
+    await sendOrUpdateLaunchInfo(
+      makeInsights([{ key: "rocket_count", value: "15" }]),
+      [defaultTarget],
+    );
+    // Should edit, not send new
+    expect(mockEditMessageText).toHaveBeenCalledOnce();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockEditMessageText.mock.calls[0][0]).toBe("-1001234567890");
+    expect(mockEditMessageText.mock.calls[0][1]).toBe(500);
+  });
+
+  it("persists launchMessageIds to session", async () => {
     const session = makeSession();
     mockGetActiveSession.mockResolvedValue(session);
-    await sendMetaReply(
-      "early_warning",
-      makeInsights([
-        { key: "rocket_count", value: "8" },
-        { key: "eta_absolute", value: "~15:00" },
-      ]),
+    await sendOrUpdateLaunchInfo(
+      makeInsights([{ key: "rocket_count", value: "8" }]),
       [defaultTarget],
     );
     expect(mockSetActiveSession).toHaveBeenCalledOnce();
-    const savedSession = mockSetActiveSession.mock.calls[0][0];
-    expect(savedSession.metaMessageSent).toBe(true);
-  });
-
-  it("sends to multiple targets", async () => {
-    mockGetActiveSession.mockResolvedValue(makeSession());
-    const targets: TelegramTargetMessage[] = [
-      { chatId: "-100111", messageId: 10, isCaption: false },
-      { chatId: "-100222", messageId: 20, isCaption: false },
-    ];
-    await sendMetaReply(
-      "early_warning",
-      makeInsights([
-        { key: "rocket_count", value: "3" },
-        { key: "eta_absolute", value: "~16:00" },
-      ]),
-      targets,
-    );
-    expect(mockSendMessage).toHaveBeenCalledTimes(2);
-    expect(mockSendMessage.mock.calls[0][0]).toBe("-100111");
-    expect(mockSendMessage.mock.calls[1][0]).toBe("-100222");
+    const saved = mockSetActiveSession.mock.calls[0][0];
+    expect(saved.launchMessageIds["-1001234567890"]).toBe(999);
   });
 
   it("uses Hebrew labels when language is he", async () => {
     mockGetActiveSession.mockResolvedValue(makeSession());
     const heTarget: TelegramTargetMessage = {
       ...defaultTarget,
-      language: "he" as const,
+      language: "he",
     };
-    await sendMetaReply(
-      "early_warning",
+    await sendOrUpdateLaunchInfo(
       makeInsights([
         { key: "rocket_count", value: "7" },
         { key: "eta_absolute", value: "~17:00" },
       ]),
       [heTarget],
     );
-
     const text = mockSendMessage.mock.calls[0][1] as string;
-    expect(text).toContain("טילים"); // Hebrew "rockets"
-    expect(text).toContain("פגיעה משוערת"); // Hebrew "expected impact"
-  });
-
-  it("sends origin-only to free-tier targets, full metadata to pro targets", async () => {
-    mockGetActiveSession.mockResolvedValue(makeSession());
-    const freeTarget: TelegramTargetMessage = {
-      chatId: "-100free",
-      messageId: 50,
-      isCaption: false,
-      tier: "free",
-    };
-    const proTarget: TelegramTargetMessage = {
-      chatId: "-100pro",
-      messageId: 60,
-      isCaption: false,
-    };
-    await sendMetaReply(
-      "early_warning",
-      makeInsights([
-        { key: "rocket_count", value: "3" },
-        { key: "origin", value: "Ливан" },
-        { key: "eta_absolute", value: "~14:30" },
-      ]),
-      [freeTarget, proTarget],
-    );
-    expect(mockSendMessage).toHaveBeenCalledTimes(2);
-
-    // Free target: origin only, no rockets/ETA
-    const freeText = mockSendMessage.mock.calls[0][1] as string;
-    expect(freeText).toContain("Ливан");
-    expect(freeText).not.toContain("Ракет");
-    expect(freeText).not.toContain("Прилёт");
-
-    // Pro target: full metadata
-    const proText = mockSendMessage.mock.calls[1][1] as string;
-    expect(proText).toContain("Ракет (Ливан): 3");
-    expect(proText).toContain("Прилёт: ~14:30");
-  });
-
-  it("skips free-tier target when no origin data available", async () => {
-    mockGetActiveSession.mockResolvedValue(makeSession());
-    const freeTarget: TelegramTargetMessage = {
-      chatId: "-100free",
-      messageId: 50,
-      isCaption: false,
-      tier: "free",
-    };
-    const proTarget: TelegramTargetMessage = {
-      chatId: "-100pro",
-      messageId: 60,
-      isCaption: false,
-    };
-    await sendMetaReply(
-      "early_warning",
-      makeInsights([
-        { key: "rocket_count", value: "3" },
-        { key: "eta_absolute", value: "~14:30" },
-      ]),
-      [freeTarget, proTarget],
-    );
-    // Only pro target should get a message
-    expect(mockSendMessage).toHaveBeenCalledTimes(1);
-    expect(mockSendMessage.mock.calls[0][0]).toBe("-100pro");
+    expect(text).toContain("טילים");
+    expect(text).toContain("פגיעה משוערת");
   });
 });
 
 // ─────────────────────────────────────────────────────────
-// editTelegramMessage — undefined synthesizedInsights guard
+// sendOrUpdateAnalysis
 // ─────────────────────────────────────────────────────────
 
-describe("editTelegramMessage", () => {
+describe("sendOrUpdateAnalysis", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSetActiveSession.mockResolvedValue(undefined);
+  });
+
+  it("sends analysis with intercepted and hits (ru)", async () => {
     mockGetActiveSession.mockResolvedValue(makeSession());
-  });
-
-  const baseInput: EditMessageInput = {
-    alertId: "alert-1",
-    alertTs: Date.now(),
-    alertType: "red_alert",
-    chatId: "-1001234567890",
-    messageId: 100,
-    isCaption: false,
-    currentText: "🔴 Red Alert: Tel Aviv",
-    votedResult: undefined,
-    synthesizedInsights: [],
-  };
-
-  it("does NOT crash when synthesizedInsights is undefined (production bug)", async () => {
-    // This is the exact scenario that crashed in production on 2026-03-29:
-    // synthesize-node returned early without setting synthesizedInsights,
-    // so ReducedValue never fired and state.synthesizedInsights was undefined.
-    const input = {
-      ...baseInput,
-      synthesizedInsights: undefined as unknown as SynthesizedInsightType[],
-    };
-
-    // Should NOT throw — the ?? [] guard handles it
-    await expect(editTelegramMessage(input)).resolves.not.toThrow();
-  });
-
-  it("returns early when insights array is empty (no useful content)", async () => {
-    await editTelegramMessage(baseInput);
-
-    // No edits should be made — empty insights means hasContent is false
-    expect(mockEditMessageText).not.toHaveBeenCalled();
-    expect(mockEditMessageCaption).not.toHaveBeenCalled();
-  });
-
-  it("edits message when insights contain useful content", async () => {
-    const input: EditMessageInput = {
-      ...baseInput,
-      synthesizedInsights: makeInsights([
-        { key: "origin", value: "Iran" },
-        { key: "rocket_count", value: "10" },
+    await sendOrUpdateAnalysis(
+      makeInsights([
+        { key: "intercepted", value: "8" },
+        { key: "hits", value: "Рамат-Ган" },
       ]),
+      [defaultTarget],
+    );
+    expect(mockSendMessage).toHaveBeenCalledOnce();
+    const text = mockSendMessage.mock.calls[0][1] as string;
+    expect(text).toContain("Перехваты: 8");
+    expect(text).toContain("Попадания: Рамат-Ган");
+  });
+
+  it("sends only to pro targets (not free)", async () => {
+    mockGetActiveSession.mockResolvedValue(makeSession());
+    const freeTarget: TelegramTargetMessage = {
+      chatId: "-100free",
+      messageId: 50,
+      isCaption: false,
+      tier: "free",
     };
+    const proTarget: TelegramTargetMessage = {
+      chatId: "-100pro",
+      messageId: 60,
+      isCaption: false,
+    };
+    await sendOrUpdateAnalysis(
+      makeInsights([{ key: "intercepted", value: "8" }]),
+      [freeTarget, proTarget],
+    );
+    expect(mockSendMessage).toHaveBeenCalledTimes(1);
+    expect(mockSendMessage.mock.calls[0][0]).toBe("-100pro");
+  });
 
-    await editTelegramMessage(input);
+  it("does nothing when only free targets", async () => {
+    mockGetActiveSession.mockResolvedValue(makeSession());
+    const freeTarget: TelegramTargetMessage = {
+      chatId: "-100free",
+      messageId: 50,
+      isCaption: false,
+      tier: "free",
+    };
+    await sendOrUpdateAnalysis(
+      makeInsights([{ key: "intercepted", value: "8" }]),
+      [freeTarget],
+    );
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
 
+  it("does nothing when no analysis insights", async () => {
+    mockGetActiveSession.mockResolvedValue(makeSession());
+    await sendOrUpdateAnalysis(
+      makeInsights([{ key: "rocket_count", value: "10" }]),
+      [defaultTarget],
+    );
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it("edits existing analysis message on subsequent runs", async () => {
+    mockGetActiveSession.mockResolvedValue(
+      makeSession({ analysisMessageIds: { "-1001234567890": 600 } }),
+    );
+    await sendOrUpdateAnalysis(
+      makeInsights([{ key: "intercepted", value: "12" }]),
+      [defaultTarget],
+    );
     expect(mockEditMessageText).toHaveBeenCalledOnce();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it("shows no_casualties=none as нет", async () => {
+    mockGetActiveSession.mockResolvedValue(makeSession());
+    await sendOrUpdateAnalysis(
+      makeInsights([{ key: "no_casualties", value: "none" }]),
+      [defaultTarget],
+    );
+    const text = mockSendMessage.mock.calls[0][1] as string;
+    expect(text).toContain("Пострадавшие: нет");
   });
 });
 
 // ─────────────────────────────────────────────────────────
-// editNode — undefined state.synthesizedInsights guard
+// editNode
 // ─────────────────────────────────────────────────────────
 
 describe("editNode", () => {
@@ -499,8 +376,7 @@ describe("editNode", () => {
     mockGetActiveSession.mockResolvedValue(makeSession());
   });
 
-  it("does NOT crash when state.synthesizedInsights is undefined (production bug)", async () => {
-    // Minimal AgentStateType-like object with undefined synthesizedInsights
+  it("does NOT crash when state.synthesizedInsights is undefined", async () => {
     const state = {
       messages: [],
       alertId: "alert-1",
@@ -519,17 +395,14 @@ describe("editNode", () => {
       telegramMessages: [],
     };
 
-    // Should NOT throw — the ?? [] guard handles it
     const result = await editNode(state as any);
     expect(result).toBeDefined();
     expect(result.messages).toHaveLength(1);
-
-    // The AIMessage should contain synthesizedKeys: [] since insights were empty
     const msgContent = JSON.parse(result.messages![0].content as string);
     expect(msgContent.synthesizedKeys).toEqual([]);
   });
 
-  it("does NOT edit early_warning messages inline — only meta reply sends metadata", async () => {
+  it("sends launch message for launch insights, no oref edit", async () => {
     const state = {
       messages: [],
       alertId: "alert-1",
@@ -546,7 +419,6 @@ describe("editNode", () => {
         { key: "rocket_count", value: "10" },
         { key: "eta_absolute", value: "~7 min" },
       ]),
-
       extractedInsights: [],
       filteredInsights: [],
       previousInsights: [],
@@ -555,15 +427,14 @@ describe("editNode", () => {
 
     await editNode(state as any);
 
-    // editMessageText should NOT be called for early_warning
-    expect(mockEditMessageText).not.toHaveBeenCalled();
-    expect(mockEditMessageCaption).not.toHaveBeenCalled();
-
-    // BUT sendMessage (meta reply) SHOULD be called
+    // Launch message sent as new reply
     expect(mockSendMessage).toHaveBeenCalledOnce();
+    const text = mockSendMessage.mock.calls[0][1] as string;
+    expect(text).toContain("Ракет (Иран): 10");
+    expect(text).toContain("Прилёт: ~7 min");
   });
 
-  it("DOES edit red_alert messages inline with enrichment", async () => {
+  it("sends both launch and analysis messages for mixed insights", async () => {
     const state = {
       messages: [],
       alertId: "alert-1",
@@ -573,11 +444,12 @@ describe("editNode", () => {
       chatId: "-1001234567890",
       messageId: 100,
       isCaption: false,
-      currentText: "🔴 Red Alert: Tel Aviv",
+      currentText: "🔴 Red Alert",
       votedResult: undefined,
       synthesizedInsights: makeInsights([
         { key: "origin", value: "Иран" },
         { key: "rocket_count", value: "10" },
+        { key: "intercepted", value: "8" },
       ]),
       extractedInsights: [],
       filteredInsights: [],
@@ -587,9 +459,31 @@ describe("editNode", () => {
 
     await editNode(state as any);
 
-    // editMessageText SHOULD be called for red_alert
-    expect(mockEditMessageText).toHaveBeenCalledOnce();
-    // sendMessage (meta reply) SHOULD also be called for red_alert
-    expect(mockSendMessage).toHaveBeenCalledOnce();
+    // Two sendMessage calls: one for launch, one for analysis
+    expect(mockSendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips canary alerts", async () => {
+    const state = {
+      messages: [],
+      alertId: "canary-test-1",
+      alertTs: Date.now(),
+      alertType: "red_alert" as const,
+      alertAreas: ["תל אביב"],
+      chatId: "-1001234567890",
+      messageId: 100,
+      isCaption: false,
+      currentText: "🔴 Red Alert",
+      votedResult: undefined,
+      synthesizedInsights: makeInsights([{ key: "rocket_count", value: "10" }]),
+      extractedInsights: [],
+      filteredInsights: [],
+      previousInsights: [],
+      telegramMessages: [defaultTarget],
+    };
+
+    const result = await editNode(state as any);
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(result.messages).toHaveLength(1);
   });
 });

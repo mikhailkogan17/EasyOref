@@ -439,7 +439,10 @@ export const ActiveSession = z.object({
   baseText: z.string().min(1),
   alertAreas: z.array(z.string().min(1)),
   telegramMessages: z.array(TelegramMessage).optional(),
-  metaMessageSent: z.boolean().optional(),
+  /** Per-chat message IDs for the launch info enrichment message (message 1). */
+  launchMessageIds: z.record(z.string(), z.number()).optional(),
+  /** Per-chat message IDs for the post-attack analysis enrichment message (message 2). */
+  analysisMessageIds: z.record(z.string(), z.number()).optional(),
 });
 export type ActiveSessionType = z.infer<typeof ActiveSession>;
 

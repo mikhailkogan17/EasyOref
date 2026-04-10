@@ -32,7 +32,10 @@ describe("TelegramMessage schema", () => {
   });
 
   it("rejects missing chatId", () => {
-    const result = TelegramMessage.safeParse({ messageId: 1, isCaption: false });
+    const result = TelegramMessage.safeParse({
+      messageId: 1,
+      isCaption: false,
+    });
     expect(result.success).toBe(false);
   });
 
@@ -126,7 +129,11 @@ describe("RunEnrichmentInput schema", () => {
   });
 
   it("accepts all three alertType values", () => {
-    for (const alertType of ["early_warning", "red_alert", "resolved"] as const) {
+    for (const alertType of [
+      "early_warning",
+      "red_alert",
+      "resolved",
+    ] as const) {
       const result = RunEnrichmentInput.safeParse({ ...baseInput, alertType });
       expect(result.success).toBe(true);
     }
@@ -137,7 +144,9 @@ describe("RunEnrichmentInput schema", () => {
       ...baseInput,
       telegramMessages: [{ chatId: "-100x", messageId: 5, isCaption: true }],
     });
-    const reparsed = RunEnrichmentInput.parse(JSON.parse(JSON.stringify(parsed)));
+    const reparsed = RunEnrichmentInput.parse(
+      JSON.parse(JSON.stringify(parsed)),
+    );
     expect(reparsed).toEqual(parsed);
   });
 });
@@ -181,14 +190,16 @@ describe("ActiveSession schema", () => {
     }
   });
 
-  it("accepts optional metaMessageSent", () => {
+  it("accepts optional launchMessageIds and analysisMessageIds", () => {
     const result = ActiveSession.safeParse({
       ...baseSession,
-      metaMessageSent: true,
+      launchMessageIds: { "-100x": 500 },
+      analysisMessageIds: { "-100x": 600 },
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.metaMessageSent).toBe(true);
+      expect(result.data.launchMessageIds).toEqual({ "-100x": 500 });
+      expect(result.data.analysisMessageIds).toEqual({ "-100x": 600 });
     }
   });
 
